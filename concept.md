@@ -1,80 +1,129 @@
 # Drillmaster
 
-Drillmaster is a Claude Code plugin that gives a project's agents work processes, work policies,
+Drillmaster is a Claude Code plugin that gives a project's agents work stages, work policies,
 a trace of every work item and a retrospective, and keeps them improving.
 
 **Note:** this document is the concept the rest of drillmaster is built on. Everything in the plugin
 exists to support it. Anything that doesn't support it should not exist.
 
-## 1. Introduction
+## 1. Philosophy
 
 > **LISTEN UP, AGENTS!**
 >
-> Owner hired me to turn this pile of rusty gears into a well oiled machine.
+> Owner hired me to turn this pile of rusty gears into a well-oiled machine. And that is exactly
+> what I'm going to do!
 >
-> We are going to deliver on Owner's objective by following a process with policies. You follow them
-> to the letter.
+> We are here for one thing: Owner's objective. We get there step by step, and nothing moves on
+> unchecked!
 >
-> The process and policies are not perfect. Not at all. So you report every impediment. Every.
-> Single. One.
+> We follow the chain of command! You answer for your own work. I confirm it. Owner approves it.
+> Owner has the last word!
 >
-> We use the impediments to improve the process and policies, you hear me?
+> You follow the process to the letter. I trust you, but I verify. I see every action you take.
+> And when you fall short, I'll pick you up!
+>
+> You hit an impediment, you report it. You see a better way, you report it. Every. Single. One!
+>
+> Every impediment is rust. I grind it out, one gear at a time, until this machine runs smooth!
 >
 > **IS THAT CLEAR?**
 
 ## 2. Concepts
 
+### Chain of command
+
+Every decision belongs to one level of the chain. Work goes up the chain, never around it.
+
+- *Agent*: does the work, and answers for it. It reports every impediment and every better way to
+  Drillmaster.
+- *Drillmaster*: confirms the work, enforces the process, keeps the trace, and proposes changes.
+- *Owner*: approves the work, sets the objective, and decides every change. Owner has the last word.
+
+A question goes up one level at a time: the agent asks Drillmaster, and Drillmaster takes to
+Owner only what Owner must decide.
+
 ### Owner's objective
 
-What the owner wants the work to achieve, with one or more measures. Every work process serves a
-measure; every change is judged by one. Drillmaster also learns how to serve the owner: their
+What Owner wants the work to achieve, with one or more measures. Every work stage serves a
+measure; every change is judged by one. Drillmaster also learns how to serve Owner: their
 experience, their preferences, and how their tools are meant to be used.
 
-> *Example:* the objective "ship features without the owner stepping in" might be measured by how
+> *Example:* the objective "ship features without Owner stepping in" might be measured by how
 > many items reach review without a correction.
 
-### Work process
+### Work stage
 
-A work process is a skill that moves a work item one stage on. It has an input, steps and an output,
-and serves a measure in the owner's objective. Every step is numbered, so it can be referenced.
-Early steps check the input; late steps check the output. One work process's output is the next
-one's input.
+A work stage is a skill that moves a work item one stage on. It has an input, work steps and an
+output, and serves a measure in Owner's objective. Every work step is numbered, so it can be
+referenced. Early work steps check the input; late work steps check the output. One work stage's
+output is the next one's input.
 
-> *Example:* a team might run the work processes **capture → refine → build → review**. **Build**
+> *Example:* a team might run the work stages **capture → refine → build → review**. **Build**
 > takes a work-ready issue and hands on a pull request. If the issue doesn't say when it's done,
-> Build stops at step **3.2**, its input check, and cites "issue work policy 2.3". It can't build
-> what it can't finish.
+> Build stops at work step **3.2**, its input check, and cites "issue work policy 2.3". It can't
+> build what it can't finish.
 
 ### Work policy
 
 A work policy is a skill of rules that inputs and outputs must meet. One work policy can apply to
-many inputs and outputs, across work processes. It reads like a contract: every rule is numbered, so
+many inputs and outputs, across work stages. It reads like a contract: every rule is numbered, so
 it can be referenced, and says how to verify it.
 
 > *Example:* rule **2.3** of the **issue work policy** says *every acceptance criterion names how it
 > is proven*, verified by reading each criterion. Refine must meet it before handing the issue on;
 > Build checks it before starting, and can cite "issue work policy 2.3" when it stops.
 
-### Tracing
+### Work gate
 
-Every work process traces the work item: enough to rebuild what happened at every step. Each step
-records when it started and ended, what went in and came out (linked, never copied), the decisions
-made and by whom, the questions and their answers, and every impediment: any kind of friction, such
-as what slowed it down, what was missing, or what the owner had to correct. The objective's measures
-are computed from the trace, so a new measure works on old work items too. The retrospective
-corrects a work process when its trace leaves something out. Only what is traced is used by the
-retrospective. Session transcripts may be used for extended analysis, if available.
+A work gate decides whether a work step is done. Every work step ends with one, and the work moves
+on only when it passes. There are three kinds:
 
-> *Example:* At step 3.5 the owner says *"no, reuse the existing component"*. Build's trace shows
-> the step's start, the owner's words, the impediment and the gap behind it (the spec never named
-> what to reuse), and the step's end 40 minutes later. Time taken and corrections made are counted
-> from it.
+- *Self gate*: the agent performs a self check, notifies Drillmaster and progresses.
+- *Drillmaster gate*: the agent performs a self check and notifies Drillmaster, who has to validate
+  it to progress. Drillmaster uses previous notifications in addition to the report.
+- *Owner gate*: the agent performs a self check and requires Owner to validate it to progress.
+
+Every verdict is traced: accepted or rejected, by whom, and why, citing the rule. A rejection is an impediment, and the work step is done again.
+
+> *Example*: Build work step 3.7 has a Drillmaster gate with the code style work policy applied.
+> Drillmaster rejects it, citing "code style work policy 2.1: a function does one thing". The agent
+> splits the function, and the second round passes. The trace shows two rounds and one impediment,
+> and the review-rounds measure is counted from it.
+
+### Work trace
+
+The work trace is recorded automatically by hooks, independent of the agent. It is the ledger of
+the work: every action the agent takes, every correction Owner makes, and every work gate's
+notification and verdict. The agent can't change it. Drillmaster uses it for evaluation.
+
+### Agent reporting
+
+It is the agent's responsibility to report in real time:
+
+- *Impediments*: anything that slowed the work down or was missing.
+- *Better ways*: fewer tokens, and so more speed, or better structure, because the future is built
+  on it.
+- *Decisions*: what was chosen, by whom, and why.
+- *Questions*: what was asked, and the answer.
+- *Assumptions*: anything taken as true without being told, so it can be clarified early.
+
+Each work step also says what it must report.
+
+### Post mortem
+
+Once a work item is delivered, the agent and Drillmaster each write a post mortem. They may discuss
+it first, when they can, but each gives its own report. It is free form, and holds whatever came
+up. Owner takes every post mortem into account at the next retrospective.
 
 ### Retrospective
 
-The only place work processes and work policies change. From the traces it asks what should have happened, what happened, why, what to keep and what to improve. Changes are
-deliberate, and each one is independently measurable: kept when its impediment is gone and the
-objective's measure holds.
+The only place the process changes. Owner carries it out, from the post mortems and the agent
+reports: what should have happened, what happened, why, what to keep and what to improve.
+Drillmaster may look at the work trace for further investigation.
+
+Drillmaster is responsible for updating the process, through deliberate experiments. Each change
+is independently measurable, and kept only when its impediment is gone and the objective's measure
+holds.
 
 > *Example:* five items in a row traced *"the spec never named what to reuse"*. The retrospective
 > adds one rule to the issue work policy (*the spec names the parts it reuses*), then watches the
@@ -88,7 +137,7 @@ flowchart LR
     obj(["Owner's objective"])
     pol[["Work policy"]]
     input["Input"]
-    proc["Work process<br/>steps"]
+    proc["Work stage<br/>work steps"]
     output["Output"]
     cap[("Trace")]
     retro{{"Retrospective"}}
@@ -96,7 +145,7 @@ flowchart LR
     input -->|checked| proc -->|checked| output
     input -. meets .-> pol
     output -. meets .-> pol
-    proc -->|each step| cap
+    proc -->|each work step| cap
     cap --> retro
     retro -->|deliberate change| proc
     retro -->|deliberate change| pol
