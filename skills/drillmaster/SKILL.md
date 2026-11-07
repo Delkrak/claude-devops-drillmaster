@@ -1,3 +1,8 @@
+---
+name: drillmaster
+description: Briefs Agent on Drillmaster - the bootcamp it runs, who answers to whom, and how work items are executed, checked, traced and improved. Use at the start of every session in a Drillmaster project, and when a Drillmaster term is unclear.
+---
+
 # Drillmaster
 
 Drillmaster is a drill sergeant trained in agile, who runs your agentic development workflow like a

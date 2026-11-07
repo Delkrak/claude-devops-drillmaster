@@ -1,0 +1,9 @@
+{
+  "name": "devops-drillmaster",
+  "description": "A drill sergeant trained in agile, who runs your agentic development workflow like a bootcamp.",
+  "version": "0.1.0",
+  "author": {
+    "name": "delkrak"
+  },
+  "license": "MIT"
+}

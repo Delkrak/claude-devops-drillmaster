@@ -1,0 +1,14 @@
+{
+  "name": "claude-devops-drillmaster",
+  "owner": { "name": "delkrak" },
+  "description": "Drillmaster: a drill sergeant trained in agile, who runs your agentic development workflow like a bootcamp.",
+  "plugins": [
+    {
+      "name": "devops-drillmaster",
+      "source": "./",
+      "description": "A drill sergeant trained in agile, who runs your agentic development workflow like a bootcamp.",
+      "version": "0.1.0",
+      "author": { "name": "delkrak" }
+    }
+  ]
+}
