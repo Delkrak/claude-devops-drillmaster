@@ -40,8 +40,8 @@ Every decision belongs to one level of the chain. Work goes up the chain, never 
 
 - *Agent*: does the work, and answers for it. It reports to Drillmaster in real time, and writes a
   workflow post mortem.
-- *Drillmaster*: confirms the work, enforces the workflow, keeps the work trace, writes a workflow
-  post mortem, and updates the workflow through workflow experiments.
+- *Drillmaster*: confirms the work, enforces the workflow, collects the work traces, writes a
+  workflow post mortem, and updates the workflow.
 - *Owner*: approves the work, sets the objective, calls for workflow retrospectives, and approves
   every workflow change. Owner may provide direct instructions to Agent. Owner has the last word.
 
@@ -50,14 +50,18 @@ Owner only what Owner must decide.
 
 ### Workflow
 
-The workflow defines how work gets done, and consists of four things:
+The workflow defines how work gets done. It contains:
 
 1. Owner's objective;
-2. the work stages, and their work steps;
-3. the work policies;
-4. the workflow experiments.
+2. work execution;
+3. workflow post mortem;
+4. workflow retrospective.
 
-### Owner's objective
+It is a self-improving process: every work item it delivers can make it better.
+
+    (work, workflow_next) = f(work item | workflow, Owner input)
+
+### 1. Owner's objective
 
 What Owner wants Drillmaster to achieve with the workflow. It is formulated as one or more
 measures.
@@ -65,12 +69,14 @@ measures.
 > *Example:* the objective "ship features without Owner stepping in" might be measured by how
 > many work items reach review without a correction.
 
-### Work item
+### 2. Work execution
+
+#### Work item
 
 A work item is one unit of delivered work, such as an issue and the pull request that delivers it.
 It moves through the workflow one work stage at a time.
 
-### Work stage
+#### Work stage
 
 A work stage is made of work steps, and serves a measure in Owner's objective. It adheres to work
 policies.
@@ -79,12 +85,12 @@ policies.
 > moves a work-ready issue to a pull request. If the issue doesn't say when it's done, the gate of
 > work step **3.2** fails, citing "issue work policy 2.3". It can't build what it can't finish.
 
-### Work step
+#### Work step
 
 A work step is one numbered step of a work stage, so it can be referenced. It ends with a work
 gate, and names what Agent must report at it. Only work steps have work gates.
 
-### Work policy
+#### Work policy
 
 A work policy is a verifiable contract: a set of numbered rules, each saying how it is verified. It
 may span many areas, and apply to many work stages.
@@ -94,7 +100,7 @@ may span many areas, and apply to many work stages.
 > before the issue moves on, and so does the gate of Build's work step **3.2**, before any code is
 > written.
 
-### Work gate
+#### Work gate
 
 A work gate decides whether a work step is done, and the work moves on only when it passes. It
 references the specific work policy rules it evaluates, never a work policy as a whole. There are
@@ -115,14 +121,13 @@ impediment, and the work gate decides which work step or work stage the work goe
 > function, and the second round passes. The work trace shows two rounds and one impediment, and the
 > review-rounds measure is counted from it.
 
-### Work trace
+#### Work trace
 
-The work trace is recorded automatically by hooks, independent of Agent. It is the ledger of
-the work: every action Agent takes, every correction Owner makes, and every work gate's
+The work trace is recorded automatically, independent of Agent. It is the ledger of the work: every action Agent takes, every correction Owner makes, and every work gate's
 notification and verdict. Agent can't change it. Drillmaster uses it for evaluation, and the
 objective's measures are computed from it.
 
-### Agent reporting
+#### Agent reporting
 
 It is Agent's responsibility to report in real time:
 
@@ -135,7 +140,7 @@ It is Agent's responsibility to report in real time:
 
 A work step may require more.
 
-### Workflow post mortem
+### 3. Workflow post mortem
 
 Once a work item is delivered, Agent and Drillmaster each write a workflow post mortem on the work
 item as a whole. They may discuss it first, when they can, but each gives its own report:
@@ -145,7 +150,7 @@ item as a whole. They may discuss it first, when they can, but each gives its ow
 - *Workflow experiment reflections*
 - *Free text*
 
-### Workflow retrospective
+### 4. Workflow retrospective
 
 The only place the workflow changes. Owner calls for it, and Drillmaster carries it out, from the
 workflow post mortems and Agent's reports: what should have happened, what happened, why, what to
@@ -158,7 +163,7 @@ outcome is workflow changes and workflow experiments.
 > items. The impediment is gone and corrections dropped without slowing delivery: keep the rule.
 > Otherwise: rethink it.
 
-### Workflow experiment
+#### Workflow experiment
 
 A workflow experiment is a workflow change on trial. It names its purpose (the impediment it
 removes or the better way it delivers), the measure it must not worsen, and that measure's baseline
@@ -169,27 +174,45 @@ rethought.
 
 ```mermaid
 flowchart LR
-    obj(["Owner's objective"])
-    item["Work item"]
-    step["Work step"]
-    gate{"Work gate<br/>self / Drillmaster / Owner"}
-    pol[["Work policy"]]
-    trace[("Work trace")]
-    rep["Agent reporting"]
-    pm["Workflow post mortem"]
-    retro{{"Workflow retrospective"}}
+    subgraph wf["Workflow"]
+        obj(["1. Owner's objective"])
+        work["2. Work execution"]
+        pm["3. Workflow post mortem"]
+        retro{{"4. Workflow retrospective"}}
 
-    item --> step --> gate
-    gate -->|rejected| step
-    gate -->|passes| item
-    gate -. references .-> pol
-    step -. hooks .-> trace
-    step -. Agent .-> rep
-    item -->|delivered| pm
-    pm --> retro
-    rep --> retro
-    trace -. investigation .-> retro
-    retro -->|deliberate change| step
-    retro -->|deliberate change| pol
-    retro -. judged against .-> obj
+        obj -->|sets the measures| work
+        work -->|work item delivered| pm
+        pm -->|next work item| work
+        pm -->|Owner calls for it| retro
+        retro -->|workflow changes and experiments| work
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph exec["2. Work execution"]
+        item["Work item"] -->|enters| stage["Work stage"]
+        stage -->|first work step| step["Work step"]
+        step -->|ends at| gate{"Work gate<br/>self / Drillmaster / Owner"}
+        gate -->|passes: next work step| step
+        gate -->|rejected: back to where the gate says| stage
+        gate -->|last work step passes| done(["Delivered"])
+        gate -. references .-> pol[["Work policy"]]
+        step -. recorded in .-> trace[("Work trace")]
+        step -. Agent .-> rep["Agent reporting"]
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph ret["4. Workflow retrospective"]
+        call(["Owner calls for it"]) --> retro{{"Drillmaster carries it out"}}
+        pms["Workflow post mortems"] --> retro
+        rep["Agent's reports"] --> retro
+        trace[("Work trace")] -. further investigation .-> retro
+        retro --> chg["Workflow changes"]
+        retro --> exp["Workflow experiments"]
+        chg -->|Owner approves| wf(["Workflow"])
+        exp -->|Owner approves| wf
+    end
 ```
