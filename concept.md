@@ -71,6 +71,9 @@ measures.
 
 ### 2. Work execution
 
+Work execution is where a work item gets done: through its work stages, step by step and gate by
+gate.
+
 #### Work item
 
 A work item is one unit of delivered work, such as an issue and the pull request that delivers it.
@@ -123,7 +126,8 @@ impediment, and the work gate decides which work step or work stage the work goe
 
 #### Work trace
 
-The work trace is recorded automatically, independent of Agent. It is the ledger of the work: every action Agent takes, every correction Owner makes, and every work gate's
+The work trace is recorded automatically, independent of Agent. It is the ledger of the work:
+every action Agent takes, every instruction and correction Owner gives, and every work gate's
 notification and verdict. Agent can't change it. Drillmaster uses it for evaluation, and the
 objective's measures are computed from it.
 
