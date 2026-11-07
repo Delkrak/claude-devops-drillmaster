@@ -2,7 +2,7 @@
 
 Drillmaster is a drill sergeant trained in agile, who runs your agentic development workflow like a
 bootcamp: every work item runs through your workflow step by step and gate by gate, and the work
-trace and Agent's reports feed the workflow retrospectives that keep it improving.
+traces and work reports feed the workflow retrospectives that keep it improving.
 
 ## Install
 
@@ -15,10 +15,10 @@ trace and Agent's reports feed the workflow retrospectives that keep it improvin
 
 | Skill | What it does |
 |---|---|
-| `/devops-drillmaster:drillmaster` | Briefs Agent on Drillmaster: the philosophy, the chain of command and every concept of the workflow. |
+| `/devops-drillmaster:concept` | Explains the Drillmaster concept: the philosophy, the chain of command and the workflow. |
 
-The concept lives in [`skills/drillmaster/SKILL.md`](skills/drillmaster/SKILL.md). Everything else
-in Drillmaster is built on it.
+The concept lives in [`skills/concept/SKILL.md`](skills/concept/SKILL.md). Everything else in
+Drillmaster is built on it.
 
 ## Validate
 
