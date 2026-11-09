@@ -21,14 +21,29 @@ export interface HookOutcome {
 
 export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const
 
-const MAX_TRACED_INPUT_LENGTH = 500
+const MAX_TRACED_INPUT_LENGTH = 2000
+const MAX_TRACED_OUTPUT_LINES = 20
+const MAX_TRACED_OUTPUT_LENGTH = 2000
 const MAX_QUOTED_PROMPT_LENGTH = 300
 
 const SECRET_KEY_NAME = /token/i
 const SECRET_IN_JSON_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
+// Built in for now; these may become configurable regex rules per project.
+const WELL_KNOWN_SECRETS: [RegExp, string][] = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted private key]'],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, '[redacted]'],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, '[redacted]'],
+  [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, '[redacted]'],
+  [/\b(\w*(?:password|passwd|pwd|secret|api[_-]?key))(\s*[=:]\s*)("?)[^\s"',;]+/gi, '$1$2$3[redacted]'],
+]
+
+const redactSecretText = (text: string) =>
+  WELL_KNOWN_SECRETS.reduce((redacted, [pattern, replacement]) => redacted.replace(pattern, replacement), text.replace(SECRET_IN_JSON_TEXT, '$1[redacted]'))
 
 export function redactTokens(value: unknown): unknown {
-  if (typeof value === 'string') return value.replace(SECRET_IN_JSON_TEXT, '$1[redacted]')
+  if (typeof value === 'string') return redactSecretText(value)
   if (Array.isArray(value)) return value.map(redactTokens)
   if (value && typeof value === 'object') {
     return Object.fromEntries(
@@ -42,6 +57,39 @@ export function truncateForTrace(value: unknown) {
   if (value === undefined) return undefined
   const text = typeof value === 'string' ? value : JSON.stringify(value)
   return text.length > MAX_TRACED_INPUT_LENGTH ? `${text.slice(0, MAX_TRACED_INPUT_LENGTH)}...` : text
+}
+
+function toolResponseText(toolResponse: unknown): string | undefined {
+  if (toolResponse === undefined || toolResponse === null) return undefined
+  if (typeof toolResponse === 'string') return toolResponse
+  if (Array.isArray(toolResponse)) {
+    const texts = toolResponse.map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string' ? (part as { text: string }).text : JSON.stringify(part)))
+    return texts.join('\n')
+  }
+  if (typeof toolResponse === 'object') {
+    const { stdout, stderr, content, error } = toolResponse as { stdout?: unknown; stderr?: unknown; content?: unknown; error?: unknown }
+    const streams = [stdout, stderr].filter((stream): stream is string => typeof stream === 'string' && stream !== '')
+    if (streams.length) return streams.join('\n')
+    if (typeof error === 'string') return error
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) return toolResponseText(content)
+  }
+  return JSON.stringify(toolResponse)
+}
+
+export function outputTailForTrace(toolResponse: unknown) {
+  const text = toolResponseText(toolResponse)
+  if (!text?.trim()) return undefined
+  const tail = text.trimEnd().split(/\r?\n/).slice(-MAX_TRACED_OUTPUT_LINES).join('\n')
+  const capped = tail.length > MAX_TRACED_OUTPUT_LENGTH ? `...${tail.slice(-MAX_TRACED_OUTPUT_LENGTH)}` : tail
+  return redactSecretText(capped)
+}
+
+export function exitCodeOf(toolResponse: unknown): number | undefined {
+  if (!toolResponse || typeof toolResponse !== 'object') return undefined
+  const { exit_code, exitCode, returnCode, code } = toolResponse as Record<string, unknown>
+  const found = [exit_code, exitCode, returnCode, code].find((candidate) => typeof candidate === 'number')
+  return found as number | undefined
 }
 
 const isWorkReportTool = (toolName?: string) => toolName === 'work_report' || (toolName?.endsWith('__work_report') ?? false)
@@ -92,7 +140,13 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     trace.tool = payload.tool_name
     trace.input = truncateForTrace(redactTokens(payload.tool_input))
   }
-  if (hookEvent === 'PostToolUse') trace.error = toolResponseIsError(payload.tool_response)
+  if (hookEvent === 'PostToolUse') {
+    const exitCode = exitCodeOf(payload.tool_response)
+    trace.error = toolResponseIsError(payload.tool_response) || (exitCode !== undefined && exitCode !== 0)
+    if (exitCode !== undefined) trace.exit_code = exitCode
+    const output = outputTailForTrace(redactTokens(payload.tool_response))
+    if (output) trace.output = output
+  }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
   if (recordRaw) trace.raw = redactTokens(payload)
   events.push(trace)

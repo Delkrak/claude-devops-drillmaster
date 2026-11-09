@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { handleHook, redactTokens, startedWorkItemId, truncateForTrace } from '../../src/core/hooks.js'
+import { exitCodeOf, handleHook, outputTailForTrace, redactTokens, startedWorkItemId, truncateForTrace } from '../../src/core/hooks.js'
 import { foldState } from '../../src/core/state.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE } from '../helpers.js'
@@ -68,6 +68,22 @@ describe('handling hooks', () => {
     const outcome = handleHook(foldState([INIT]), 'PostToolUse', { session_id: 's1', tool_name: 'Bash', tool_response: { is_error: true } }, false)
     expect(outcome.events[1]).toMatchObject({ error: true })
   })
+
+  it('keeps the tail of a tool result, its exit code, and redacts secrets in it', () => {
+    const stdout = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n') + '\nGITHUB=ghp_abcdefghijklmnopqrstuvwxyz0123'
+    const outcome = handleHook(
+      foldState([INIT]),
+      'PostToolUse',
+      { session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout, stderr: 'FAIL 1 test', exit_code: 1 } },
+      false,
+    )
+    const trace = outcome.events[1] as { output: string; exit_code: number; error: boolean }
+    expect(trace).toMatchObject({ exit_code: 1, error: true })
+    expect(trace.output.split('\n')).toHaveLength(20)
+    expect(trace.output).toMatch(/FAIL 1 test$/)
+    expect(trace.output).not.toContain('ghp_')
+    expect(trace.output).not.toContain('line 1\n')
+  })
 })
 
 describe('recorded payloads from a real Claude Code session', () => {
@@ -99,8 +115,34 @@ describe('hook helpers', () => {
     expect(redactTokens(JSON.stringify(JSON.stringify({ token: 'abc' })))).not.toContain('abc')
   })
 
+  it('redacts well-known secret formats', () => {
+    const text = [
+      'key sk-ant-abcdefghijklmnop1234',
+      'aws AKIAABCDEFGHIJKLMNOP',
+      'slack xoxb-1234567890-abcdef',
+      'pat github_pat_11ABCDEFG0123456789abcdef',
+      'DB_PASSWORD=hunter2',
+      'api_key: "abc123"',
+      '-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----',
+    ].join('\n')
+    const redacted = redactTokens(text) as string
+    for (const secret of ['sk-ant-abc', 'AKIAABCD', 'xoxb-123', 'github_pat_11', 'hunter2', 'abc123', 'MIIE']) expect(redacted).not.toContain(secret)
+    expect(redacted).toContain('DB_PASSWORD=[redacted]')
+  })
+
+  it('reads output and exit codes from the shapes tools return', () => {
+    expect(outputTailForTrace({ stdout: 'hello', stderr: '' })).toBe('hello')
+    expect(outputTailForTrace([{ type: 'text', text: 'from mcp' }])).toBe('from mcp')
+    expect(outputTailForTrace({ content: [{ type: 'text', text: 'wrapped' }] })).toBe('wrapped')
+    expect(outputTailForTrace({ stdout: '', stderr: '' })).toBe('{"stdout":"","stderr":""}')
+    expect(outputTailForTrace(undefined)).toBeUndefined()
+    expect(exitCodeOf({ exitCode: 2 })).toBe(2)
+    expect(exitCodeOf({ stdout: 'x' })).toBeUndefined()
+  })
+
   it('keeps tool inputs short', () => {
-    expect(truncateForTrace('x'.repeat(600))).toHaveLength(503)
+    expect(truncateForTrace('x'.repeat(600))).toHaveLength(600)
+    expect(truncateForTrace('x'.repeat(2500))).toHaveLength(2003)
     expect(truncateForTrace(undefined)).toBeUndefined()
   })
 })

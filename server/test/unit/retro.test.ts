@@ -113,6 +113,11 @@ describe("Owner's words on proposals", () => {
     ['ok 2', { approved: [2], declined: [] }],
     ['no', { approved: [], declined: [1, 2, 3] }],
     ['reject 3', { approved: [], declined: [3] }],
+    ['Approve 1, decline 2.', { approved: [1], declined: [2] }],
+    ['decline 2, approve 1 and 3', { approved: [1, 3], declined: [2] }],
+    ['yes, except 3', { approved: [1, 2], declined: [3] }],
+    ['reject all except 2', { approved: [2], declined: [1, 3] }],
+    ['godkend 1, afvis 3', { approved: [1], declined: [3] }],
   ])('%s', (prompt, expected) => {
     expect(decideProposals(prompt, [1, 2, 3])).toEqual(expected)
   })

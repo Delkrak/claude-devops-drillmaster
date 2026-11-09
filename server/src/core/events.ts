@@ -76,6 +76,8 @@ export interface WorkTrace extends EventEnvelope {
   tool?: string
   input?: string
   error?: boolean
+  exit_code?: number
+  output?: string
   prompt?: string
   raw?: unknown
 }

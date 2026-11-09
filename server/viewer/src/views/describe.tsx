@@ -94,7 +94,7 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
       return {
         group: owner ? 'owner' : 'actions',
         tone: owner ? 'accent' : 'neutral',
-        text: `${asText(event.hook)} ${asText(event.tool)} ${asText(event.input)} ${asText(event.prompt)}`,
+        text: `${asText(event.hook)} ${asText(event.tool)} ${asText(event.input)} ${asText(event.output)} ${asText(event.prompt)}`,
         body: owner ? (
           <Row>
             <Badge tone="accent">Owner</Badge>
@@ -106,8 +106,10 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
               <Muted>{asText(event.hook)}</Muted>
               {event.tool ? <Code>{asText(event.tool)}</Code> : null}
               {event.error ? <Badge tone="bad">error</Badge> : null}
+              {typeof event.exit_code === 'number' ? <Muted>exit {event.exit_code}</Muted> : null}
             </Row>
             {event.input ? <Pre>{asText(event.input)}</Pre> : null}
+            {event.output ? <Pre>{asText(event.output)}</Pre> : null}
           </>
         ),
       }

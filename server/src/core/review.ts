@@ -15,7 +15,7 @@ export interface GateAnswer {
 }
 
 const formatTraceLine = (trace: WorkTrace) =>
-  `- ${trace.at} ${trace.hook}${trace.tool ? ` ${trace.tool}` : ''}${trace.input ? ` ${trace.input}` : ''}${trace.error ? ' (error)' : ''}${trace.prompt ? ` Owner: "${trace.prompt}"` : ''}`
+  `- ${trace.at} ${trace.hook}${trace.tool ? ` ${trace.tool}` : ''}${trace.input ? ` ${trace.input}` : ''}${trace.error ? ' (error)' : ''}${trace.exit_code !== undefined ? ` exit ${trace.exit_code}` : ''}${trace.output ? `\n  output (tail): ${trace.output.split('\n').slice(-5).join('\n  ')}` : ''}${trace.prompt ? ` Owner: "${trace.prompt}"` : ''}`
 
 export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState, submission: GateSubmitted, events: readonly DrillmasterEvent[]) {
   const step = stepAt(workflow, submission.stage, submission.step)!
