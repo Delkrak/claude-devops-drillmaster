@@ -40,7 +40,7 @@ export interface RetrospectiveRan extends EventEnvelope {
   type: 'retrospective_ran'
   retro_id: string
   work_items: string[]
-  findings: { should: string; did: string; why: string; keep: string; improve: string }
+  findings: { opening?: string; should: string; did: string; why: string; keep: string; improve: string }
   proposals: Proposal[]
 }
 

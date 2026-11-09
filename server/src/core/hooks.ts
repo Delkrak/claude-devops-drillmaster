@@ -106,7 +106,12 @@ function toolResponseIsError(toolResponse: unknown) {
   return isError === true || is_error === true || (error !== undefined && error !== null) || success === false
 }
 
-export function handleHook(state: ProjectState, hookEvent: string, payload: HookPayload, recordRaw: boolean): HookOutcome {
+export interface HookContext {
+  /** Why a workflow retrospective is due, if it is. */
+  retrospectiveDue?: string | null
+}
+
+export function handleHook(state: ProjectState, hookEvent: string, payload: HookPayload, recordRaw: boolean, context: HookContext = {}): HookOutcome {
   if (!state.initialized || !state.workflow) return { events: [] }
   const sessionId = payload.session_id
   if (!sessionId) return { events: [] }
@@ -162,7 +167,7 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
       return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `Drillmaster: ${typed.lines.join(' ')}` } } }
     }
   }
-  return { events, output: hookEvent === 'SessionStart' ? briefSession(state, item) : undefined }
+  return { events, output: hookEvent === 'SessionStart' ? briefSession(state, item, context) : undefined }
 }
 
 const ASK_USER_QUESTION = 'AskUserQuestion'
@@ -234,7 +239,7 @@ function decideRetroProposals(state: ProjectState, prompt: string): AnswerOutcom
   }
 }
 
-function briefSession(state: ProjectState, item: WorkItemState | undefined) {
+function briefSession(state: ProjectState, item: WorkItemState | undefined, context: HookContext) {
   const workflow = state.workflow!
   const lines = [
     `Drillmaster runs this project (workflow version ${workflow.version}). Owner's objective: "${workflow.objective.text}".`,
@@ -249,6 +254,9 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined) {
   const ownerQuestions = pendingOwnerQuestions(state)
   if (ownerQuestions.length) {
     lines.push(`Owner has ${ownerQuestions.length} question${ownerQuestions.length > 1 ? 's' : ''} to answer. work_status shows the AskUserQuestion input to ask with.`)
+  }
+  if (context.retrospectiveDue) {
+    lines.push(`A workflow retrospective is due: ${context.retrospectiveDue}. Suggest it to Owner (/devops-drillmaster:retrospective); Owner decides when.`)
   }
   if (workflow.stages.length === 0) {
     lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. The workflow grows from those corrections.')

@@ -16,6 +16,7 @@ import {
   POST_MORTEM_REVIEW_KIND,
   readPostMortemAnswer,
   readRetroAnswer,
+  retrospectiveDue,
   RETRO_REVIEW_KIND,
   toRetroView,
 } from './core/retro.js'
@@ -425,8 +426,10 @@ export class Drillmaster {
     if (!(HOOK_EVENTS as readonly string[]).includes(hookEvent)) throw new UserError(`Unknown hook event: ${hookEvent}`, 404)
     if (typeof payload !== 'object' || payload === null) throw new UserError('The hook payload must be a JSON object')
     return this.withProjectLock(projectDir, async (projectId) => {
-      const state = foldState(await this.ports.store.read(projectId))
-      const outcome = handleHook(state, hookEvent, payload as HookPayload, this.options.recordRawHookPayloads ?? false)
+      const events = await this.ports.store.read(projectId)
+      const state = foldState(events)
+      const context = hookEvent === 'SessionStart' ? { retrospectiveDue: retrospectiveDue(state, events) } : {}
+      const outcome = handleHook(state, hookEvent, payload as HookPayload, this.options.recordRawHookPayloads ?? false, context)
       for (const event of outcome.events) await this.appendEvent(projectId, event)
       return { stored: outcome.events.length, output: outcome.output }
     })
@@ -611,7 +614,12 @@ export class Drillmaster {
     // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
     const answer = outcome.gateSubmissionToJudge ? await this.judgeDrillmasterGate(projectDir, outcome.gateSubmissionToJudge) : outcome.answer
     const askOwner = await this.ownerQuestionsFor(projectDir, outcome.workItemId)
-    const rendered = this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>)
+    let rendered = this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>)
+    if (toolName === 'work_deliver') {
+      const events = await this.events(projectDir)
+      const due = retrospectiveDue(foldState(events), events)
+      if (due) rendered += `\n\nA workflow retrospective is due: ${due}. Suggest it to Owner (/devops-drillmaster:retrospective); Owner decides when.`
+    }
     const markdown = outcome.restartNotice ? `${rendered}\n\n${outcome.restartNotice}` : rendered
     if (!askOwner) return workResult(markdown, answer)
     return workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...(answer as Record<string, unknown>), ask_owner: askOwner })

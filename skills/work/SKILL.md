@@ -82,6 +82,8 @@ in is refused. Ask from the main conversation, because subagents can't use AskUs
    `work_post_mortem({token, keep, change, experiment_reflections, free_text})`. It's about the
    workflow, not the code: what to keep, what to change, how the running workflow experiments did,
    and anything else.
+3. If the result says a workflow retrospective is due, tell Owner and suggest
+   `/devops-drillmaster:retrospective`. Owner decides when.
 
 ## When Owner corrects delivered work
 

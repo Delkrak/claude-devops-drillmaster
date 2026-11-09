@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { DrillmasterEvent, Proposal, RetrospectiveRan } from './events.js'
 import { judgeExperiments } from './experiments.js'
-import { averageMeasure, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, type ItemMeasures, type MeasureName } from './measures.js'
+import { averageMeasure, BASELINE_WINDOW, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, type ItemMeasures, type MeasureName } from './measures.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
@@ -251,6 +251,30 @@ export function deliveredSinceLastRetro(state: ProjectState, events: readonly Dr
   return measureDeliveredItems(events).filter((item) => item.delivered_at > lastRetroAt)
 }
 
+/** A retrospective is due once its experiments can be judged, or once a baseline's worth of items is delivered. */
+export function retrospectiveDue(state: ProjectState, events: readonly DrillmasterEvent[]): string | null {
+  if (!state.workflow) return null
+  const delivered = measureDeliveredItems(events)
+  const ready = judgeExperiments(state.workflow, delivered).filter((verdict) => verdict.status !== 'running')
+  if (ready.length) return `experiment ${ready.map((verdict) => verdict.id).join(', ')} can be judged: its judge_after items are delivered`
+  const sinceLast = deliveredSinceLastRetro(state, events).length
+  return sinceLast >= BASELINE_WINDOW ? `${sinceLast} work items were delivered since the last retrospective` : null
+}
+
+function lastRetrospectiveLines(state: ProjectState, events: readonly DrillmasterEvent[]) {
+  const retro = state.latestRetroId ? state.retros[state.latestRetroId] : undefined
+  if (!retro) return ['- none: this is the first retrospective']
+  const changes = events.filter((event): event is Extract<DrillmasterEvent, { type: 'workflow_changed' }> => event.type === 'workflow_changed' && event.retro_id === retro.retro_id)
+  return retro.proposals.map((proposal) => {
+    const outcome = retro.applied.includes(proposal.id)
+      ? `applied as workflow ${changes.find((change) => change.proposal === proposal.id)?.workflow.version ?? '?'}`
+      : retro.declined.includes(proposal.id)
+        ? 'declined by Owner'
+        : 'not decided'
+    return `- proposal ${proposal.id} "${proposal.change}" (purpose: ${proposal.purpose}${proposal.hypothesis ? `; hypothesis: ${proposal.hypothesis}` : ''}): ${outcome}`
+  })
+}
+
 export function buildRetroPrompt(state: ProjectState, events: readonly DrillmasterEvent[]) {
   const workflow = state.workflow!
   const allDelivered = measureDeliveredItems(events)
@@ -278,7 +302,8 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
 
   return [
     'You are Drillmaster, carrying out a workflow retrospective that Owner called for. The workflow retrospective is the only place the workflow changes.',
-    'Answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and the corrections Owner gave.',
+    "Open by judging the last retrospective's actions (findings.opening): for each change it applied, did it do what it was meant to, judged by its experiment's verdict and what happened since? Say plainly which ones did not.",
+    'Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and the corrections Owner gave.',
     'Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.',
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
@@ -289,6 +314,9 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     '',
     `Measures (Owner's objective: "${workflow.objective.text}"):`,
     ...measureLines,
+    '',
+    "The last retrospective's actions:",
+    ...lastRetrospectiveLines(state, events),
     '',
     'Running workflow experiments:',
     ...(experimentLines.length ? experimentLines : ['- none']),
@@ -305,11 +333,11 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     "Proposals are applied in order: each proposal's operations see the workflow as the proposals before it leave it. Prefer proposals that stand on their own, so Owner can approve any of them.",
     '',
     'Answer with JSON only:',
-    '{"findings":{"should":"...","did":"...","why":"...","keep":"...","improve":"..."},"proposals":[{"id":1,"change":"<one line>","purpose":"<the impediment it removes or the better way it delivers>","measure":"<one of the objective measures>","hypothesis":"<what will improve, and why>","null_hypothesis":"<the change makes no difference to the measure>","target":<the measure value that counts as success, lower is better>,"judge_after":<delivered items to judge it after, e.g. 3>,"ops":[...]}]}',
+    '{"findings":{"opening":"<how the last retrospective\'s actions did>","should":"...","did":"...","why":"...","keep":"...","improve":"..."},"proposals":[{"id":1,"change":"<one line>","purpose":"<the impediment it removes or the better way it delivers>","measure":"<one of the objective measures>","hypothesis":"<what will improve, and why>","null_hypothesis":"<the change makes no difference to the measure>","target":<the measure value that counts as success, lower is better>,"judge_after":<delivered items to judge it after, e.g. 3>,"ops":[...]}]}',
   ].join('\n')
 }
 
-const Findings = z.object({ should: z.string(), did: z.string(), why: z.string(), keep: z.string(), improve: z.string() })
+const Findings = z.object({ opening: z.string().default(''), should: z.string(), did: z.string(), why: z.string(), keep: z.string(), improve: z.string() })
 
 export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown) {
   const retroAnswer = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { findings?: unknown; proposals?: unknown } | undefined

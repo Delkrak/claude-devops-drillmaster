@@ -13,6 +13,7 @@ Drillmaster's findings, and you don't decide for Owner.
 
 1. **Run it:** `workflow_retrospective({action: "run"})`. It can take a few minutes.
 2. **Show Owner the result as it is:**
+   - the opening: how the last retrospective's actions did;
    - the findings: what should have happened, what happened, why, what to keep, and what to
      improve;
    - every proposal (at most four), numbered, with its change, its purpose, its hypothesis, the
