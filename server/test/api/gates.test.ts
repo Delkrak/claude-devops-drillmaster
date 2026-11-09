@@ -1,5 +1,3 @@
-// Drillmaster and Owner gates over the REST API, with a scripted reviewer standing in for claude -p.
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'

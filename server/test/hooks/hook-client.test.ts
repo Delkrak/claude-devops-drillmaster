@@ -1,6 +1,3 @@
-// Runs the real plugin hook client (scripts/hook.mjs) as Claude Code would: a separate process,
-// the payload on stdin, the output on stdout. The server is in-process, found via daemon.json.
-
 import { spawn } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'

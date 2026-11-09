@@ -1,6 +1,3 @@
-// The improvement loop over the REST API: setup, a work item on workflow_0 that Owner corrects,
-// both post mortems, a workflow retrospective, Owner's approval in their own words, and apply.
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { Drillmaster } from '../../src/app.js'

@@ -1,5 +1,3 @@
-// Layout primitives: vertical stacks, wrapping rows and responsive grids, spaced by tokens.
-
 import * as stylex from '@stylexjs/stylex'
 import type { ReactNode } from 'react'
 import { space } from '../styles/tokens.stylex'

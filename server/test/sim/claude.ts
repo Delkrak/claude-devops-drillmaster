@@ -1,5 +1,3 @@
-// Runs one turn of a headless Claude Code session: `claude -p`, resumed when a session id is given.
-
 import { spawn } from 'node:child_process'
 
 export interface Turn {
@@ -19,28 +17,33 @@ export interface TurnOptions {
 }
 
 export function claudeTurn({ cwd, env, prompt, resume, args = [], timeoutMs = 900_000 }: TurnOptions): Promise<Turn> {
-  const argv = ['-p', '--output-format', 'json', ...(resume ? ['--resume', resume] : []), ...args]
+  const claudeArgs = ['-p', '--output-format', 'json', ...(resume ? ['--resume', resume] : []), ...args]
   return new Promise((resolve, reject) => {
-    const child = spawn(env.DRILLMASTER_CLAUDE ?? 'claude', argv, { cwd, env, windowsHide: true })
+    const child = spawn(env.DRILLMASTER_CLAUDE ?? 'claude', claudeArgs, { cwd, env, windowsHide: true })
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
       child.kill()
       reject(new Error(`claude turn timed out after ${timeoutMs / 1000}s`))
     }, timeoutMs)
-    child.stdout.on('data', (d) => (stdout += d))
-    child.stderr.on('data', (d) => (stderr += d))
-    child.on('error', (e) => {
+    child.stdout.on('data', (chunk) => (stdout += chunk))
+    child.stderr.on('data', (chunk) => (stderr += chunk))
+    child.on('error', (error) => {
       clearTimeout(timer)
-      reject(e)
+      reject(error)
     })
-    child.on('close', (code) => {
+    child.on('close', (exitCode) => {
       clearTimeout(timer)
       try {
-        const out = JSON.parse(stdout) as { session_id: string; result?: string; total_cost_usd?: number; is_error?: boolean }
-        resolve({ session_id: out.session_id, result: out.result ?? '', cost_usd: out.total_cost_usd ?? 0, is_error: out.is_error === true })
+        const claudeOutput = JSON.parse(stdout) as { session_id: string; result?: string; total_cost_usd?: number; is_error?: boolean }
+        resolve({
+          session_id: claudeOutput.session_id,
+          result: claudeOutput.result ?? '',
+          cost_usd: claudeOutput.total_cost_usd ?? 0,
+          is_error: claudeOutput.is_error === true,
+        })
       } catch {
-        reject(new Error(`claude exited ${code}: ${stderr.slice(-500) || stdout.slice(-500)}`))
+        reject(new Error(`claude exited ${exitCode}: ${stderr.slice(-500) || stdout.slice(-500)}`))
       }
     })
     child.stdin.end(prompt)

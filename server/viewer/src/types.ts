@@ -1,5 +1,3 @@
-// What the server's read-only API returns (see server/src/core/views.ts).
-
 export type GateKind = 'self' | 'drillmaster' | 'owner'
 
 export interface ProjectSummary {
@@ -103,7 +101,6 @@ export interface ProjectView {
   sessions: { session_id: string; work_item_id: string | null }[]
 }
 
-/** One event on a work item's timeline. Fields depend on `type`. */
 export interface TimelineEvent {
   id: string
   at: string

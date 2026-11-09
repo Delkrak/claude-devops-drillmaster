@@ -1,6 +1,3 @@
-// Drives the real stdio shim as a separate process through the MCP SDK client. The shim must start
-// the shared server on its own, in an isolated DRILLMASTER_HOME.
-
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'

@@ -36,7 +36,7 @@ export function ProjectPage({ id, tab }: { id: string; tab: ProjectTab }) {
                 <Badge tone="accent">workflow v{project.workflow.version}</Badge>
               </Row>
             </Stack>
-            <Tabs tabs={TABS} current={tab} label="Project sections" onSelect={(t) => (window.location.hash = href.project(id, t))} />
+            <Tabs tabs={TABS} current={tab} label="Project sections" onSelect={(selectedTab) => (window.location.hash = href.project(id, selectedTab))} />
             {tab === 'overview' && <OverviewView project={project} />}
             {tab === 'workflow' && <WorkflowView project={project} />}
             {tab === 'items' && <WorkItemsView project={project} />}

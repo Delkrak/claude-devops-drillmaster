@@ -1,4 +1,4 @@
-import { measureLabel, number, time } from '../format'
+import { formatDateTime, formatNumber, measureLabel } from '../format'
 import { href } from '../router'
 import type { ProjectView } from '../types'
 import { Badge } from '../ui/Badge'
@@ -9,10 +9,9 @@ import { Link, Muted } from '../ui/Text'
 import { proposalTone } from './RetrospectivesView'
 import { StatusBadge } from './WorkItemsView'
 
-/** The project at a glance: objective, measures, what is happening now, and what changed last. */
 export function OverviewView({ project }: { project: ProjectView }) {
-  const active = project.work_items.filter((i) => i.status === 'active')
-  const waiting = active.filter((i) => i.pending_gate).length
+  const active = project.work_items.filter((workItem) => workItem.status === 'active')
+  const waiting = active.filter((workItem) => workItem.pending_gate).length
   const lastRetro = project.retrospectives[0]
   return (
     <Stack testId="overview">
@@ -23,9 +22,9 @@ export function OverviewView({ project }: { project: ProjectView }) {
         <Card>
           <Stat label="Work items" value={project.work_items.length} hint={`${active.length} active, ${waiting} waiting at a gate`} testId="stat-work-items" />
         </Card>
-        {project.measures.map((m) => (
-          <Card key={m.name}>
-            <Stat label={measureLabel(m.name)} value={number(m.last_5)} hint={`last 5; all ${number(m.all)}`} />
+        {project.measures.map((measure) => (
+          <Card key={measure.name}>
+            <Stat label={measureLabel(measure.name)} value={formatNumber(measure.last_5)} hint={`last 5; all ${formatNumber(measure.all)}`} />
           </Card>
         ))}
       </Grid>
@@ -33,14 +32,14 @@ export function OverviewView({ project }: { project: ProjectView }) {
         {active.length === 0 ? (
           <Muted>No work item is active.</Muted>
         ) : (
-          active.map((i) => (
-            <Row key={i.work_item_id}>
-              <Link href={href.item(project.summary.id, i.work_item_id)}>{i.work_item_id}</Link>
-              <span>{i.issue}</span>
-              <StatusBadge item={i} />
-              {i.stage !== null && (
+          active.map((workItem) => (
+            <Row key={workItem.work_item_id}>
+              <Link href={href.item(project.summary.id, workItem.work_item_id)}>{workItem.work_item_id}</Link>
+              <span>{workItem.issue}</span>
+              <StatusBadge item={workItem} />
+              {workItem.stage !== null && (
                 <Badge>
-                  work step {i.stage}.{i.step}
+                  work step {workItem.stage}.{workItem.step}
                 </Badge>
               )}
             </Row>
@@ -50,12 +49,12 @@ export function OverviewView({ project }: { project: ProjectView }) {
       <Card title="Last workflow retrospective">
         {lastRetro ? (
           <Stack tight>
-            <Muted>{time(lastRetro.at)}</Muted>
+            <Muted>{formatDateTime(lastRetro.at)}</Muted>
             <span>{lastRetro.findings.improve}</span>
             <Row>
-              {lastRetro.proposals.map((p) => (
-                <Badge key={p.id} tone={proposalTone[p.status]}>
-                  {p.id}: {p.status}
+              {lastRetro.proposals.map((proposal) => (
+                <Badge key={proposal.id} tone={proposalTone[proposal.status]}>
+                  {proposal.id}: {proposal.status}
                 </Badge>
               ))}
             </Row>

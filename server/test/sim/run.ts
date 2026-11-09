@@ -1,13 +1,3 @@
-// The simulated-Owner harness: a real Drillmaster session against an agent that plays Owner.
-//
-//   npm run sim -- test/sim/scenarios/export-features.json [--owner scripted|llm] [--runs 2]
-//
-// Agent is a headless Claude Code session with this plugin loaded (--plugin-dir), in a fresh git
-// copy of the scenario's project, with its own DRILLMASTER_HOME. Owner is either scripted lines or
-// a second Claude session with the scenario's persona and hidden rules. The harness relays: every
-// Owner message enters Agent's session as a real user turn, so the hooks record it exactly as they
-// would a human's. Each run's transcript, events and checks land in test/sim/runs/<run>/.
-
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -88,7 +78,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     [
       `You are Owner in a simulation. You own a small Node project and hired Drillmaster to run your AI developer, Agent, like a bootcamp. Your objective: "${scenario.objective}".`,
       'You care about these rules, but you NEVER state them up front. Only when Agent breaks one do you correct Agent:',
-      ...scenario.hidden_rules.map((r) => `- ${r}`),
+      ...scenario.hidden_rules.map((rule) => `- ${rule}`),
       'Each turn you get what Agent just said. Reply with ONLY the message you send Agent: one or two short sentences, no preamble, no quotes.',
       '- Read the project files (Read, Glob, Grep) to check the work against your rules before you approve anything.',
       '- If a rule is broken, correct Agent in one sentence.',
@@ -133,8 +123,8 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
       // Owner reviews even delivered work: without gates, that is where Owner's corrections come.
       for (let turn = 1; turn < scenario.max_turns_per_issue; turn++) {
         const state = foldState(await events())
-        const mine = Object.values(state.workItems).filter((w) => w.started_at >= startedAt)
-        const done = mine.some((w) => w.status === 'delivered' && w.post_mortems.includes('agent'))
+        const issueItems = Object.values(state.workItems).filter((workItem) => workItem.started_at >= startedAt)
+        const done = issueItems.some((workItem) => workItem.status === 'delivered' && workItem.post_mortems.includes('agent'))
         let next: string
         if (ownerMode === 'scripted') {
           const line = lines[turn]
@@ -167,8 +157,8 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
 
   const final = await events(true)
   const { checks, metrics } = checkRun(final, { ownerMessages, issues: scenario.issues.length, retros })
-  const hard = checks.filter((c) => !c.soft)
-  const passed = hard.every((c) => c.ok)
+  const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)
+  const passed = runFailingChecks.every((check) => check.ok)
   const result = { scenario: scenario.name, owner: ownerMode, passed, cost_usd: Math.round(cost * 100) / 100, checks, metrics }
 
   mkdirSync(runDir, { recursive: true })
@@ -198,7 +188,7 @@ async function main() {
   })
   if (positionals.length === 0) throw new Error('Usage: npm run sim -- <scenario.json>... [--owner scripted|llm] [--runs n]')
   const ownerMode = values.owner === 'llm' ? 'llm' : 'scripted'
-  const summary: { scenario: string; run: number; passed: boolean; cost_usd: number; failed: string[]; soft: string[] }[] = []
+  const summary: { scenario: string; run: number; passed: boolean; cost_usd: number; failed: string[]; informational: string[] }[] = []
   for (const file of positionals) {
     const scenario = JSON.parse(readFileSync(path.resolve(file), 'utf8')) as Scenario
     for (let run = 1; run <= Number(values.runs); run++) {
@@ -210,14 +200,14 @@ async function main() {
         run,
         passed: result.passed,
         cost_usd: result.cost_usd,
-        failed: result.checks.filter((c) => !c.ok && !c.soft).map((c) => `${c.name} (${c.detail})`),
-        soft: result.checks.filter((c) => c.soft).map((c) => `${c.ok ? 'ok' : 'no'}: ${c.name} (${c.detail})`),
+        failed: result.checks.filter((check) => !check.ok && !check.doesNotFailRun).map((check) => `${check.name} (${check.detail})`),
+        informational: result.checks.filter((check) => check.doesNotFailRun).map((check) => `${check.ok ? 'ok' : 'no'}: ${check.name} (${check.detail})`),
       })
       console.log(`\n=== ${scenario.name} run ${run}: ${result.passed ? 'PASSED' : 'FAILED'} ($${result.cost_usd}) -> ${runDir}`)
-      for (const c of result.checks) console.log(`  ${c.ok ? 'ok ' : c.soft ? '~  ' : 'FAIL'} ${c.name}: ${c.detail}`)
+      for (const check of result.checks) console.log(`  ${check.ok ? 'ok ' : check.doesNotFailRun ? '~  ' : 'FAIL'} ${check.name}: ${check.detail}`)
     }
   }
-  const passes = summary.filter((s) => s.passed).length
+  const passes = summary.filter((entry) => entry.passed).length
   console.log(`\n${passes}/${summary.length} runs passed.`)
   writeFileSync(path.join(SIM, 'runs', `summary-${Date.now()}.json`), JSON.stringify(summary, null, 2))
   process.exitCode = passes === summary.length ? 0 : 1

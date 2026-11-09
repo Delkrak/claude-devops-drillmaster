@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api, usePolled } from '../api'
-import { clock, measureLabel, number, position, time } from '../format'
+import { formatClockTime, formatDateTime, formatNumber, formatPosition, measureLabel } from '../format'
 import { href } from '../router'
 import type { TimelineEvent, WorkItemView } from '../types'
 import { Badge } from '../ui/Badge'
@@ -13,7 +13,7 @@ import { Chip, SearchField } from '../ui/Select'
 import { Stat } from '../ui/Stat'
 import { Heading, Link, Muted } from '../ui/Text'
 import { Timeline, TimelineEntry } from '../ui/Timeline'
-import { describe, GROUPS, type Group } from './describe'
+import { describeTimelineEvent, GROUPS, type Group } from './describe'
 import { StatusBadge } from './WorkItemsView'
 
 export function WorkItemPage({ id, item }: { id: string; item: string }) {
@@ -43,9 +43,9 @@ function WorkItem({ view }: { view: WorkItemView }) {
           <StatusBadge item={item} />
           <Badge>workflow v{item.workflow_version}</Badge>
           <Muted>
-            started {time(item.started_at)}
+            started {formatDateTime(item.started_at)}
             {item.pr ? `, delivered as ${item.pr}` : ''}
-            {item.stage !== null ? `, at work step ${position(item.stage, item.step)}` : ''}
+            {item.stage !== null ? `, at work step ${formatPosition(item.stage, item.step)}` : ''}
           </Muted>
           {item.pending_gate?.review_failed && <Badge tone="warn">review failed: {item.pending_gate.review_failed}</Badge>}
         </Row>
@@ -54,8 +54,8 @@ function WorkItem({ view }: { view: WorkItemView }) {
         <Stat label="Work reports" value={item.reports} />
         <Stat label="Work traces" value={item.traces} />
         <Stat label="Rejections" value={item.rejections} />
-        {view.measures && <Stat label={measureLabel('owner_corrections_per_item')} value={number(view.measures.owner_corrections_per_item)} />}
-        {view.measures && <Stat label="Minutes" value={number(view.measures.minutes_per_item)} />}
+        {view.measures && <Stat label={measureLabel('owner_corrections_per_item')} value={formatNumber(view.measures.owner_corrections_per_item)} />}
+        {view.measures && <Stat label="Minutes" value={formatNumber(view.measures.minutes_per_item)} />}
       </Grid>
       <PostMortems events={view.post_mortems} />
       <Card title="Timeline" subtitle="Everything recorded for this work item, oldest first">
@@ -69,14 +69,14 @@ function PostMortems({ events }: { events: TimelineEvent[] }) {
   if (events.length === 0) return null
   return (
     <Grid>
-      {events.map((pm) => (
-        <Card key={pm.id} title={`${pm.author === 'agent' ? "Agent's" : "Drillmaster's"} workflow post mortem`} testId={`post-mortem-${String(pm.author)}`}>
+      {events.map((postMortem) => (
+        <Card key={postMortem.id} title={`${postMortem.author === 'agent' ? "Agent's" : "Drillmaster's"} workflow post mortem`} testId={`post-mortem-${String(postMortem.author)}`}>
           {(
             [
-              ['What to keep', pm.keep],
-              ['What to change', pm.change],
-              ['Workflow experiment reflections', pm.experiment_reflections],
-              ['Free text', pm.free_text],
+              ['What to keep', postMortem.keep],
+              ['What to change', postMortem.change],
+              ['Workflow experiment reflections', postMortem.experiment_reflections],
+              ['Free text', postMortem.free_text],
             ] as const
           ).map(([label, text]) =>
             text ? (
@@ -95,16 +95,17 @@ function PostMortems({ events }: { events: TimelineEvent[] }) {
 function FilteredTimeline({ events }: { events: TimelineEvent[] }) {
   const [hidden, setHidden] = useState<Set<Group>>(new Set())
   const [query, setQuery] = useState('')
-  const described = events.map((e) => ({ e, d: describe(e) }))
-  const needle = query.trim().toLowerCase()
-  const shown = described.filter(({ d }) => !hidden.has(d.group) && (!needle || d.text.toLowerCase().includes(needle)))
-  const toggle = (g: Group) => setHidden((current) => (current.has(g) ? new Set([...current].filter((x) => x !== g)) : new Set([...current, g])))
+  const described = events.map((event) => ({ event, description: describeTimelineEvent(event) }))
+  const searchText = query.trim().toLowerCase()
+  const shown = described.filter(({ description }) => !hidden.has(description.group) && (!searchText || description.text.toLowerCase().includes(searchText)))
+  const toggleGroup = (group: Group) =>
+    setHidden((current) => (current.has(group) ? new Set([...current].filter((hiddenGroup) => hiddenGroup !== group)) : new Set([...current, group])))
   return (
     <Stack>
       <Row>
-        {GROUPS.map((g) => (
-          <Chip key={g} on={!hidden.has(g)} onClick={() => toggle(g)}>
-            {g} ({described.filter(({ d }) => d.group === g).length})
+        {GROUPS.map((group) => (
+          <Chip key={group} on={!hidden.has(group)} onClick={() => toggleGroup(group)}>
+            {group} ({described.filter(({ description }) => description.group === group).length})
           </Chip>
         ))}
         <SearchField label="Search the timeline" placeholder="Search, e.g. added_step" value={query} onChange={setQuery} />
@@ -113,9 +114,9 @@ function FilteredTimeline({ events }: { events: TimelineEvent[] }) {
         <Empty>Nothing matches.</Empty>
       ) : (
         <Timeline>
-          {shown.map(({ e, d }) => (
-            <TimelineEntry key={e.id} time={clock(e.at)} tone={d.tone} kind={e.type}>
-              {d.body}
+          {shown.map(({ event, description }) => (
+            <TimelineEntry key={event.id} time={formatClockTime(event.at)} tone={description.tone} kind={event.type}>
+              {description.body}
             </TimelineEntry>
           ))}
         </Timeline>

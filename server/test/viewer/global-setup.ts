@@ -1,9 +1,3 @@
-// Seeds a fresh Drillmaster home and serves it, for the viewer's browser tests:
-// - "node-report": a real simulated-Owner run (events recorded from the harness), and
-// - "gates-demo": built through the real app, covering a Drillmaster gate rejection, a pending
-//   Owner gate, a delivered item with an added step, and both post mortems.
-// It uses the built server (dist), the same code the plugin runs.
-
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

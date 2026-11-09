@@ -1,7 +1,3 @@
-// The plugin layer: real Claude Code (`claude -p --plugin-dir <repo>`) in a temp project, with a
-// scripted reviewer. It needs a signed-in claude CLI and costs a little, so it only runs with
-// DRILLMASTER_PLUGIN_TESTS=1 (npm run build first: the plugin runs server/dist).
-
 import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'

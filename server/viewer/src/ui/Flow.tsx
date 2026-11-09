@@ -1,5 +1,3 @@
-// The workflow drawn as columns: one per work stage, a card per work step.
-
 import * as stylex from '@stylexjs/stylex'
 import type { ReactNode } from 'react'
 import { colors, layout, shape, space } from '../styles/tokens.stylex'

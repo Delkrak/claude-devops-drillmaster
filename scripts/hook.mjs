@@ -1,19 +1,17 @@
 #!/usr/bin/env node
-// The Drillmaster hook client. It stores nothing itself: it forwards the raw Claude Code hook
-// payload to the Drillmaster server (POST /hooks/<event>) and prints whatever the server returns.
-// It must never fail the session, so every error ends in silence and exit code 0.
-//
-// Usage (from hooks/hooks.json): node hook.mjs <HookEvent>
-
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const home = () => path.resolve(process.env.DRILLMASTER_HOME ?? path.join(os.homedir(), '.drillmaster'))
+const POST_TIMEOUT_MS = 4000
+const START_POLL_MS = 150
+const START_POLL_ATTEMPTS = 30
 
-const readStdin = () => {
+const drillmasterHome = () => path.resolve(process.env.DRILLMASTER_HOME ?? path.join(os.homedir(), '.drillmaster'))
+
+const readHookPayload = () => {
   try {
     return JSON.parse(readFileSync(0, 'utf8') || '{}')
   } catch {
@@ -21,58 +19,57 @@ const readStdin = () => {
   }
 }
 
-const serverUrl = () => {
+const announcedServerUrl = () => {
   try {
-    return JSON.parse(readFileSync(path.join(home(), 'daemon.json'), 'utf8')).url
+    return JSON.parse(readFileSync(path.join(drillmasterHome(), 'daemon.json'), 'utf8')).url
   } catch {
     return undefined
   }
 }
 
-const post = async (url, event, body) => {
-  const res = await fetch(`${url}/hooks/${event}`, {
+const postHookEvent = async (serverUrl, hookEvent, body) => {
+  const response = await fetch(`${serverUrl}/hooks/${hookEvent}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(POST_TIMEOUT_MS),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
 }
 
-/** Starts the server from this plugin's build, then waits for it to announce itself. */
-const startServer = async () => {
-  const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js')
-  spawn(process.execPath, [cli, 'daemon'], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
-  for (let i = 0; i < 30; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    const url = serverUrl()
-    if (url) return url
+const startServerFromPluginBuild = async () => {
+  const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js')
+  spawn(process.execPath, [cliPath, 'daemon'], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  for (let attempt = 0; attempt < START_POLL_ATTEMPTS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, START_POLL_MS))
+    const serverUrl = announcedServerUrl()
+    if (serverUrl) return serverUrl
   }
   return undefined
 }
 
-const main = async () => {
-  const event = process.argv[2]
-  if (!event) return
-  const payload = readStdin()
+const forwardHook = async () => {
+  const hookEvent = process.argv[2]
+  if (!hookEvent) return
+  const payload = readHookPayload()
   const body = { project: process.env.CLAUDE_PROJECT_DIR ?? payload.cwd ?? process.cwd(), payload }
 
-  let url = serverUrl()
-  let result
+  let serverUrl = announcedServerUrl()
+  let serverAnswer
   try {
-    if (!url) throw new Error('no server')
-    result = await post(url, event, body)
+    if (!serverUrl) throw new Error('no server')
+    serverAnswer = await postHookEvent(serverUrl, hookEvent, body)
   } catch {
     // Only the session's first hook starts the server; later hooks must stay fast.
-    if (event !== 'SessionStart') return
-    url = await startServer()
-    if (!url) return
-    result = await post(url, event, body)
+    if (hookEvent !== 'SessionStart') return
+    serverUrl = await startServerFromPluginBuild()
+    if (!serverUrl) return
+    serverAnswer = await postHookEvent(serverUrl, hookEvent, body)
   }
-  if (result?.output) process.stdout.write(JSON.stringify(result.output))
+  if (serverAnswer?.output) process.stdout.write(JSON.stringify(serverAnswer.output))
 }
 
-main().catch(() => {
-  // A Drillmaster hook only records; failing silently loses one trace, never the session.
+forwardHook().catch(() => {
+  // A hook only records: failing silently loses one trace, never the session.
 })

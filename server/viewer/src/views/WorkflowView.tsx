@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { gateLabel, gateTone, measureLabel, time } from '../format'
+import { formatDateTime, gateLabel, gateTone, measureLabel } from '../format'
 import type { PolicyRule, ProjectView, Workflow } from '../types'
 import { Badge } from '../ui/Badge'
 import { Row, Stack } from '../ui/Box'
@@ -9,21 +9,20 @@ import { Flow, FlowStage, FlowStep } from '../ui/Flow'
 import { Select } from '../ui/Select'
 import { Code, Heading, Muted, Strong } from '../ui/Text'
 
-/** The workflow as it is now, or any earlier version: stages, steps, gates, rules, experiments. */
 export function WorkflowView({ project }: { project: ProjectView }) {
   const [version, setVersion] = useState(project.workflow.version)
-  const shown = project.versions.find((v) => v.version === version) ?? project.versions.at(-1)!
+  const shown = project.versions.find((candidate) => candidate.version === version) ?? project.versions.at(-1)!
   return (
     <Card
       testId="workflow"
       title={`Workflow version ${shown.version}`}
-      subtitle={`${time(shown.at)}: ${shown.reason}`}
+      subtitle={`${formatDateTime(shown.at)}: ${shown.reason}`}
       actions={
-        <Select label="Workflow version" value={version} onChange={(v) => setVersion(Number(v))}>
-          {project.versions.map((v) => (
-            <option key={v.version} value={v.version}>
-              v{v.version}
-              {v.version === project.workflow.version ? ' (current)' : ''}
+        <Select label="Workflow version" value={version} onChange={(selectedVersion) => setVersion(Number(selectedVersion))}>
+          {project.versions.map((workflowVersion) => (
+            <option key={workflowVersion.version} value={workflowVersion.version}>
+              v{workflowVersion.version}
+              {workflowVersion.version === project.workflow.version ? ' (current)' : ''}
             </option>
           ))}
         </Select>
@@ -35,13 +34,13 @@ export function WorkflowView({ project }: { project: ProjectView }) {
 }
 
 function WorkflowBody({ workflow }: { workflow: Workflow }) {
-  const rules = new Map<string, PolicyRule>(workflow.policies.flatMap((p) => p.rules.map((r) => [`${p.name} ${r.id}`, r] as const)))
+  const rulesByRef = new Map<string, PolicyRule>(workflow.policies.flatMap((policy) => policy.rules.map((rule) => [`${policy.name} ${rule.id}`, rule] as const)))
   return (
     <Stack>
       <Row>
         <Strong>Owner's objective:</Strong> {workflow.objective.text}
-        {workflow.objective.measures.map((m) => (
-          <Badge key={m}>{measureLabel(m)}</Badge>
+        {workflow.objective.measures.map((measure) => (
+          <Badge key={measure}>{measureLabel(measure)}</Badge>
         ))}
       </Row>
       {workflow.stages.length === 0 ? (
@@ -65,8 +64,8 @@ function WorkflowBody({ workflow }: { workflow: Workflow }) {
                     <Badge tone={gateTone[step.gate]}>{gateLabel[step.gate]}</Badge>
                   </Row>
                   {step.rules.map((ref) => (
-                    <Muted key={ref} title={rules.get(ref)?.verified_by}>
-                      <Code>{ref}</Code> {rules.get(ref)?.rule}
+                    <Muted key={ref} title={rulesByRef.get(ref)?.verified_by}>
+                      <Code>{ref}</Code> {rulesByRef.get(ref)?.rule}
                     </Muted>
                   ))}
                   {step.report.length > 0 && <Muted>Report: {step.report.join('; ')}</Muted>}
@@ -83,12 +82,12 @@ function WorkflowBody({ workflow }: { workflow: Workflow }) {
         workflow.policies.map((policy) => (
           <Stack key={policy.name} tight>
             <Strong>{policy.name} work policy</Strong>
-            {policy.rules.map((r) => (
-              <Muted key={r.id}>
+            {policy.rules.map((rule) => (
+              <Muted key={rule.id}>
                 <Code>
-                  {policy.name} {r.id}
+                  {policy.name} {rule.id}
                 </Code>{' '}
-                {r.rule}. Verified by {r.verified_by}.
+                {rule.rule}. Verified by {rule.verified_by}.
               </Muted>
             ))}
           </Stack>
@@ -98,12 +97,12 @@ function WorkflowBody({ workflow }: { workflow: Workflow }) {
       {workflow.experiments.length === 0 ? (
         <Empty>No workflow experiments are running.</Empty>
       ) : (
-        workflow.experiments.map((x) => (
-          <Row key={x.id} testId="experiment">
-            <Badge tone="warn">experiment {x.id}</Badge>
-            <span>{x.change}</span>
+        workflow.experiments.map((experiment) => (
+          <Row key={experiment.id} testId="experiment">
+            <Badge tone="warn">experiment {experiment.id}</Badge>
+            <span>{experiment.change}</span>
             <Muted>
-              Purpose: {x.purpose}. Must not worsen {measureLabel(x.measure)} (baseline {x.baseline}, since {x.started}).
+              Purpose: {experiment.purpose}. Must not worsen {measureLabel(experiment.measure)} (baseline {experiment.baseline}, since {experiment.started}).
             </Muted>
           </Row>
         ))

@@ -1,6 +1,3 @@
-// One work item through the REST API, the way Claude Code and the shim drive it: hooks for the
-// session, tool calls for Agent.
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'

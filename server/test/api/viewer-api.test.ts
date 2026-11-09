@@ -1,5 +1,3 @@
-// The viewer's read-only API: projects, a project's full status, and one work item's timeline.
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'

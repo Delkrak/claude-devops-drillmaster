@@ -32,28 +32,27 @@ export interface Column<T> {
   cell: (row: T) => ReactNode
 }
 
-/** A table whose rows can link somewhere: clicking a row follows its href. */
 export function Table<T>({ rows, columns, rowKey, rowHref, testId }: { rows: readonly T[]; columns: Column<T>[]; rowKey: (row: T) => string; rowHref?: (row: T) => string; testId?: string }) {
   return (
     <div {...stylex.props(styles.wrap)}>
       <table {...stylex.props(styles.table)} data-testid={testId}>
         <thead>
           <tr>
-            {columns.map((c) => (
-              <th key={c.header} {...stylex.props(styles.th)}>
-                {c.header}
+            {columns.map((column) => (
+              <th key={column.header} {...stylex.props(styles.th)}>
+                {column.header}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
-            const target = rowHref?.(row)
+            const rowTarget = rowHref?.(row)
             return (
-              <tr key={rowKey(row)} data-href={target} onClick={target ? () => (window.location.hash = target) : undefined} {...stylex.props(target !== undefined && styles.linked)}>
-                {columns.map((c) => (
-                  <td key={c.header} {...stylex.props(styles.td)}>
-                    {c.cell(row)}
+              <tr key={rowKey(row)} data-href={rowTarget} onClick={rowTarget ? () => (window.location.hash = rowTarget) : undefined} {...stylex.props(rowTarget !== undefined && styles.linked)}>
+                {columns.map((column) => (
+                  <td key={column.header} {...stylex.props(styles.td)}>
+                    {column.cell(row)}
                   </td>
                 ))}
               </tr>

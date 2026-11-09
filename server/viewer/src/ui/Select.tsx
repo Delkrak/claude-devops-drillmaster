@@ -30,14 +30,14 @@ const styles = stylex.create({
 
 export function Select({ label, value, onChange, children }: { label: string; value: string | number; onChange: (value: string) => void; children: ReactNode }) {
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} {...stylex.props(styles.field)}>
+    <select aria-label={label} value={value} onChange={(changeEvent) => onChange(changeEvent.target.value)} {...stylex.props(styles.field)}>
       {children}
     </select>
   )
 }
 
 export function SearchField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <input type="search" aria-label={label} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} {...stylex.props(styles.field)} />
+  return <input type="search" aria-label={label} placeholder={placeholder} value={value} onChange={(changeEvent) => onChange(changeEvent.target.value)} {...stylex.props(styles.field)} />
 }
 
 export function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {

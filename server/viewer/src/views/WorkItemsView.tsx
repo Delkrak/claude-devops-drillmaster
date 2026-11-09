@@ -1,4 +1,4 @@
-import { number, position, time } from '../format'
+import { formatDateTime, formatNumber, formatPosition } from '../format'
 import { href } from '../router'
 import type { ProjectView, WorkItemRow } from '../types'
 import { Badge } from '../ui/Badge'
@@ -15,27 +15,27 @@ export function StatusBadge({ item }: { item: Pick<WorkItemRow, 'status' | 'pend
 
 export function WorkItemsView({ project }: { project: ProjectView }) {
   if (project.work_items.length === 0) return <Empty>No work items yet.</Empty>
-  const item = (i: WorkItemRow) => href.item(project.summary.id, i.work_item_id)
+  const itemHref = (workItem: WorkItemRow) => href.item(project.summary.id, workItem.work_item_id)
   return (
     <Card testId="work-items">
       <Table<WorkItemRow>
         testId="work-items-table"
         rows={project.work_items}
-        rowKey={(i) => i.work_item_id}
-        rowHref={item}
+        rowKey={(workItem) => workItem.work_item_id}
+        rowHref={itemHref}
         columns={[
-          { header: 'Work item', cell: (i) => <Link href={item(i)}>{i.work_item_id}</Link> },
-          { header: 'Issue', cell: (i) => i.issue },
-          { header: 'Status', cell: (i) => <StatusBadge item={i} /> },
-          { header: 'At', cell: (i) => position(i.stage, i.step) },
-          { header: 'Workflow', cell: (i) => `v${i.workflow_version}` },
-          { header: 'Reports', cell: (i) => i.reports },
-          { header: 'Traces', cell: (i) => i.traces },
-          { header: 'Rejections', cell: (i) => (i.rejections ? <Badge tone="bad">{i.rejections}</Badge> : 0) },
-          { header: 'Added steps', cell: (i) => (i.added_steps ? <Badge tone="warn">{i.added_steps}</Badge> : 0) },
-          { header: 'Corrections', cell: (i) => number(i.measures?.owner_corrections_per_item) },
-          { header: 'Post mortems', cell: (i) => i.post_mortems.join(' + ') || '-' },
-          { header: 'Started', cell: (i) => time(i.started_at) },
+          { header: 'Work item', cell: (workItem) => <Link href={itemHref(workItem)}>{workItem.work_item_id}</Link> },
+          { header: 'Issue', cell: (workItem) => workItem.issue },
+          { header: 'Status', cell: (workItem) => <StatusBadge item={workItem} /> },
+          { header: 'At', cell: (workItem) => formatPosition(workItem.stage, workItem.step) },
+          { header: 'Workflow', cell: (workItem) => `v${workItem.workflow_version}` },
+          { header: 'Reports', cell: (workItem) => workItem.reports },
+          { header: 'Traces', cell: (workItem) => workItem.traces },
+          { header: 'Rejections', cell: (workItem) => (workItem.rejections ? <Badge tone="bad">{workItem.rejections}</Badge> : 0) },
+          { header: 'Added steps', cell: (workItem) => (workItem.added_steps ? <Badge tone="warn">{workItem.added_steps}</Badge> : 0) },
+          { header: 'Corrections', cell: (workItem) => formatNumber(workItem.measures?.owner_corrections_per_item) },
+          { header: 'Post mortems', cell: (workItem) => workItem.post_mortems.join(' + ') || '-' },
+          { header: 'Started', cell: (workItem) => formatDateTime(workItem.started_at) },
         ]}
       />
     </Card>

@@ -1,5 +1,5 @@
 import { api, usePolled } from '../api'
-import { time } from '../format'
+import { formatDateTime } from '../format'
 import { href } from '../router'
 import type { ProjectSummary } from '../types'
 import { Badge } from '../ui/Badge'
@@ -24,14 +24,14 @@ export function ProjectsPage() {
               <Table<ProjectSummary>
                 testId="projects"
                 rows={projects}
-                rowKey={(p) => p.id}
-                rowHref={(p) => href.project(p.id)}
+                rowKey={(project) => project.id}
+                rowHref={(project) => href.project(project.id)}
                 columns={[
-                  { header: 'Project', cell: (p) => <Link href={href.project(p.id)}>{p.dir}</Link> },
-                  { header: "Owner's objective", cell: (p) => p.objective },
-                  { header: 'Workflow', cell: (p) => <Badge tone="accent">v{p.workflow_version}</Badge> },
-                  { header: 'Work items', cell: (p) => (p.active ? `${p.work_items} (${p.active} active)` : p.work_items) },
-                  { header: 'Last activity', cell: (p) => time(p.last_activity) },
+                  { header: 'Project', cell: (project) => <Link href={href.project(project.id)}>{project.dir}</Link> },
+                  { header: "Owner's objective", cell: (project) => project.objective },
+                  { header: 'Workflow', cell: (project) => <Badge tone="accent">v{project.workflow_version}</Badge> },
+                  { header: 'Work items', cell: (project) => (project.active ? `${project.work_items} (${project.active} active)` : project.work_items) },
+                  { header: 'Last activity', cell: (project) => formatDateTime(project.last_activity) },
                 ]}
               />
             </Card>

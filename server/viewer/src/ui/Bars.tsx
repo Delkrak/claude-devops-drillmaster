@@ -7,13 +7,12 @@ const styles = stylex.create({
   height: (percent: number) => ({ height: `${percent}%` }),
 })
 
-/** A tiny bar chart: one bar per value, scaled to the largest. */
 export function Bars({ values, label }: { values: { key: string; value: number; title: string }[]; label: string }) {
-  const max = Math.max(1, ...values.map((v) => v.value))
+  const largest = Math.max(1, ...values.map((bar) => bar.value))
   return (
     <div {...stylex.props(styles.bars)} role="img" aria-label={label}>
-      {values.map((v) => (
-        <div key={v.key} title={v.title} {...stylex.props(styles.bar, styles.height(Math.max(4, (v.value / max) * 100)))} />
+      {values.map((bar) => (
+        <div key={bar.key} title={bar.title} {...stylex.props(styles.bar, styles.height(Math.max(4, (bar.value / largest) * 100)))} />
       ))}
     </div>
   )

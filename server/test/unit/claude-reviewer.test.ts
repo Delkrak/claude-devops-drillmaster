@@ -1,5 +1,3 @@
-// The claude -p adapter against a stand-in executable that behaves like `claude -p --output-format json`.
-
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

@@ -1,6 +1,3 @@
-// One work item through a grown workflow over the REST tool endpoint: build (two self gates),
-// then review (an Owner gate, which stays pending until phase 4 resolves it).
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'

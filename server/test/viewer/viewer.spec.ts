@@ -1,6 +1,3 @@
-// The viewer in a real browser: every page and tab, navigation between them, filters and search,
-// live refresh, and the dark theme from the StyleX tokens.
-
 import { expect, test } from '@playwright/test'
 import { VIEWER_PORT } from './port.js'
 import { DEMO_DIR } from './global-setup.js'
