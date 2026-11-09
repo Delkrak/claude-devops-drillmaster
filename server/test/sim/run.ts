@@ -1,9 +1,12 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import type { DrillmasterEvent } from '../../src/core/events.js'
+import { extractFirstJsonObject } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { checkRun } from './assertions.js'
 import { claudeTurn } from './claude.js'
@@ -18,6 +21,37 @@ interface Scenario {
   retro_after: number[]
   max_turns_per_issue: number
   scripted: { setup: string; issues: string[][]; retro: string[] }
+}
+
+interface AskedQuestion {
+  question: string
+  options: { label: string; description?: string }[]
+}
+
+interface OwnerAnswers {
+  answers: Record<string, string>
+  annotations: Record<string, { notes: string }>
+}
+
+/** Owner's answer when no one decides otherwise: approve, or the first option. */
+const defaultAnswers = (questions: readonly AskedQuestion[]): OwnerAnswers => ({
+  answers: Object.fromEntries(questions.map((question) => [question.question, (question.options.find((option) => option.label === 'Approve') ?? question.options[0])?.label ?? 'Approve'])),
+  annotations: {},
+})
+
+/** The endpoint ownerMcp.mjs posts AskUserQuestion to, while Agent's turn waits for Owner. */
+function listenForOwnerQuestions(answer: (questions: AskedQuestion[]) => Promise<OwnerAnswers>) {
+  const server = createServer(async (request, response) => {
+    let body = ''
+    for await (const chunk of request) body += chunk
+    const { questions } = JSON.parse(body) as { questions: AskedQuestion[] }
+    const answered = await answer(questions).catch(() => defaultAnswers(questions))
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(answered))
+  })
+  return new Promise<{ url: string; close: () => void }>((resolve) =>
+    server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => server.close() })),
+  )
 }
 
 const SIM = import.meta.dirname
@@ -57,17 +91,47 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   let agentSession: string | undefined
   let ownerSession: string | undefined
   let ownerMessages = 0
+  let ownerQuestions = 0
   let retros = 0
+  let currentIssue = ''
 
   const log = (who: string, text: string) => {
     transcript.push(`## ${who}`, '', text.trim(), '')
     console.log(`[${scenario.name}] ${who}: ${text.trim().replace(/\s+/g, ' ').slice(0, 160)}`)
   }
 
+  const answerOwnerQuestions = async (questions: AskedQuestion[]): Promise<OwnerAnswers> => {
+    ownerQuestions += questions.length
+    let answered = defaultAnswers(questions)
+    if (ownerMode === 'llm') {
+      const reply = await owner(
+        [
+          'Agent asks you these questions in a form (AskUserQuestion):',
+          JSON.stringify(questions.map(({ question, options }) => ({ question, options: options.map((option) => option.label) })), null, 2),
+          'Decide each one as Owner. When it is about the work, check the project files against your rules first.',
+          'Reply with JSON only: {"answers": {"<question>": "<an option label, or your own words>"}, "notes": {"<question>": "<an optional note>"}}',
+        ].join('\n'),
+        currentIssue,
+      )
+      const parsed = extractFirstJsonObject(reply) as { answers?: Record<string, unknown>; notes?: Record<string, unknown> } | undefined
+      const answers = Object.fromEntries(questions.map((question) => [question.question, typeof parsed?.answers?.[question.question] === 'string' ? (parsed.answers[question.question] as string) : answered.answers[question.question]!]))
+      const annotations = Object.fromEntries(
+        questions.flatMap((question) => (typeof parsed?.notes?.[question.question] === 'string' && parsed.notes[question.question] ? [[question.question, { notes: parsed.notes[question.question] as string }]] : [])),
+      )
+      answered = { answers, annotations }
+    }
+    log('Owner (AskUserQuestion)', questions.map((question) => `${question.question} -> ${answered.answers[question.question]}${answered.annotations[question.question] ? ` (note: ${answered.annotations[question.question]!.notes})` : ''}`).join('\n'))
+    return answered
+  }
+  const ownerAnswerEndpoint = await listenForOwnerQuestions(answerOwnerQuestions)
+  const ownerMcpConfig = path.join(home, 'owner-mcp.json')
+  writeFileSync(ownerMcpConfig, JSON.stringify({ mcpServers: { owner: { command: 'node', args: [path.join(SIM, 'ownerMcp.mjs')], env: { OWNER_ANSWER_URL: ownerAnswerEndpoint.url } } } }))
+  const agentArgs = ['--plugin-dir', REPO, '--mcp-config', ownerMcpConfig, '--permission-prompt-tool', 'mcp__owner__answer', '--allowedTools', ...AGENT_TOOLS]
+
   const agent = async (prompt: string, countAsOwner = true) => {
     log('Owner', prompt)
     if (countAsOwner) ownerMessages++
-    const turn = await claudeTurn({ cwd: project, env, prompt, resume: agentSession, args: ['--plugin-dir', REPO, '--allowedTools', ...AGENT_TOOLS] })
+    const turn = await claudeTurn({ cwd: project, env, prompt, resume: agentSession, args: agentArgs })
     agentSession = turn.session_id
     cost += turn.cost_usd
     log('Agent', turn.result || '(no text)')
@@ -119,6 +183,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
       const lines = scenario.scripted.issues[i] ?? []
       const opening = (lines[0] ?? 'Please do issue {id} with the drillmaster work skill: {text}').replace('{text}', issue.text).replace('{id}', issue.id)
       const startedAt = new Date().toISOString()
+      currentIssue = `The current issue: ${issue.id} ${issue.text}`
       let said = await agent(opening)
       // Owner reviews even delivered work: without gates, that is where Owner's corrections come.
       for (let turn = 1; turn < scenario.max_turns_per_issue; turn++) {
@@ -156,7 +221,8 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   }
 
   const final = await events(true)
-  const { checks, metrics } = checkRun(final, { ownerMessages, issues: scenario.issues.length, retros })
+  ownerAnswerEndpoint.close()
+  const { checks, metrics } = checkRun(final, { ownerMessages, ownerQuestions, issues: scenario.issues.length, retros })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)
   const passed = runFailingChecks.every((check) => check.ok)
   const result = { scenario: scenario.name, owner: ownerMode, passed, cost_usd: Math.round(cost * 100) / 100, checks, metrics }

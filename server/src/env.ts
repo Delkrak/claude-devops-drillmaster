@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { ClaudeReviewer } from './adapters/claudeReviewer.js'
@@ -15,11 +16,53 @@ export const drillmasterHome = (env: NodeJS.ProcessEnv = process.env) =>
 
 export const daemonInfoFile = (env: NodeJS.ProcessEnv = process.env) => path.join(drillmasterHome(env), 'daemon.json')
 
+interface FolderLink {
+  project?: unknown
+  store?: { repo?: unknown; path?: unknown }
+}
+
+function readFolderLink(projectDir: string): FolderLink | undefined {
+  try {
+    return JSON.parse(readFileSync(path.join(projectDir, '.drillmaster', 'drillmaster.json'), 'utf8')) as FolderLink
+  } catch {
+    return undefined
+  }
+}
+
+/** A folder linked to a git store names its project in .drillmaster/drillmaster.json. */
+function linkedProjectName(projectDir: string) {
+  const project = readFolderLink(projectDir)?.project
+  return typeof project === 'string' && /^[A-Za-z0-9_-]+$/.test(project) ? project : undefined
+}
+
+/** The git store a linked folder points at, for a machine that has no events of the project yet. */
+export function linkedStore(projectDir: string): { repo: string; path: string } | undefined {
+  const store = readFolderLink(projectDir)?.store
+  return typeof store?.repo === 'string' && typeof store.path === 'string' ? { repo: store.repo, path: store.path } : undefined
+}
+
 export function projectId(projectDir: string) {
+  const linked = linkedProjectName(projectDir)
+  if (linked) return linked
   let normalizedDir = path.resolve(projectDir)
   if (process.platform === 'win32') normalizedDir = normalizedDir.toLowerCase()
   const readableName = path.basename(normalizedDir).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, MAX_READABLE_NAME_LENGTH) || 'project'
   return `${readableName}-${createHash('sha256').update(normalizedDir).digest('hex').slice(0, 12)}`
+}
+
+/** This server's name in git stores: made once per Drillmaster home, so a machine keeps it. */
+export function storeOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  const home = drillmasterHome(env)
+  const writerFile = path.join(home, 'writer.json')
+  let writer: string
+  try {
+    writer = (JSON.parse(readFileSync(writerFile, 'utf8')) as { writer: string }).writer
+  } catch {
+    writer = `w_${randomUUID().slice(0, 8)}`
+    mkdirSync(home, { recursive: true })
+    writeFileSync(writerFile, JSON.stringify({ writer }) + '\n')
+  }
+  return { writer, clonesRoot: path.join(home, 'stores') }
 }
 
 const secondsToMs = (seconds: string | undefined) => (seconds ? Number(seconds) * 1000 : undefined)

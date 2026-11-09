@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { InvalidArtifact, readArtifactFromWorkFolder } from './adapters/artifacts.js'
+import { StorePublisher } from './adapters/storePublisher.js'
+import { DEFAULT_BRANCH_PATTERN, isPublishMoment, type Storage } from './core/storeLayout.js'
 import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type MetricAnswer, type NewEvent } from './core/events.js'
 import { judgeExperiments } from './core/experiments.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
@@ -48,8 +51,8 @@ import {
 } from './core/state.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
-import { compareVersions, Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
-import { projectId as projectIdOf } from './env.js'
+import { compareVersions, Objective, toSemver, WorkflowDocument, workflowZero } from './core/workflow.js'
+import { linkedStore, projectId as projectIdOf } from './env.js'
 import type { Ports } from './ports.js'
 import { VERSION } from './version.js'
 
@@ -89,6 +92,8 @@ interface KnownVersions {
 
 export interface DrillmasterOptions {
   recordRawHookPayloads?: boolean
+  /** Who this server writes as in git stores, and where it keeps its clones of them. */
+  store?: { writer: string; clonesRoot: string }
 }
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
@@ -139,7 +144,14 @@ const WorkDeliverArgs = z.object({ token: tokenField, pr: textField, summary: te
 const WorkPostMortemArgs = z.object({ token: tokenField, keep: textField, change: textField, experiment_reflections: textField, free_text: z.string() }).strict()
 
 const RetroArgs = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('setup'), objective: z.string().min(1), measures: z.array(z.string()).min(1) }).strict(),
+  z
+    .object({
+      action: z.literal('setup'),
+      objective: z.string().min(1),
+      measures: z.array(z.string()).min(1),
+      store: z.object({ repo: z.string().min(1), path: z.string().min(1).optional() }).strict().optional(),
+    })
+    .strict(),
   z.object({ action: z.literal('run') }).strict(),
   z.object({ action: z.literal('apply'), proposal: z.number().int().positive().optional() }).strict(),
 ])
@@ -295,6 +307,12 @@ export const TOOLS: ToolDefinition[] = [
         action: { type: 'string', enum: ['setup', 'run', 'apply'] },
         objective: { type: 'string', description: 'setup: what Owner wants Drillmaster to achieve with the workflow.' },
         measures: { type: 'array', items: { type: 'string', enum: [...MEASURE_NAMES] }, description: 'setup: the measures of the objective.' },
+        store: {
+          type: 'object',
+          description: "setup: the private git repo (URL or path) that keeps the project's work traces, and the folder in it (default: the project's name).",
+          properties: { repo: { type: 'string' }, path: { type: 'string' } },
+          required: ['repo'],
+        },
         proposal: { type: 'integer', minimum: 1, description: 'apply: only this proposal from the latest run.' },
       },
       required: ['action'],
@@ -320,6 +338,8 @@ export const TOOLS: ToolDefinition[] = [
 export class Drillmaster {
   private readonly lockByProject = new Map<string, Promise<unknown>>()
   private readonly knownVersionsByProject = new Map<string, KnownVersions>()
+  private readonly publishChainByProject = new Map<string, Promise<void>>()
+  private readonly storeProblemByProject = new Map<string, string>()
   private readonly backgroundWork = new Set<Promise<unknown>>()
 
   constructor(
@@ -363,13 +383,84 @@ export class Drillmaster {
       at: this.ports.clock.now(),
       ...(madeUnder ? { workflow_version: madeUnder } : {}),
       drillmaster_version: VERSION,
+      ...(this.options.store ? { writer: this.options.store.writer } : {}),
       ...newEvent,
     } as DrillmasterEvent
     await this.ports.store.append(projectId, storedEvent)
+    if (isPublishMoment(storedEvent)) this.publishInBackground(projectId)
     if (storedEvent.type === 'project_initialized' || storedEvent.type === 'workflow_changed') known.workflow = toSemver(storedEvent.workflow.version)
     if (storedEvent.type === 'work_item_started') known.items.set(storedEvent.work_item_id, toSemver(storedEvent.workflow_version))
     if (storedEvent.type === 'work_item_restarted') known.items.set(storedEvent.work_item_id, storedEvent.to_version)
     return storedEvent
+  }
+
+  private publisherFor(projectId: string, storage: Storage) {
+    return StorePublisher.forProject(this.options.store!.clonesRoot, projectId, storage, this.options.store!.writer)
+  }
+
+  /** One publish at a time per project; a failure is kept to tell Agent, and the next publish retries it. */
+  private publishInBackground(projectId: string) {
+    if (!this.options.store) return
+    const previousPublish = this.publishChainByProject.get(projectId) ?? Promise.resolve()
+    const thisPublish = previousPublish.then(async () => {
+      const events = await this.ports.store.read(projectId)
+      const storage = foldState(events).workflow?.storage
+      if (!storage) return
+      try {
+        await this.publisherFor(projectId, storage).publish(events)
+        this.storeProblemByProject.delete(projectId)
+      } catch (error) {
+        this.storeProblemByProject.set(projectId, error instanceof Error ? error.message : String(error))
+      }
+    })
+    this.publishChainByProject.set(projectId, thisPublish)
+    this.runInBackground(thisPublish)
+  }
+
+  /** Adds the events other writers pushed to the store, which this server has not seen yet. */
+  private async importFromStore(projectDir: string) {
+    const projectId = projectIdOf(projectDir)
+    const linked = linkedStore(projectDir)
+    const storage = (await this.state(projectDir)).workflow?.storage ?? (linked ? { ...linked, branch: { pattern: DEFAULT_BRANCH_PATTERN } } : undefined)
+    if (!storage || !this.options.store) return
+    let imported: DrillmasterEvent[]
+    try {
+      imported = await this.publisherFor(projectId, storage).importEvents()
+    } catch (error) {
+      this.storeProblemByProject.set(projectId, error instanceof Error ? error.message : String(error))
+      return
+    }
+    await this.withProjectLock(projectDir, async () => {
+      const knownIds = new Set((await this.ports.store.read(projectId)).map((event) => event.id))
+      const unseen = [...new Map(imported.filter((event) => !knownIds.has(event.id)).map((event) => [event.id, event])).values()].sort((a, b) => a.at.localeCompare(b.at))
+      for (const event of unseen) await this.ports.store.append(projectId, event)
+      if (unseen.length) this.knownVersionsByProject.delete(projectId)
+    })
+  }
+
+  /**
+   * Keeps .drillmaster/ in the work folder: the pin and store, and a copy of the workflow. The
+   * store is the source of truth; a copy edited by hand is rewritten, and the returned note says so.
+   */
+  private async writeWorkFolderMirror(projectDir: string, state: ProjectState): Promise<string | undefined> {
+    const workflow = state.workflow
+    if (!workflow?.storage) return undefined
+    const folder = path.join(projectDir, '.drillmaster')
+    const workflowFile = path.join(folder, 'workflow.json')
+    const content = JSON.stringify(workflow, null, 2) + '\n'
+    const existing = await readFile(workflowFile, 'utf8').catch(() => undefined)
+    await mkdir(folder, { recursive: true })
+    await writeFile(
+      path.join(folder, 'drillmaster.json'),
+      JSON.stringify({ drillmaster_version: VERSION, project: projectIdOf(projectDir), store: { repo: workflow.storage.repo, path: workflow.storage.path } }, null, 2) + '\n',
+    )
+    if (existing === content) return undefined
+    await writeFile(workflowFile, content)
+    if (existing === undefined) return undefined
+    const wasAnEarlierVersion = state.versions.some((version) => JSON.stringify(version, null, 2) + '\n' === existing.replace(/\r\n/g, '\n'))
+    return wasAnEarlierVersion
+      ? `.drillmaster/workflow.json is now workflow ${workflow.version}: commit it with your next work.`
+      : '.drillmaster/workflow.json had been edited by hand, and Drillmaster rewrote it. The workflow changes only at a workflow retrospective.'
   }
 
   private runInBackground(task: Promise<unknown>) {
@@ -408,18 +499,29 @@ export class Drillmaster {
     return view
   }
 
-  init(projectDir: string, objective: unknown) {
-    return this.withProjectLock(projectDir, async (projectId) => {
+  async init(projectDir: string, objective: unknown, store?: { repo: string; path?: string }) {
+    const workflow = await this.withProjectLock(projectDir, async (projectId) => {
       const parsedObjective = Objective.safeParse(objective)
       if (!parsedObjective.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedObjective.error)}`)
       const state = foldState(await this.ports.store.read(projectId))
       if (state.initialized) {
         throw new UserError('This project already has a workflow. It changes only at a workflow retrospective.', 409)
       }
-      const workflow = workflowZero(parsedObjective.data)
+      const storage = store ? { repo: store.repo, path: store.path ?? projectId, branch: { pattern: DEFAULT_BRANCH_PATTERN } } : undefined
+      if (storage) {
+        if (!this.options.store) throw new UserError('This Drillmaster server has no git store set up.')
+        await this.publisherFor(projectId, storage)
+          .publish([])
+          .catch((error: unknown) => {
+            throw new UserError(`The store repo ${storage.repo} does not take a push from Drillmaster: ${error instanceof Error ? error.message : String(error)}`)
+          })
+      }
+      const workflow = WorkflowDocument.parse({ ...workflowZero(parsedObjective.data), ...(storage ? { storage } : {}) })
       await this.appendEvent(projectId, { type: 'project_initialized', dir: path.resolve(projectDir), workflow })
       return workflow
     })
+    await this.writeWorkFolderMirror(projectDir, await this.state(projectDir))
+    return workflow
   }
 
   hook(projectDir: string, hookEvent: string, payload: unknown) {
@@ -428,7 +530,11 @@ export class Drillmaster {
     return this.withProjectLock(projectDir, async (projectId) => {
       const events = await this.ports.store.read(projectId)
       const state = foldState(events)
-      const context = hookEvent === 'SessionStart' ? { retrospectiveDue: retrospectiveDue(state, events) } : {}
+      const context =
+        hookEvent === 'SessionStart'
+          ? { retrospectiveDue: retrospectiveDue(state, events), storeProblem: this.storeProblemByProject.get(projectId), mirrorNote: await this.writeWorkFolderMirror(projectDir, state) }
+          : {}
+      if (hookEvent === 'SessionStart') this.runInBackground(this.importFromStore(projectDir))
       const outcome = handleHook(state, hookEvent, payload as HookPayload, this.options.recordRawHookPayloads ?? false, context)
       for (const event of outcome.events) await this.appendEvent(projectId, event)
       return { stored: outcome.events.length, output: outcome.output }
@@ -458,7 +564,7 @@ export class Drillmaster {
         case 'workflow_retrospective': {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs)
           if (retroArgs.action === 'setup') {
-            const workflow = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures })
+            const workflow = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures }, retroArgs.store)
             return jsonResult({ workflow, note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections.' })
           }
           return jsonResult(retroArgs.action === 'run' ? await this.runRetrospective(projectDir) : await this.applyApprovedProposals(projectDir, retroArgs.proposal))
@@ -758,6 +864,9 @@ export class Drillmaster {
         workflow = changed.workflow
       }
       return { applied, workflow_version: workflow.version, restarted: [...restartedItemIds] }
+    }).then(async (result) => {
+      await this.writeWorkFolderMirror(projectDir, await this.state(projectDir))
+      return result
     })
   }
 

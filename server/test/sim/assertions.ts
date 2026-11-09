@@ -11,6 +11,7 @@ export interface Check {
 
 export interface RunFacts {
   ownerMessages: number
+  ownerQuestions?: number
   issues: number
   retros: number
 }
@@ -25,7 +26,9 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   const retros = events.filter((e) => e.type === 'retrospective_ran')
   const changes = events.filter((e): e is Extract<DrillmasterEvent, { type: 'workflow_changed' }> => e.type === 'workflow_changed')
   const storedText = JSON.stringify(events)
-  const leakedToken = /"(?:agent_)?token\\?"\s*:\s*\\?"(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(storedText)
+  const leakedToken =
+    /"(?:agent_)?token\\?"\s*:\s*\\?"(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(storedText) || /agent_token:\s*(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(storedText)
+  const decidedThroughQuestion = events.some((event) => (event.type === 'owner_decided' || event.type === 'gate_verdict' || event.type === 'late_start_judged') && event.via === 'question')
 
   const deliveredMeasures = measureDeliveredItems(events)
   const firstRetroAt = facts.retros > 0 ? (retros[0]?.at ?? '') : ''
@@ -57,6 +60,11 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     checks.push(
       { name: 'workflow retrospective ran', ok: retros.length >= facts.retros, detail: `${retros.length} ran` },
       { name: 'the workflow grew from workflow_0', ok: changes.length > 0, detail: `now version ${state.workflow?.version}` },
+      {
+        name: 'Owner decided through AskUserQuestion',
+        ok: decidedThroughQuestion,
+        detail: `${facts.ownerQuestions ?? 0} questions asked; ${events.filter((event) => event.type === 'owner_asked').length} recorded as asked`,
+      },
       {
         name: 'each change opened an experiment with a baseline',
         ok: changes.every((change) => change.workflow.experiments.every((experiment) => typeof experiment.baseline === 'number')) && (state.workflow?.experiments.length ?? 0) > 0,

@@ -69,7 +69,12 @@ export function createRequestHandler(app: Drillmaster) {
         }
         case 'POST /projects/init': {
           const body = await readJsonBody(request)
-          const workflow = await app.init(requireProjectDir(body.project), body.objective)
+          const store = body.store as { repo?: unknown; path?: unknown } | undefined
+          const workflow = await app.init(
+            requireProjectDir(body.project),
+            body.objective,
+            typeof store?.repo === 'string' ? { repo: store.repo, ...(typeof store.path === 'string' ? { path: store.path } : {}) } : undefined,
+          )
           return sendJson(response, 201, { workflow })
         }
         case 'GET /tools':

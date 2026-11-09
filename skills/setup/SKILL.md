@@ -24,11 +24,19 @@ corrections at each workflow retrospective. Nothing is copied from another workf
    | `minutes_per_item` | Minutes from start to delivery |
    | `tool_calls_per_item` | Tool calls per work item |
 
-3. **Create the first workflow:**
-   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [...]})`.
+3. **Ask Owner for the store:** a separate, private git repo (a URL or a path) where Drillmaster
+   keeps the work traces. Each work item's traces go on their own branch and are squash-merged into
+   its main branch once the work item is complete. Traces can hold tool output, so the repo must
+   be private. Drillmaster pushes to it, so Owner's git credentials must allow that.
+4. **Create the first workflow:**
+   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [...], store: {repo: "<the store repo>"}})`.
+   - Drillmaster pushes a first commit to the store, and writes `.drillmaster/drillmaster.json`
+     (the Drillmaster version and the store) and `.drillmaster/workflow.json` (a copy of the
+     workflow) in the work folder. Commit both with the project.
+   - If the push fails, tell Owner what git said, and ask for another repo or for access.
    - If the project already has a workflow, say so and stop. The objective changes only at a
      workflow retrospective (`/devops-drillmaster:retrospective`).
-4. **Tell Owner how it goes from here,** in a few lines:
+5. **Tell Owner how it goes from here,** in a few lines:
    - Give me issues as usual. I start each one with Drillmaster (`work_start`) and report as I
      go, and every action I take is recorded.
    - Correct me whenever I get something wrong. Your corrections are what the workflow is built

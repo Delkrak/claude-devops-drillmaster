@@ -20,6 +20,7 @@ const events: DrillmasterEvent[] = [
   { id: 'i', at: at(0), type: 'project_initialized', dir: '/p', workflow: w0 },
   ...item(1, 1, 2),
   { id: 'r', at: at(10), type: 'retrospective_ran', retro_id: 'retro_1', work_items: ['wi_1'], findings: { should: '', did: '', why: '', keep: '', improve: '' }, proposals: [] },
+  { id: 'o', at: at(10), type: 'owner_decided', retro_id: 'retro_1', approved: [1], declined: [], prompt: 'Approve', via: 'question' },
   { id: 'c', at: at(11), type: 'workflow_changed', workflow: w1, reason: 'c' },
   ...item(2, 20, 0),
 ]

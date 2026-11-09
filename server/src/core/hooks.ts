@@ -109,6 +109,10 @@ function toolResponseIsError(toolResponse: unknown) {
 export interface HookContext {
   /** Why a workflow retrospective is due, if it is. */
   retrospectiveDue?: string | null
+  /** Why the last push to the git store failed, if it did. */
+  storeProblem?: string
+  /** What happened to the work folder's copy of the workflow, if anything. */
+  mirrorNote?: string
 }
 
 export function handleHook(state: ProjectState, hookEvent: string, payload: HookPayload, recordRaw: boolean, context: HookContext = {}): HookOutcome {
@@ -255,6 +259,10 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
   if (ownerQuestions.length) {
     lines.push(`Owner has ${ownerQuestions.length} question${ownerQuestions.length > 1 ? 's' : ''} to answer. work_status shows the AskUserQuestion input to ask with.`)
   }
+  if (context.storeProblem) {
+    lines.push(`The git store could not be updated (${context.storeProblem}). Drillmaster keeps every event and tries again at the next stage end; tell Owner.`)
+  }
+  if (context.mirrorNote) lines.push(context.mirrorNote)
   if (context.retrospectiveDue) {
     lines.push(`A workflow retrospective is due: ${context.retrospectiveDue}. Suggest it to Owner (/devops-drillmaster:retrospective); Owner decides when.`)
   }

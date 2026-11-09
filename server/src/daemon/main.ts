@@ -2,7 +2,7 @@ import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Drillmaster } from '../app.js'
 import { isDrillmasterServerAt, readDaemonInfo, type DaemonInfo } from '../client.js'
-import { daemonInfoFile, portsFromEnv } from '../env.js'
+import { daemonInfoFile, portsFromEnv, storeOptionsFromEnv } from '../env.js'
 import { listen } from './http.js'
 
 export async function runDaemon(env: NodeJS.ProcessEnv = process.env) {
@@ -15,7 +15,7 @@ export async function runDaemon(env: NodeJS.ProcessEnv = process.env) {
     return
   }
 
-  const app = new Drillmaster(portsFromEnv(env), { recordRawHookPayloads: env.DRILLMASTER_RECORD === '1' })
+  const app = new Drillmaster(portsFromEnv(env), { recordRawHookPayloads: env.DRILLMASTER_RECORD === '1', store: storeOptionsFromEnv(env) })
   const server = await listen(app, Number(env.DRILLMASTER_PORT ?? 0))
   const ownInfo: DaemonInfo = { port: server.port, pid: process.pid, url: server.url }
 

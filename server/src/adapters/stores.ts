@@ -3,6 +3,9 @@ import path from 'node:path'
 import type { DrillmasterEvent } from '../core/events.js'
 import type { EventStore } from '../ports.js'
 
+/** Events from other writers arrive later than they happened: every read is in time order. */
+const inTimeOrder = (events: DrillmasterEvent[]) => events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+
 export class MemoryStore implements EventStore {
   private readonly eventsByProject = new Map<string, DrillmasterEvent[]>()
 
@@ -13,7 +16,7 @@ export class MemoryStore implements EventStore {
   }
 
   async read(projectId: string) {
-    return structuredClone(this.eventsByProject.get(projectId) ?? [])
+    return inTimeOrder(structuredClone(this.eventsByProject.get(projectId) ?? []))
   }
 
   async projectIds() {
@@ -49,10 +52,12 @@ export class JsonlStore implements EventStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw error
     }
-    return jsonl
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line) => JSON.parse(line) as DrillmasterEvent)
+    return inTimeOrder(
+      jsonl
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => JSON.parse(line) as DrillmasterEvent),
+    )
   }
 
   async projectIds() {

@@ -12,7 +12,7 @@ const USAGE = `drillmaster ${VERSION}
 Usage:
   drillmaster daemon                    Run the shared Drillmaster server.
   drillmaster mcp                       Run the stdio MCP server for Claude Code.
-  drillmaster init --objective <text> --measure <name> [--measure <name>] [--project <dir>]
+  drillmaster init --objective <text> --measure <name> [--measure <name>] [--store <git repo>] [--project <dir>]
                                         Create workflow_0 from Owner's objective.
   drillmaster inspect [--project <dir>] [--json]
                                         Show the project's events and folded state.
@@ -41,6 +41,7 @@ async function runCommand(argv: string[]) {
         options: {
           objective: { type: 'string' },
           measure: { type: 'string', multiple: true },
+          store: { type: 'string' },
           project: { type: 'string' },
         },
       })
@@ -49,6 +50,7 @@ async function runCommand(argv: string[]) {
       const { workflow } = await requestJson<{ workflow: unknown }>(url, 'POST', '/projects/init', {
         project: values.project ?? process.cwd(),
         objective: { text: values.objective, measures: values.measure },
+        ...(values.store ? { store: { repo: values.store } } : {}),
       })
       console.log(JSON.stringify(workflow, null, 2))
       return
