@@ -1,0 +1,35 @@
+{
+  "name": "claude-devops-drillmaster",
+  "version": "0.1.0",
+  "description": "The Drillmaster server: stores work traces, work reports and the workflow, and runs the work gates, for the devops-drillmaster Claude Code plugin.",
+  "license": "MIT",
+  "author": "delkrak",
+  "type": "module",
+  "bin": {
+    "drillmaster": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:api": "vitest run test/api",
+    "test:mcp": "vitest run test/mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}
