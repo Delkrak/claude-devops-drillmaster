@@ -4,6 +4,9 @@ import { toSemver } from './versions.js'
 
 export { bumpVersion, compareVersions, isMajorChange, toSemver } from './versions.js'
 
+/** Owner chooses through AskUserQuestion, which shows at most four options. */
+const MAX_OWNER_CHOICES = 4
+
 export const GateKind = z.enum(['self', 'drillmaster', 'owner'])
 export const MetricTaker = z.enum(['agent', 'drillmaster', 'owner'])
 
@@ -104,6 +107,7 @@ export const WorkflowDocument = z
       }
       const values = metric.categories.map((category) => category.value)
       if (new Set(values).size !== values.length) issue(`metric "${metric.name}" repeats a category value`)
+      if (metric.by === 'owner' && values.length > MAX_OWNER_CHOICES) issue(`metric "${metric.name}" is Owner's to take, so it has at most ${MAX_OWNER_CHOICES} categories`)
     }
   })
 

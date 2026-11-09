@@ -125,3 +125,13 @@ export function renderDelivered(workItemId: string, pr: string, artifacts: strin
 }
 
 export const renderPostMortemRecorded = (workItemId: string) => `Recorded your workflow post mortem for ${workItemId}. The work item is done.`
+
+export function renderAskOwner(askInput: { questions: unknown[] }) {
+  return [
+    '**Ask Owner now** with AskUserQuestion, from the main conversation (not a subagent), passing exactly this input. Leave `answers` out: Owner gives them.',
+    '```json',
+    JSON.stringify(askInput, null, 2),
+    '```',
+    'Owner can pick an option, add a note, or type an answer of their own. Drillmaster records it.',
+  ].join('\n')
+}

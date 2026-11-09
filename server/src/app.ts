@@ -19,6 +19,7 @@ import {
   RETRO_REVIEW_KIND,
   toRetroView,
 } from './core/retro.js'
+import { askUserQuestionInput, pendingOwnerQuestions } from './core/questions.js'
 import * as render from './core/render.js'
 import {
   buildGatePrompt,
@@ -489,7 +490,16 @@ export class Drillmaster {
 
     // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
     const answer = outcome.gateSubmissionToJudge ? await this.judgeDrillmasterGate(projectDir, outcome.gateSubmissionToJudge) : outcome.answer
-    return workResult(this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>), answer)
+    const askOwner = await this.ownerQuestionsFor(projectDir, outcome.workItemId)
+    const markdown = this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>)
+    if (!askOwner) return workResult(markdown, answer)
+    return workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...(answer as Record<string, unknown>), ask_owner: askOwner })
+  }
+
+  /** The AskUserQuestion input for the Owner questions a work item waits on, if any. */
+  private async ownerQuestionsFor(projectDir: string, workItemId: string) {
+    const questions = pendingOwnerQuestions(await this.state(projectDir)).filter((question) => 'work_item_id' in question && question.work_item_id === workItemId)
+    return questions.length ? askUserQuestionInput(questions) : undefined
   }
 
   private renderWorkAnswer(toolName: string, workflow: WorkflowDocument, workItemId: string, answer: Record<string, unknown>) {
@@ -572,10 +582,12 @@ export class Drillmaster {
         findings: retroResult.findings,
         proposals: retroResult.proposals,
       })
+      const proposalQuestions = pendingOwnerQuestions(foldState(await this.ports.store.read(projectId))).filter((question) => question.kind === 'proposal')
       return {
         ...toRetroView(storedEvent as Extract<DrillmasterEvent, { type: 'retrospective_ran' }>, retroResult.dropped),
-        note: retroResult.proposals.length
-          ? "Show Owner the findings and every proposal as they are, numbered. Only Owner's own words approve a proposal; then apply the approved ones (workflow_retrospective apply)."
+        ...(proposalQuestions.length ? { ask_owner: askUserQuestionInput(proposalQuestions) } : {}),
+        note: proposalQuestions.length
+          ? 'Show Owner the findings and every proposal as they are, numbered. Then ask Owner to decide with AskUserQuestion, passing ask_owner exactly as it is (leave answers out). Owner decides; then apply the approved ones (workflow_retrospective apply).'
           : 'No workflow changes proposed. Show Owner the findings.',
       }
     })
@@ -673,6 +685,8 @@ export class Drillmaster {
     }
     const verdicts = events.filter((event) => event.type === 'gate_verdict' && event.work_item_id === item.work_item_id)
     status.last_verdict = verdicts.at(-1) ?? null
+    const ownerQuestions = pendingOwnerQuestions(state).filter((question) => !('work_item_id' in question) || question.work_item_id === item.work_item_id)
+    if (ownerQuestions.length) status.ask_owner = askUserQuestionInput(ownerQuestions)
     if (args.last !== undefined) status.last_reports = workReportsOf(events, item.work_item_id).slice(-args.last)
     if (args.stage !== undefined || args.step !== undefined) {
       const atStep = { stage: args.stage, step: args.step }

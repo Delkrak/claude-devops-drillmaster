@@ -51,7 +51,21 @@ Call `work_start({issue, description})` before you touch anything.
 |---|---|
 | accepted | The answer shows the next work step. Do it. When every gate has passed, it says to deliver. |
 | rejected | The answer cites the rule and shows the step the work goes back to. Report the impediment, fix it, and hand the gate in again. |
-| pending | A Drillmaster gate or an Owner gate is waiting. At an Owner gate, ask Owner to approve, with what they need to judge. Check `work_status` for the verdict. |
+| pending | A Drillmaster gate or an Owner gate is waiting. At an Owner gate, the answer holds the AskUserQuestion input to ask Owner with (see below). |
+
+## Asking Owner
+
+When a result says **Ask Owner now**, call AskUserQuestion with exactly the input it gives: the
+same questions, word for word, and no `answers`. Owner answers; you can't, and an answer you fill
+in is refused. Ask from the main conversation, because subagents can't use AskUserQuestion.
+
+- Before asking at an Owner gate, show Owner what they need to judge: the PR, what changed, and how
+  it was verified.
+- Drillmaster records Owner's choice, and any note or typed answer, and tells you the outcome and
+  what comes next.
+- If Owner's answer doesn't decide the question, Drillmaster says so: answer Owner, then ask the
+  same question again.
+- `work_status` shows any question still waiting for Owner (`ask_owner`).
 
 ## 4. Deliver and look back
 

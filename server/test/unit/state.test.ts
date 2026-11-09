@@ -20,6 +20,7 @@ describe('folding events', () => {
       versions: [],
       sessions: {},
       workItems: {},
+      ownerAsked: {},
       traceCount: 0,
       eventCount: 0,
     })

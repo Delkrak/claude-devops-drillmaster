@@ -41,12 +41,23 @@ export interface RetrospectiveRan extends EventEnvelope {
   proposals: Proposal[]
 }
 
+export type DecidedVia = 'prompt' | 'question'
+
 export interface OwnerDecided extends EventEnvelope {
   type: 'owner_decided'
   retro_id: string
   approved: number[]
   declined: number[]
   prompt: string
+  via?: DecidedVia
+  comment?: string
+}
+
+export interface OwnerAsked extends EventEnvelope {
+  type: 'owner_asked'
+  session_id: string
+  tool_use_id: string
+  questions: string[]
 }
 
 export interface SessionRegistered extends EventEnvelope {
@@ -87,6 +98,7 @@ export interface WorkTrace extends EventEnvelope {
   step: number | null
   hook: string
   tool?: string
+  tool_use_id?: string
   input?: string
   error?: boolean
   exit_code?: number
@@ -157,6 +169,7 @@ export interface GateVerdict extends EventEnvelope {
   step: number
   accepted: boolean
   by: 'agent' | 'drillmaster' | 'owner'
+  via?: DecidedVia
   why: string
   rule: string | null
   next: Position
@@ -213,6 +226,7 @@ export type DrillmasterEvent =
   | PostMortemWritten
   | RetrospectiveRan
   | OwnerDecided
+  | OwnerAsked
 
 export type NewEvent = DrillmasterEvent extends infer E
   ? E extends DrillmasterEvent

@@ -77,7 +77,9 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
         break
       case 'gate_verdict':
         if (!event.accepted) item.values.gate_rejections_per_item++
-        if (event.by === 'owner' && event.accepted) item.values.owner_corrections_per_item--
+        // A prompt that decided the gate was not a correction; a rejection asked through AskUserQuestion is one.
+        if (event.by === 'owner' && event.via !== 'question' && event.accepted) item.values.owner_corrections_per_item--
+        if (event.by === 'owner' && event.via === 'question' && !event.accepted) item.values.owner_corrections_per_item++
         break
       case 'work_item_delivered':
         item.deliveredAt = event.at

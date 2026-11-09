@@ -1,7 +1,7 @@
 import type { NewEvent } from './events.js'
-import { classifyOwnerWords, decideProposals } from './owner.js'
+import { decideProposals } from './owner.js'
+import { decideOwnerAnswers, decideOwnerQuestion, pendingOwnerQuestions, type AnswerOutcome } from './questions.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { nextPosition, stepAt, workflowOfWorkItem } from './work.js'
 
 export interface HookPayload {
   session_id?: string
@@ -24,7 +24,6 @@ export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'P
 const MAX_TRACED_INPUT_LENGTH = 2000
 const MAX_TRACED_OUTPUT_LINES = 20
 const MAX_TRACED_OUTPUT_LENGTH = 2000
-const MAX_QUOTED_PROMPT_LENGTH = 300
 
 const SECRET_KEY_NAME = /token/i
 const SECRET_IN_JSON_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
@@ -148,58 +147,91 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
   }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
   if (recordRaw) trace.raw = redactTokens(payload)
+  if (typeof payload.tool_use_id === 'string') trace.tool_use_id = payload.tool_use_id
   events.push(trace)
 
+  if (payload.tool_name === ASK_USER_QUESTION) {
+    const asked = handleAskUserQuestion(state, hookEvent, sessionId, payload)
+    events.push(...asked.events)
+    if (asked.output) return { events, output: asked.output }
+  }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') {
-    const ownerDecision = item?.pending_gate?.gate === 'owner' ? decideOwnerGate(state, item, payload.prompt) : decideRetroProposals(state, payload.prompt)
-    if (ownerDecision) {
-      events.push(ownerDecision.event)
-      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ownerDecision.context } } }
+    const typed = decideTypedPrompt(state, item, payload.prompt)
+    if (typed.events.length) {
+      events.push(...typed.events)
+      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `Drillmaster: ${typed.lines.join(' ')}` } } }
     }
   }
   return { events, output: hookEvent === 'SessionStart' ? briefSession(state, item) : undefined }
 }
 
-function decideOwnerGate(state: ProjectState, item: WorkItemState, prompt: string) {
-  const gate = item.pending_gate!
-  const classification = classifyOwnerWords(prompt)
-  if (classification === 'unclear') return undefined
-  const workflow = workflowOfWorkItem(state, item)
-  const rules = stepAt(workflow, gate.stage, gate.step)?.rules ?? []
-  const accepted = classification === 'approve'
-  const position = accepted ? nextPosition(workflow, gate.stage, gate.step) : { next: { stage: gate.stage, step: gate.step }, done: false }
-  const quotedPrompt = prompt.length > MAX_QUOTED_PROMPT_LENGTH ? `${prompt.slice(0, MAX_QUOTED_PROMPT_LENGTH)}...` : prompt
-  const event: NewEvent = {
-    type: 'gate_verdict',
-    work_item_id: item.work_item_id,
-    stage: gate.stage,
-    step: gate.step,
-    accepted,
-    by: 'owner',
-    why: `Owner: "${quotedPrompt}"`,
-    rule: rules.length ? rules.join(', ') : null,
-    ...position,
-  }
-  const stepLabel = `work step ${gate.stage}.${gate.step}`
-  const context = accepted
-    ? `Drillmaster: Owner approved the Owner gate of ${stepLabel}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: work step ${position.next.stage}.${position.next.step}.`}`
-    : `Drillmaster: Owner rejected the Owner gate of ${stepLabel}. Do what Owner asks, report the impediment, and hand the gate in again.`
-  return { event, context }
+const ASK_USER_QUESTION = 'AskUserQuestion'
+
+interface AskUserQuestionInput {
+  questions?: { question?: unknown }[]
+  answers?: Record<string, unknown>
 }
 
-function decideRetroProposals(state: ProjectState, prompt: string) {
-  if (!state.latestRetroId) return undefined
+/**
+ * Owner's answers count only for a call PreToolUse saw without answers, so Agent can't answer for
+ * Owner by filling them in. A missed PreToolUse leaves the decision pending.
+ */
+function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId: string, payload: HookPayload): { events: NewEvent[]; output?: Record<string, unknown> } {
+  const pendingQuestionTexts = new Set(pendingOwnerQuestions(state).map((question) => question.question))
+  const toolUseId = typeof payload.tool_use_id === 'string' ? payload.tool_use_id : undefined
+  const input = (payload.tool_input ?? {}) as AskUserQuestionInput
+  if (hookEvent === 'PreToolUse') {
+    const askedTexts = (input.questions ?? []).map((question) => question.question).filter((text): text is string => typeof text === 'string' && pendingQuestionTexts.has(text))
+    if (askedTexts.length === 0 || !toolUseId) return { events: [] }
+    if (Object.keys(input.answers ?? {}).some((text) => pendingQuestionTexts.has(text))) {
+      return {
+        events: [],
+        output: {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: "Drillmaster: Owner answers this question, not you. Ask it again without `answers`.",
+          },
+        },
+      }
+    }
+    return { events: [{ type: 'owner_asked', session_id: sessionId, tool_use_id: toolUseId, questions: askedTexts }] }
+  }
+  if (hookEvent !== 'PostToolUse' || !toolUseId) return { events: [] }
+  const askedTexts = state.ownerAsked[toolUseId]
+  if (!askedTexts) return { events: [] }
+  const response = (payload.tool_response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, unknown> }
+  const answersToAsked = Object.fromEntries(Object.entries(response.answers ?? {}).filter(([text]) => askedTexts.includes(text)))
+  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {}, 'question')
+  if (decided.lines.length === 0) return { events: [] }
+  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}` } } }
+}
+
+/** Owner's typed words decide a pending Owner gate, or the open proposals by number. Anything unclear is just a prompt. */
+function decideTypedPrompt(state: ProjectState, item: WorkItemState | undefined, prompt: string): AnswerOutcome {
+  const gateQuestion = pendingOwnerQuestions(state).find((question) => question.kind === 'owner_gate' && question.work_item_id === item?.work_item_id)
+  if (gateQuestion) {
+    const decided = decideOwnerQuestion(state, gateQuestion, { answer: prompt }, 'prompt')
+    return decided.events.length ? decided : { events: [], lines: [] }
+  }
+  return decideRetroProposals(state, prompt)
+}
+
+function decideRetroProposals(state: ProjectState, prompt: string): AnswerOutcome {
+  const none = { events: [], lines: [] }
+  if (!state.latestRetroId) return none
   const retro = state.retros[state.latestRetroId]!
   const decidedIds = [...retro.approved, ...retro.declined, ...retro.applied]
   const openProposalIds = retro.proposals.map((proposal) => proposal.id).filter((id) => !decidedIds.includes(id))
   const decision = decideProposals(prompt, openProposalIds)
-  if (!decision || (decision.approved.length === 0 && decision.declined.length === 0)) return undefined
-  const event: NewEvent = { type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt }
-  const contextParts = [
-    decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply each with workflow_retrospective (action "apply").` : '',
-    decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
-  ].filter(Boolean)
-  return { event, context: `Drillmaster: ${contextParts.join(' ')}` }
+  if (!decision || (decision.approved.length === 0 && decision.declined.length === 0)) return none
+  return {
+    events: [{ type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt, via: 'prompt' }],
+    lines: [
+      decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply them with workflow_retrospective (action "apply").` : '',
+      decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
+    ].filter(Boolean),
+  }
 }
 
 function briefSession(state: ProjectState, item: WorkItemState | undefined) {
@@ -213,6 +245,10 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined) {
   ]
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)
+  }
+  const ownerQuestions = pendingOwnerQuestions(state)
+  if (ownerQuestions.length) {
+    lines.push(`Owner has ${ownerQuestions.length} question${ownerQuestions.length > 1 ? 's' : ''} to answer. work_status shows the AskUserQuestion input to ask with.`)
   }
   if (workflow.stages.length === 0) {
     lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. The workflow grows from those corrections.')

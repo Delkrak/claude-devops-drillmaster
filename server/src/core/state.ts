@@ -21,6 +21,7 @@ export interface WorkItemState {
   traces: number
   reports: number
   rejections: number
+  passed_steps: string[]
   post_mortems: ('agent' | 'drillmaster')[]
 }
 
@@ -46,6 +47,7 @@ export interface ProjectState {
   versions: WorkflowDocument[]
   sessions: Record<string, SessionState>
   workItems: Record<string, WorkItemState>
+  ownerAsked: Record<string, string[]>
   traceCount: number
   eventCount: number
 }
@@ -58,6 +60,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
     versions: [],
     sessions: {},
     workItems: {},
+    ownerAsked: {},
     traceCount: 0,
     eventCount: 0,
   }
@@ -90,6 +93,9 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         }
         break
       }
+      case 'owner_asked':
+        state.ownerAsked[event.tool_use_id] = event.questions
+        break
       case 'session_registered':
         state.sessions[event.session_id] ??= { session_id: event.session_id, work_item_id: null }
         break
@@ -114,6 +120,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           traces: 0,
           reports: 0,
           rejections: 0,
+          passed_steps: [],
           post_mortems: [],
         }
         break
@@ -138,6 +145,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           item.step = event.next.step
           item.gates_done = event.done
           if (!event.accepted) item.rejections++
+          if (event.accepted) item.passed_steps.push(`${event.stage}.${event.step}`)
         }
         break
       }
