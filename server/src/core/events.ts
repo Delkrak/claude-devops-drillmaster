@@ -72,6 +72,82 @@ export interface WorkTrace extends EventEnvelope {
   raw?: unknown
 }
 
+export const REPORT_KINDS = ['impediment', 'better_way', 'decision', 'question', 'assumption', 'required'] as const
+export type ReportKind = (typeof REPORT_KINDS)[number]
+
+/** One work report from Agent: what it offers on its own, in real time. */
+export interface WorkReported extends EventEnvelope {
+  type: 'work_reported'
+  work_item_id: string
+  stage: number | null
+  step: number | null
+  kind: ReportKind
+  text: string
+  /** decision */
+  chosen?: string
+  by?: string
+  why?: string
+  /** question */
+  asked?: string
+  answer?: string
+}
+
+export interface SelfCheck {
+  /** "<policy> <rule id>" */
+  rule: string
+  accepted: boolean
+  evidence: string
+}
+
+/** Agent's work report at a work gate: a self check per referenced rule, and the step's report. */
+export interface GateSubmitted extends EventEnvelope {
+  type: 'gate_submitted'
+  work_item_id: string
+  stage: number
+  step: number
+  gate: 'self' | 'drillmaster' | 'owner'
+  self_check: SelfCheck[]
+  text: string
+}
+
+export interface Position {
+  stage: number | null
+  step: number | null
+}
+
+/** A work gate's verdict. Accepted moves the work on; rejected sends it back. */
+export interface GateVerdict extends EventEnvelope {
+  type: 'gate_verdict'
+  work_item_id: string
+  stage: number
+  step: number
+  accepted: boolean
+  by: 'agent' | 'drillmaster' | 'owner'
+  why: string
+  /** The rule the verdict cites, if any. */
+  rule: string | null
+  /** Where the work item is after the verdict. stage null after the last work stage. */
+  next: Position
+  /** True when the last work step of the last work stage passed. */
+  done: boolean
+}
+
+export interface WorkItemDelivered extends EventEnvelope {
+  type: 'work_item_delivered'
+  work_item_id: string
+  pr: string
+}
+
+export interface PostMortemWritten extends EventEnvelope {
+  type: 'post_mortem_written'
+  work_item_id: string
+  author: 'agent' | 'drillmaster'
+  keep: string
+  change: string
+  experiment_reflections: string
+  free_text: string
+}
+
 export type DrillmasterEvent =
   | ProjectInitialized
   | WorkflowChanged
@@ -79,6 +155,11 @@ export type DrillmasterEvent =
   | WorkItemStarted
   | SessionBound
   | WorkTrace
+  | WorkReported
+  | GateSubmitted
+  | GateVerdict
+  | WorkItemDelivered
+  | PostMortemWritten
 
 export type EventType = DrillmasterEvent['type']
 

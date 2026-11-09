@@ -16,6 +16,7 @@ traces and work reports feed the workflow retrospectives that keep it improving.
 | Skill | What it does |
 |---|---|
 | `/devops-drillmaster:concept` | Explains the Drillmaster concept: the philosophy, the chain of command and the workflow. |
+| `/devops-drillmaster:work` | How Agent runs a work item with the drillmaster tools: start it, report, hand in each gate, deliver, then write the post mortem. |
 
 The concept lives in [`skills/concept/SKILL.md`](skills/concept/SKILL.md). Everything else in
 Drillmaster is built on it.
@@ -32,7 +33,7 @@ It runs as one shared local server and starts on its own the first time it's nee
 | MCP tool | What it does |
 |---|---|
 | `workflow_get` | Describes the workflow: the objective, the work stages and work steps, the rules, and the experiments. |
-| `work_report` | Agent's only write tool. `start` begins a work item and returns Agent's token. |
+| `work_report` | Agent's only write tool, with five actions: `start`, `report`, `gate`, `deliver` and `post_mortem`. |
 | `work_status` | Shows where a work item is, with its work reports and work traces. |
 
 The hooks (`hooks/hooks.json`) record every action and every Owner prompt as a work trace. They

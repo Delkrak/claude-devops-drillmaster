@@ -4,9 +4,10 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import type { DrillmasterEvent, NewEvent } from './core/events.js'
+import { REPORT_KINDS, type DrillmasterEvent, type NewEvent } from './core/events.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
-import { foldState, itemByTokenHash, tracesOf, viewWorkflow, WorkflowQueryError, type ProjectState } from './core/state.js'
+import { foldState, itemByTokenHash, reportsOf, tracesOf, viewWorkflow, WorkflowQueryError, type ProjectState } from './core/state.js'
+import * as work from './core/work.js'
 import { Objective, workflowZero } from './core/workflow.js'
 import { projectId } from './env.js'
 import type { Ports } from './ports.js'
@@ -47,8 +48,39 @@ const WorkflowGetArgs = z
   })
   .strict()
 
+const token = z.string().min(1)
+const text = z.string().min(1)
 const WorkReportArgs = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('start'), issue: z.string().min(1) }).strict(),
+  z.object({ action: z.literal('start'), issue: text }).strict(),
+  z
+    .object({
+      action: z.literal('report'),
+      token,
+      kind: z.enum(REPORT_KINDS),
+      text,
+      stage: z.number().int().positive().optional(),
+      step: z.number().int().positive().optional(),
+      chosen: z.string().optional(),
+      by: z.string().optional(),
+      why: z.string().optional(),
+      asked: z.string().optional(),
+      answer: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('gate'),
+      token,
+      stage: z.number().int().positive(),
+      step: z.number().int().positive(),
+      self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: text }).strict()),
+      text,
+    })
+    .strict(),
+  z.object({ action: z.literal('deliver'), token, pr: text }).strict(),
+  z
+    .object({ action: z.literal('post_mortem'), token, keep: text, change: text, experiment_reflections: text, free_text: text })
+    .strict(),
 ])
 
 const WorkStatusArgs = z
@@ -76,13 +108,42 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'work_report',
-    description:
-      'The only way Agent reports to Drillmaster. `action: "start"` starts a work item for an issue and returns its id, Agent\'s token for every later call, and the first work stage and work step (null while the workflow has no work stages). Keep the token for the whole work item.',
+    description: [
+      'The only way Agent reports to Drillmaster. The action decides the fields.',
+      '- start {issue}: starts a work item. Returns its id, your token for every later call, and the first work stage and work step (null while the workflow has no work stages).',
+      '- report {token, kind, text}: report in real time. kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required. stage/step default to where the work item is.',
+      '- gate {token, stage, step, self_check, text}: hand in a work gate. self_check holds exactly one {rule, accepted, evidence} per rule the gate references; text is what the work step requires reporting. Returns the verdict and where to go next.',
+      '- deliver {token, pr}: once every work gate has passed (or the workflow has none).',
+      '- post_mortem {token, keep, change, experiment_reflections, free_text}: your workflow post mortem, after delivery.',
+    ].join('\n'),
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['start'], description: 'What this report is.' },
+        action: { type: 'string', enum: ['start', 'report', 'gate', 'deliver', 'post_mortem'] },
+        token: { type: 'string', description: "Your token from start. Every action but start needs it." },
         issue: { type: 'string', description: 'start: the issue the work item delivers, e.g. "#12".' },
+        kind: { type: 'string', enum: [...REPORT_KINDS] },
+        text: { type: 'string' },
+        stage: { type: 'integer', minimum: 1 },
+        step: { type: 'integer', minimum: 1 },
+        chosen: { type: 'string' },
+        by: { type: 'string' },
+        why: { type: 'string' },
+        asked: { type: 'string' },
+        answer: { type: 'string' },
+        self_check: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { rule: { type: 'string' }, accepted: { type: 'boolean' }, evidence: { type: 'string' } },
+            required: ['rule', 'accepted', 'evidence'],
+          },
+        },
+        pr: { type: 'string' },
+        keep: { type: 'string' },
+        change: { type: 'string' },
+        experiment_reflections: { type: 'string' },
+        free_text: { type: 'string' },
       },
       required: ['action'],
     },
@@ -181,7 +242,7 @@ export class Drillmaster {
           throw new UserError(`Unknown tool: ${name}`, 404)
       }
     } catch (error) {
-      if (error instanceof UserError || error instanceof WorkflowQueryError) {
+      if (error instanceof UserError || error instanceof WorkflowQueryError || error instanceof work.Refused) {
         return { content: [{ type: 'text', text: error.message }], isError: true }
       }
       throw error
@@ -217,6 +278,21 @@ export class Drillmaster {
                 : `Read work stage ${position.stage} with workflow_get before you begin.`,
           }
         }
+        default: {
+          const item = itemByTokenHash(state, hashToken(args.token))
+          if (!item) throw new UserError('Unknown token. Use the agent_token that work_report start returned.', 403)
+          const { token: _token, action: _action, ...rest } = args
+          const decision =
+            args.action === 'report'
+              ? work.report(item, rest as work.ReportArgs)
+              : args.action === 'gate'
+                ? work.gate(state, item, rest as work.GateArgs)
+                : args.action === 'deliver'
+                  ? work.deliver(item, rest as work.DeliverArgs)
+                  : work.postMortem(item, rest as work.PostMortemArgs)
+          for (const event of decision.events) await this.append(project, event)
+          return decision.answer
+        }
       }
     })
   }
@@ -230,17 +306,26 @@ export class Drillmaster {
       work_item_id: item.work_item_id,
       issue: item.issue,
       workflow_version: item.workflow_version,
+      status: item.status,
       stage: item.stage,
       step: item.step,
-      pending_gate: null,
+      pending_gate: item.pending_gate,
+      gates_done: item.gates_done,
+      pr: item.pr,
       sessions: item.sessions,
       traces: item.traces,
+      reports: item.reports,
+      rejections: item.rejections,
+      post_mortems: item.post_mortems,
     }
-    if (args.last !== undefined) status.reports = [] // Work reports arrive in phase 3.
+    const verdicts = events.filter((e) => e.type === 'gate_verdict' && e.work_item_id === item.work_item_id)
+    status.last_verdict = verdicts.at(-1) ?? null
+    if (args.last !== undefined) status.last_reports = reportsOf(events, item.work_item_id).slice(-args.last)
     if (args.stage !== undefined || args.step !== undefined) {
+      const at = { stage: args.stage, step: args.step }
       status.captured = {
-        reports: [],
-        traces: tracesOf(events, item.work_item_id, { stage: args.stage, step: args.step }).map(({ raw: _raw, ...trace }) => trace),
+        reports: reportsOf(events, item.work_item_id, at),
+        traces: tracesOf(events, item.work_item_id, at).map(({ raw: _raw, ...trace }) => trace),
       }
     }
     return status

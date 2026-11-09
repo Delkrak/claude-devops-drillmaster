@@ -24,6 +24,40 @@ export async function tempDir(prefix: string) {
 
 export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] }
 
+/** Two work stages: build (two self gates) and review (an Owner gate). */
+export const WORKFLOW_3: WorkflowDocument = {
+  version: 3,
+  objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
+  stages: [
+    {
+      n: 1,
+      name: 'build',
+      steps: [
+        { n: 1, name: 'run the tests', gate: 'self', rules: ['test 1.1'], report: ['test result'] },
+        { n: 2, name: 'say what the pull request changes', gate: 'self', rules: ['pr 1.1'], report: ['what the PR changes'] },
+      ],
+    },
+    { n: 2, name: 'review', steps: [{ n: 1, name: 'Owner approves', gate: 'owner', rules: ['pr 1.1'], report: ['PR link'] }] },
+  ],
+  policies: [
+    { name: 'test', rules: [{ id: '1.1', rule: 'the tests run green before a PR', verified_by: 'the test output' }] },
+    { name: 'pr', rules: [{ id: '1.1', rule: 'the PR says what it changes', verified_by: 'reading the PR description' }] },
+  ],
+  experiments: [],
+}
+
+/** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
+export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
+  const { projectId } = await import('../src/env.js')
+  const project = projectId(dir)
+  const v0 = { version: 0, objective: workflow.objective, stages: [], policies: [], experiments: [] }
+  await ports.store.append(project, { id: 'seed_0', at: '2026-11-01T00:00:00Z', type: 'project_initialized', dir, workflow: v0 })
+  for (let v = 1; v <= workflow.version; v++) {
+    const doc = v === workflow.version ? workflow : { ...v0, version: v }
+    await ports.store.append(project, { id: `seed_${v}`, at: '2026-11-01T00:00:00Z', type: 'workflow_changed', workflow: doc, reason: 'seeded' })
+  }
+}
+
 /** A workflow after a few retrospectives: one work stage, one work policy, one experiment. */
 export const WORKFLOW_2: WorkflowDocument = {
   version: 2,

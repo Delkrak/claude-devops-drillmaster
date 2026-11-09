@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { handleHook, startedWorkItem, summarize } from '../../src/core/hooks.js'
+import { handleHook, redact, startedWorkItem, summarize } from '../../src/core/hooks.js'
 import { foldState } from '../../src/core/state.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE } from '../helpers.js'
@@ -91,6 +91,12 @@ describe('hook helpers', () => {
     expect(startedWorkItem({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
     expect(startedWorkItem({ ...base, tool_input: { action: 'report' }, tool_response: startResponse })).toBeUndefined()
     expect(startedWorkItem({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
+  })
+
+  it('redacts tokens in objects and in JSON text', () => {
+    expect(redact({ token: 'abc', nested: { agent_token: 'def', n: 1 } })).toEqual({ token: '[redacted]', nested: { agent_token: '[redacted]', n: 1 } })
+    expect(redact(JSON.stringify({ agent_token: 'abc' }, null, 2))).not.toContain('abc')
+    expect(redact(JSON.stringify(JSON.stringify({ token: 'abc' })))).not.toContain('abc')
   })
 
   it('keeps tool inputs short', () => {

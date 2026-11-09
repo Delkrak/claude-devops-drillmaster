@@ -74,15 +74,24 @@ describe('a session working one item on workflow_0', () => {
     ])
   })
 
-  it('never stores Agent\'s token, only its hash', async () => {
-    expect(JSON.stringify((await state()).events)).not.toContain(token)
+  it('never stores Agent\'s token, only its hash, even when tools carry it', async () => {
+    const response = await tool('work_status', { token })
+    await hook('PreToolUse', { tool_name: 'mcp__x__work_status', tool_input: { token } })
+    await hook('PostToolUse', {
+      tool_name: 'mcp__x__work_status',
+      tool_input: { token },
+      tool_response: [{ type: 'text', text: JSON.stringify({ agent_token: token, ...response.value }, null, 2) }],
+    })
+    const stored = JSON.stringify((await state()).events)
+    expect(stored).not.toContain(token)
+    expect(stored).toContain('[redacted]')
   })
 
   it('answers work_status for the token holder only', async () => {
     const status = await tool('work_status', { token })
-    expect(status.value).toMatchObject({ work_item_id: 'wi_1', issue: '#12', stage: null, step: null, pending_gate: null, sessions: [SESSION], traces: 4 })
+    expect(status.value).toMatchObject({ work_item_id: 'wi_1', issue: '#12', stage: null, step: null, pending_gate: null, sessions: [SESSION], traces: 6 })
     const withTraces = await tool('work_status', { token, last: 5, stage: 1 })
-    expect(withTraces.value.reports).toEqual([])
+    expect(withTraces.value.last_reports).toEqual([])
     expect((await tool('work_status', { token: 'stolen' })).isError).toBe(true)
   })
 

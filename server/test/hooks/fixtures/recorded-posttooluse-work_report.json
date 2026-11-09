@@ -18,7 +18,7 @@
     "tool_response": [
       {
         "type": "text",
-        "text": "{\n  \"work_item_id\": \"wi_75862cab\",\n  \"agent_token\": \"4-_DCyUkcDykm352rytB_d3Con5BV-KA\",\n  \"stage\": null,\n  \"step\": null,\n  \"note\": \"The workflow has no work stages yet: do your best, and Owner will correct you.\"\n}"
+        "text": "{\n  \"work_item_id\": \"wi_75862cab\",\n  \"agent_token\": \"[redacted]\",\n  \"stage\": null,\n  \"step\": null,\n  \"note\": \"The workflow has no work stages yet: do your best, and Owner will correct you.\"\n}"
       }
     ],
     "tool_use_id": "toolu_01F3DegPn4sD6C3LbQbguJU9",

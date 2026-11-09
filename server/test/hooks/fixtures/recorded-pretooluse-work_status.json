@@ -12,7 +12,7 @@
     "hook_event_name": "PreToolUse",
     "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_status",
     "tool_input": {
-      "token": "4-_DCyUkcDykm352rytB_d3Con5BV-KA"
+      "token": "[redacted]"
     },
     "tool_use_id": "toolu_01VNMxgyujwYgvRgsfkGigzW",
     "mcp_server": {

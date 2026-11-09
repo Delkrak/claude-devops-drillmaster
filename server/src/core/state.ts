@@ -10,9 +10,18 @@ export interface WorkItemState {
   token_hash: string
   stage: number | null
   step: number | null
+  /** The work gate waiting for Drillmaster or Owner, if any. */
+  pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner' } | null
+  /** Every work gate of every work stage has passed. Always true when the workflow has none. */
+  gates_done: boolean
+  status: 'active' | 'delivered'
+  pr: string | null
   sessions: string[]
   started_at: string
   traces: number
+  reports: number
+  rejections: number
+  post_mortems: ('agent' | 'drillmaster')[]
 }
 
 export interface SessionState {
@@ -58,11 +67,55 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           token_hash: event.token_hash,
           stage: event.stage,
           step: event.step,
+          pending_gate: null,
+          gates_done: event.stage === null,
+          status: 'active',
+          pr: null,
           sessions: [],
           started_at: event.at,
           traces: 0,
+          reports: 0,
+          rejections: 0,
+          post_mortems: [],
         }
         break
+      case 'work_reported': {
+        const item = state.workItems[event.work_item_id]
+        if (item) item.reports++
+        break
+      }
+      case 'gate_submitted': {
+        const item = state.workItems[event.work_item_id]
+        if (item) {
+          item.reports++
+          if (event.gate !== 'self') item.pending_gate = { stage: event.stage, step: event.step, gate: event.gate }
+        }
+        break
+      }
+      case 'gate_verdict': {
+        const item = state.workItems[event.work_item_id]
+        if (item) {
+          item.pending_gate = null
+          item.stage = event.next.stage
+          item.step = event.next.step
+          item.gates_done = event.done
+          if (!event.accepted) item.rejections++
+        }
+        break
+      }
+      case 'work_item_delivered': {
+        const item = state.workItems[event.work_item_id]
+        if (item) {
+          item.status = 'delivered'
+          item.pr = event.pr
+        }
+        break
+      }
+      case 'post_mortem_written': {
+        const item = state.workItems[event.work_item_id]
+        if (item) item.post_mortems.push(event.author)
+        break
+      }
       case 'session_bound': {
         const session = (state.sessions[event.session_id] ??= { session_id: event.session_id, work_item_id: null })
         session.work_item_id = event.work_item_id
@@ -85,6 +138,17 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
 /** The work item whose token hashes to `tokenHash`. */
 export const itemByTokenHash = (state: ProjectState, tokenHash: string) =>
   Object.values(state.workItems).find((item) => item.token_hash === tokenHash)
+
+/** Agent's work reports for one work item (free reports and gate reports), oldest first. */
+export function reportsOf(events: readonly DrillmasterEvent[], workItemId: string, at?: { stage?: number; step?: number }) {
+  return events.filter(
+    (e): e is Extract<DrillmasterEvent, { type: 'work_reported' | 'gate_submitted' }> =>
+      (e.type === 'work_reported' || e.type === 'gate_submitted') &&
+      e.work_item_id === workItemId &&
+      (at?.stage === undefined || e.stage === at.stage) &&
+      (at?.step === undefined || e.step === at.step),
+  )
+}
 
 /** The work traces of one work item, optionally only those captured at one work step. */
 export function tracesOf(events: readonly DrillmasterEvent[], workItemId: string, at?: { stage?: number; step?: number }) {

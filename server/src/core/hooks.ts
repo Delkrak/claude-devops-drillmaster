@@ -26,6 +26,19 @@ export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'P
 
 const MAX_INPUT = 500
 
+const SECRET_KEY = /token/i
+const SECRET_IN_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
+
+/** Agent's token never reaches the store: not in tool inputs, responses or recorded payloads. */
+export function redact(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(SECRET_IN_TEXT, '$1[redacted]')
+  if (Array.isArray(value)) return value.map(redact)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) && typeof v === 'string' ? '[redacted]' : redact(v)]))
+  }
+  return value
+}
+
 /** A short, single-line view of a tool input, so traces stay small. */
 export function summarize(value: unknown) {
   if (value === undefined) return undefined
@@ -84,11 +97,11 @@ export function handleHook(state: ProjectState, event: string, payload: HookPayl
   }
   if (payload.tool_name) {
     trace.tool = payload.tool_name
-    trace.input = summarize(payload.tool_input)
+    trace.input = summarize(redact(payload.tool_input))
   }
   if (event === 'PostToolUse') trace.error = toolFailed(payload.tool_response)
   if (event === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
-  if (record) trace.raw = payload
+  if (record) trace.raw = redact(payload)
   events.push(trace)
 
   return { events, output: event === 'SessionStart' ? sessionBrief(state, item) : undefined }
