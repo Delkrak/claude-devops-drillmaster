@@ -36,6 +36,13 @@ It runs as one shared local server and starts on its own the first time it's nee
 | `work_report` | Agent's only write tool, with five actions: `start`, `report`, `gate`, `deliver` and `post_mortem`. |
 | `work_status` | Shows where a work item is, with its work reports and work traces. |
 
+Each work gate is judged by the level of the chain of command it belongs to:
+- **Self gate:** Agent's own self check decides it at once.
+- **Drillmaster gate:** a headless `claude -p` reviewer judges it. It gets the rules, the new and
+  past work reports, and the work traces. It runs with no tools and no MCP, and needs no API key.
+- **Owner gate:** it stays pending until Owner's own words to Agent decide it. In v1, plain
+  agreement such as "looks good" approves it, and words like "no" or "fix" reject it.
+
 The hooks (`hooks/hooks.json`) record every action and every Owner prompt as a work trace. They
 cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and SubagentStop. A project
 without a workflow is never traced.

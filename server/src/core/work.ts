@@ -85,7 +85,8 @@ export function gate(state: ProjectState, item: WorkItemState, args: GateArgs): 
         : 'Every work gate has passed. Deliver the work item.',
     )
   }
-  if (item.pending_gate) {
+  // A Drillmaster gate whose review failed may be handed in again; anything else pending waits.
+  if (item.pending_gate && !(item.pending_gate.gate === 'drillmaster' && item.pending_gate.review_failed)) {
     throw new Refused(`The ${item.pending_gate.gate} gate of ${where(item)} is pending. Wait for its verdict (work_status).`)
   }
   if (args.stage !== item.stage || args.step !== item.step) {

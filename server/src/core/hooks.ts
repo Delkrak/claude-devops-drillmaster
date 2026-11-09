@@ -2,7 +2,8 @@
 // append and the hook's output out. The server only stores and replies.
 
 import type { NewEvent } from './events.js'
-import type { ProjectState } from './state.js'
+import type { ProjectState, WorkItemState } from './state.js'
+import { nextPosition, stepAt, workflowOf } from './work.js'
 
 /** The fields Drillmaster reads from a Claude Code hook payload. Anything else is ignored. */
 export interface HookPayload {
@@ -104,7 +105,50 @@ export function handleHook(state: ProjectState, event: string, payload: HookPayl
   if (record) trace.raw = redact(payload)
   events.push(trace)
 
+  if (event === 'UserPromptSubmit' && item?.pending_gate?.gate === 'owner' && typeof payload.prompt === 'string') {
+    const owner = ownerVerdict(state, item, payload.prompt)
+    if (owner) {
+      events.push(owner.event)
+      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: owner.context } } }
+    }
+  }
   return { events, output: event === 'SessionStart' ? sessionBrief(state, item) : undefined }
+}
+
+const REJECT = /\b(no|nope|don'?t|do not|reject(ed)?|not (yet|ok|okay|good|approved|done)|wait|stop|wrong|redo|fix|change|nej|vent)\b/i
+const APPROVE = /\b(yes|yep|yeah|ok|okay|approved?|lgtm|looks good|go ahead|ship it|merge it|accept(ed)?|fine|good|great|ja|godkendt|fint)\b/i
+
+/** v1: any direct agreement Owner writes to Agent is enough. A rejection word wins; unclear waits. */
+export function classifyOwner(prompt: string): 'approve' | 'reject' | 'unclear' {
+  if (REJECT.test(prompt)) return 'reject'
+  if (APPROVE.test(prompt)) return 'approve'
+  return 'unclear'
+}
+
+function ownerVerdict(state: ProjectState, item: WorkItemState, prompt: string) {
+  const gate = item.pending_gate!
+  const verdict = classifyOwner(prompt)
+  if (verdict === 'unclear') return undefined
+  const doc = workflowOf(state, item)
+  const rules = stepAt(doc, gate.stage, gate.step)?.rules ?? []
+  const accepted = verdict === 'approve'
+  const position = accepted ? nextPosition(doc, gate.stage, gate.step) : { next: { stage: gate.stage, step: gate.step }, done: false }
+  const event: NewEvent = {
+    type: 'gate_verdict',
+    work_item_id: item.work_item_id,
+    stage: gate.stage,
+    step: gate.step,
+    accepted,
+    by: 'owner',
+    why: `Owner: "${prompt.length > 300 ? `${prompt.slice(0, 300)}...` : prompt}"`,
+    rule: rules.length ? rules.join(', ') : null,
+    ...position,
+  }
+  const where = `work step ${gate.stage}.${gate.step}`
+  const context = accepted
+    ? `Drillmaster: Owner approved the Owner gate of ${where}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: work step ${position.next.stage}.${position.next.step}.`}`
+    : `Drillmaster: Owner rejected the Owner gate of ${where}. Do what Owner asks, report the impediment, and hand the gate in again.`
+  return { event, context }
 }
 
 function sessionBrief(state: ProjectState, item: ProjectState['workItems'][string] | undefined) {
@@ -114,8 +158,11 @@ function sessionBrief(state: ProjectState, item: ProjectState['workItems'][strin
     'Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.',
     item
       ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
-      : 'Start every work item with the work_report tool (action "start"), and report to Drillmaster as you go.',
+      : 'Start every work item with the work_report tool (action "start"), and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
   ]
+  if (item?.pending_gate) {
+    lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)
+  }
   if (workflow.stages.length === 0) {
     lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. The workflow grows from those corrections.')
   }

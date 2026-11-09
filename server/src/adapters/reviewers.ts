@@ -28,7 +28,7 @@ export class ScriptedReviewer implements Reviewer {
   }
 }
 
-/** The production reviewer, a headless `claude -p` run, arrives in phase 4. */
+/** DRILLMASTER_REVIEWER=none: every review fails, so Drillmaster gates stay pending. */
 export class UnavailableReviewer implements Reviewer {
   async review(request: ReviewRequest): Promise<never> {
     throw new Error(`No reviewer is configured to judge "${request.kind}".`)

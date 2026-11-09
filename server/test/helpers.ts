@@ -46,6 +46,15 @@ export const WORKFLOW_3: WorkflowDocument = {
   experiments: [],
 }
 
+/** WORKFLOW_3 with work step 1.2 judged by Drillmaster instead of Agent. */
+export const WORKFLOW_DM: WorkflowDocument = {
+  ...WORKFLOW_3,
+  version: 1,
+  stages: WORKFLOW_3.stages.map((stage) =>
+    stage.n === 1 ? { ...stage, steps: stage.steps.map((s) => (s.n === 2 ? { ...s, gate: 'drillmaster' as const } : s)) } : stage,
+  ),
+}
+
 /** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
 export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
   const { projectId } = await import('../src/env.js')

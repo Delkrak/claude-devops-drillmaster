@@ -19,7 +19,10 @@ Usage:
 
 Environment:
   DRILLMASTER_HOME      Where the server keeps its port file and store (default ~/.drillmaster).
-  DRILLMASTER_REVIEWER  none | scripted:<file>
+  DRILLMASTER_REVIEWER  claude (default) | scripted:<file> | none
+  DRILLMASTER_CLAUDE    the claude executable for the reviewer (default: claude)
+  DRILLMASTER_REVIEW_MODEL, DRILLMASTER_REVIEW_TIMEOUT (seconds per attempt, default 90),
+  DRILLMASTER_REVIEW_ATTEMPTS (default 2)
   DRILLMASTER_CLOCK     system | fixed:<iso time>
   DRILLMASTER_RECORD    1 keeps raw hook payloads in the work traces, for test fixtures.
 `

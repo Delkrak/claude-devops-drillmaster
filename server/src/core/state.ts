@@ -11,7 +11,7 @@ export interface WorkItemState {
   stage: number | null
   step: number | null
   /** The work gate waiting for Drillmaster or Owner, if any. */
-  pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner' } | null
+  pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner'; review_failed?: string } | null
   /** Every work gate of every work stage has passed. Always true when the workflow has none. */
   gates_done: boolean
   status: 'active' | 'delivered'
@@ -101,6 +101,11 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           item.gates_done = event.done
           if (!event.accepted) item.rejections++
         }
+        break
+      }
+      case 'review_failed': {
+        const item = state.workItems[event.work_item_id]
+        if (item?.pending_gate) item.pending_gate.review_failed = event.error
         break
       }
       case 'work_item_delivered': {

@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { fixedClock, randomIds, systemClock } from './adapters/clocks.js'
+import { ClaudeReviewer } from './adapters/claudeReviewer.js'
 import { ScriptedReviewer, UnavailableReviewer } from './adapters/reviewers.js'
 import { JsonlStore } from './adapters/stores.js'
 import type { Ports } from './ports.js'
@@ -25,13 +26,20 @@ export function projectId(dir: string) {
 /** The production adapters, unless DRILLMASTER_CLOCK or DRILLMASTER_REVIEWER say otherwise. */
 export function portsFromEnv(env: NodeJS.ProcessEnv = process.env): Ports {
   const clockSetting = env.DRILLMASTER_CLOCK ?? 'system'
-  const reviewerSetting = env.DRILLMASTER_REVIEWER ?? 'none'
+  const reviewerSetting = env.DRILLMASTER_REVIEWER ?? 'claude'
   return {
     store: new JsonlStore(path.join(home(env), 'projects')),
     clock: clockSetting.startsWith('fixed:') ? fixedClock(clockSetting.slice('fixed:'.length)) : systemClock,
     ids: randomIds,
     reviewer: reviewerSetting.startsWith('scripted:')
       ? ScriptedReviewer.fromFile(reviewerSetting.slice('scripted:'.length))
-      : new UnavailableReviewer(),
+      : reviewerSetting === 'claude'
+        ? new ClaudeReviewer({
+            command: env.DRILLMASTER_CLAUDE ?? 'claude',
+            model: env.DRILLMASTER_REVIEW_MODEL,
+            timeoutMs: env.DRILLMASTER_REVIEW_TIMEOUT ? Number(env.DRILLMASTER_REVIEW_TIMEOUT) * 1000 : undefined,
+            attempts: env.DRILLMASTER_REVIEW_ATTEMPTS ? Number(env.DRILLMASTER_REVIEW_ATTEMPTS) : undefined,
+          })
+        : new UnavailableReviewer(),
   }
 }

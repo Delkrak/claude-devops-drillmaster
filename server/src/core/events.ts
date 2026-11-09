@@ -132,6 +132,15 @@ export interface GateVerdict extends EventEnvelope {
   done: boolean
 }
 
+/** Drillmaster could not judge a gate (timeout, unreadable answer). The gate stays pending. */
+export interface ReviewFailed extends EventEnvelope {
+  type: 'review_failed'
+  work_item_id: string
+  stage: number
+  step: number
+  error: string
+}
+
 export interface WorkItemDelivered extends EventEnvelope {
   type: 'work_item_delivered'
   work_item_id: string
@@ -158,6 +167,7 @@ export type DrillmasterEvent =
   | WorkReported
   | GateSubmitted
   | GateVerdict
+  | ReviewFailed
   | WorkItemDelivered
   | PostMortemWritten
 

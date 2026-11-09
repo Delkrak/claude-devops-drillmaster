@@ -4,7 +4,8 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { REPORT_KINDS, type DrillmasterEvent, type NewEvent } from './core/events.js'
+import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type NewEvent } from './core/events.js'
+import { buildGatePrompt, GATE_REVIEW, readGateAnswer } from './core/review.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { foldState, itemByTokenHash, reportsOf, tracesOf, viewWorkflow, WorkflowQueryError, type ProjectState } from './core/state.js'
 import * as work from './core/work.js'
@@ -234,8 +235,11 @@ export class Drillmaster {
           const parsed = parse(WorkflowGetArgs, args)
           return ok(viewWorkflow(await this.state(dir), parsed))
         }
-        case 'work_report':
-          return ok(await this.workReport(dir, parse(WorkReportArgs, args)))
+        case 'work_report': {
+          const { answer, review } = await this.workReport(dir, parse(WorkReportArgs, args))
+          // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
+          return ok(review ? await this.reviewGate(dir, review) : answer)
+        }
         case 'work_status':
           return ok(await this.workStatus(dir, parse(WorkStatusArgs, args)))
         default:
@@ -249,7 +253,7 @@ export class Drillmaster {
     }
   }
 
-  private workReport(dir: string, args: z.infer<typeof WorkReportArgs>) {
+  private workReport(dir: string, args: z.infer<typeof WorkReportArgs>): Promise<{ answer: unknown; review?: string }> {
     return this.exclusive(dir, async (project) => {
       const state = foldState(await this.ports.store.read(project))
       const workflow = state.workflow
@@ -269,13 +273,15 @@ export class Drillmaster {
             ...position,
           })
           return {
-            work_item_id: workItemId,
-            agent_token: token,
-            ...position,
-            note:
-              position.stage === null
-                ? 'The workflow has no work stages yet: do your best, and Owner will correct you.'
-                : `Read work stage ${position.stage} with workflow_get before you begin.`,
+            answer: {
+              work_item_id: workItemId,
+              agent_token: token,
+              ...position,
+              note:
+                position.stage === null
+                  ? 'The workflow has no work stages yet: do your best, and Owner will correct you.'
+                  : `Read work stage ${position.stage} with workflow_get before you begin.`,
+            },
           }
         }
         default: {
@@ -290,9 +296,60 @@ export class Drillmaster {
                 : args.action === 'deliver'
                   ? work.deliver(item, rest as work.DeliverArgs)
                   : work.postMortem(item, rest as work.PostMortemArgs)
-          for (const event of decision.events) await this.append(project, event)
-          return decision.answer
+          let review: string | undefined
+          for (const event of decision.events) {
+            const stored = await this.append(project, event)
+            if (stored.type === 'gate_submitted' && stored.gate === 'drillmaster') review = stored.id
+          }
+          return { answer: decision.answer, review }
         }
+      }
+    })
+  }
+
+  /** Asks Drillmaster to judge a submitted gate, then records the verdict, or the failure. */
+  private async reviewGate(dir: string, submissionId: string) {
+    const events = await this.events(dir)
+    const submission = events.find((e): e is GateSubmitted => e.type === 'gate_submitted' && e.id === submissionId)!
+    const state = foldState(events)
+    const item = state.workItems[submission.work_item_id]!
+    const doc = work.workflowOf(state, item)
+
+    let outcome: ReturnType<typeof readGateAnswer> | { error: string }
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: GATE_REVIEW, prompt: buildGatePrompt(doc, item, submission, events) })
+      outcome = readGateAnswer(doc, submission, answer)
+    } catch (error) {
+      outcome = { error: error instanceof Error ? error.message : String(error) }
+    }
+
+    return this.exclusive(dir, async (project) => {
+      const now = foldState(await this.ports.store.read(project)).workItems[item.work_item_id]
+      const stillPending = now?.pending_gate?.gate === 'drillmaster' && now.pending_gate.stage === submission.stage && now.pending_gate.step === submission.step
+      if (!stillPending) return { verdict: 'superseded', note: 'This gate was decided while Drillmaster was judging it. Check work_status.' }
+      const at = { work_item_id: item.work_item_id, stage: submission.stage, step: submission.step }
+      if ('error' in outcome) {
+        await this.append(project, { type: 'review_failed', ...at, error: outcome.error })
+        return {
+          verdict: 'pending',
+          gate: 'drillmaster',
+          ...at,
+          note: `Drillmaster could not judge this gate (${outcome.error}). Hand the gate in again, or report the impediment.`,
+        }
+      }
+      await this.append(project, { type: 'gate_verdict', ...at, by: 'drillmaster', ...outcome })
+      return {
+        verdict: outcome.accepted ? 'accepted' : 'rejected',
+        by: 'drillmaster',
+        rule: outcome.rule,
+        why: outcome.why,
+        next: outcome.next,
+        done: outcome.done,
+        note: outcome.accepted
+          ? outcome.done
+            ? 'Every work gate has passed. Deliver the work item.'
+            : `Next: work step ${outcome.next.stage}.${outcome.next.step}.`
+          : `Go back to work step ${outcome.next.stage}.${outcome.next.step}. A rejection is an impediment: report what got in the way.`,
       }
     })
   }
