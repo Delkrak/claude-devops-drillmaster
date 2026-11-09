@@ -93,6 +93,18 @@ describe('reports, delivery and the post mortem', () => {
     expect(() => deliver(run().workItems.wi_1!, { pr: '#2' })).toThrow(/Every work gate must pass/)
   })
 
+  it('takes added steps only after delivery, with the correction that asked for them', () => {
+    const active = foldState([...seed(w0), started(0, null, null)])
+    expect(() => report(active.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md', why: 'Owner: add CHANGES.md' })).toThrow(/fix to delivered work/)
+    const delivered = foldState([...seed(w0), started(0, null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])
+    expect(() => report(delivered.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md' })).toThrow(/needs `why`/)
+    expect(report(delivered.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md', why: 'Owner: add CHANGES.md' }).events[0]).toMatchObject({
+      type: 'work_reported',
+      kind: 'added_step',
+      why: 'Owner: add CHANGES.md',
+    })
+  })
+
   it('takes one post mortem from Agent, after delivery only', () => {
     const pm = { keep: 'k', change: 'c', experiment_reflections: 'none running', free_text: 'f' }
     const active = foldState([...seed(w0), started(0, null, null)])

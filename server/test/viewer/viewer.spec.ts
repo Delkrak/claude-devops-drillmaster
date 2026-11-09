@@ -1,0 +1,97 @@
+// The viewer in a real browser: every page and tab, navigation between them, filters and search,
+// live refresh, and the dark theme from the StyleX tokens.
+
+import { expect, test } from '@playwright/test'
+import { VIEWER_PORT } from './port.js'
+import { DEMO_DIR } from './global-setup.js'
+
+const projectRow = (page: import('@playwright/test').Page, text: string) => page.getByTestId('projects').locator('tbody tr', { hasText: text })
+
+test('lists every project with its objective and workflow version', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+  await expect(projectRow(page, 'gates-demo')).toContainText('every change is documented')
+  await expect(projectRow(page, 'gates-demo')).toContainText('v1')
+  await expect(projectRow(page, 'dm-sim-node-report')).toContainText('ship features without Owner stepping in')
+})
+
+test("navigates from a project's overview through every tab", async ({ page }) => {
+  await page.goto('/')
+  await projectRow(page, 'gates-demo').click()
+  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
+  await expect(page.getByTestId('now')).toContainText('owner gate pending')
+
+  await page.getByRole('tab', { name: 'Workflow' }).click()
+  await expect(page).toHaveURL(/#\/p\/.+\/workflow$/)
+  await expect(page.getByTestId('stage')).toHaveCount(2)
+  await expect(page.getByTestId('step').filter({ hasText: 'describe the PR' })).toContainText('Drillmaster gate')
+  await expect(page.getByTestId('experiment')).toContainText('baseline 1.5')
+  await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0')
+  await expect(page.getByTestId('workflow')).toContainText('No work stages yet')
+
+  await page.getByRole('tab', { name: 'Work items' }).click()
+  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
+
+  await page.getByRole('tab', { name: 'Retrospectives' }).click()
+  await expect(page.getByTestId('empty')).toContainText('No workflow retrospective yet')
+
+  await page.getByRole('tab', { name: 'Measures' }).click()
+  await expect(page.getByTestId('measures')).toContainText('Experiment 1 baseline')
+})
+
+test("a work item's page shows its gates, post mortems and a searchable added step", async ({ page }) => {
+  await page.goto('/')
+  await projectRow(page, 'gates-demo').click()
+  await page.getByRole('tab', { name: 'Work items' }).click()
+  await page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#1 CSV export' }).click()
+
+  await expect(page.getByTestId('item-title')).toContainText('#1 CSV export')
+  await expect(page.getByTestId('post-mortem-agent')).toContainText('the gates')
+  await expect(page.getByTestId('post-mortem-drillmaster')).toContainText('Ask for CHANGES.md in a rule')
+  await expect(page.getByTestId('verdict').filter({ hasText: 'rejected by drillmaster' })).toBeVisible()
+  await expect(page.getByTestId('verdict').filter({ hasText: 'accepted by owner' })).toBeVisible()
+
+  await page.getByRole('searchbox', { name: 'Search the timeline' }).fill('added_step')
+  await expect(page.getByTestId('timeline-entry')).toHaveCount(1)
+  await expect(page.getByTestId('report-added_step')).toBeVisible()
+  await expect(page.getByTestId('timeline')).toContainText('you forgot CHANGES.md')
+
+  await page.getByRole('searchbox', { name: 'Search the timeline' }).fill('')
+  const all = await page.getByTestId('timeline-entry').count()
+  await page.getByRole('button', { name: /^actions/ }).click()
+  await expect(page.getByTestId('timeline-entry')).not.toHaveCount(all)
+  await page.getByRole('link', { name: 'Work items' }).click()
+  await expect(page.getByTestId('work-items-table')).toBeVisible()
+})
+
+test('shows a real simulated run: its retrospective, applied proposals and measures', async ({ page }) => {
+  await page.goto('/')
+  await projectRow(page, 'dm-sim-node-report').click()
+  await page.getByRole('tab', { name: 'Retrospectives' }).click()
+  await expect(page.getByTestId('proposal').first()).toContainText('applied')
+  await page.getByRole('tab', { name: 'Work items' }).click()
+  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(3)
+  await page.getByRole('tab', { name: 'Measures' }).click()
+  await expect(page.getByRole('img', { name: 'owner_corrections_per_item per work item' })).toBeVisible()
+})
+
+test('follows a live session: a new work item appears without reloading', async ({ page, request }) => {
+  await page.goto('/')
+  await projectRow(page, 'gates-demo').click()
+  await page.getByRole('tab', { name: 'Work items' }).click()
+  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
+  await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_report', arguments: { action: 'start', issue: '#3 live' } } })
+  await expect(page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#3 live' })).toBeVisible({ timeout: 10_000 })
+})
+
+test('follows the dark theme from the tokens', async ({ browser }) => {
+  const background = async (colorScheme: 'light' | 'dark') => {
+    const page = await browser.newPage({ colorScheme })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+    const color = await page.getByRole('main').evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)
+    await page.close()
+    return color
+  }
+  expect(await background('light')).not.toBe(await background('dark'))
+})

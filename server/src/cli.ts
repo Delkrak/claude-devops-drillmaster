@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // drillmaster daemon | mcp | init | inspect
 
+import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
 import { ensureDaemon, request } from './client.js'
 import { runDaemon } from './daemon/main.js'
@@ -16,6 +17,7 @@ Usage:
                                         Create workflow_0 from Owner's objective.
   drillmaster inspect [--project <dir>] [--json]
                                         Show the project's events and folded state.
+  drillmaster open                      Open the read-only viewer in the browser.
 
 Environment:
   DRILLMASTER_HOME      Where the server keeps its port file and store (default ~/.drillmaster).
@@ -61,6 +63,12 @@ async function main(argv: string[]) {
       else console.log(`${result.events.length} events\n\n${JSON.stringify(result.state, null, 2)}`)
       return
     }
+    case 'open': {
+      const url = await ensureDaemon()
+      console.log(`Drillmaster viewer: ${url}/`)
+      openInBrowser(`${url}/`)
+      return
+    }
     case undefined:
     case '--help':
     case 'help':
@@ -72,6 +80,12 @@ async function main(argv: string[]) {
     default:
       throw new Error(`Unknown command: ${command}\n\n${USAGE}`)
   }
+}
+
+function openInBrowser(url: string) {
+  const [command, args] =
+    process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]]
+  spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {

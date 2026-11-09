@@ -32,7 +32,8 @@ Call `work_report` with `{action: "start", issue}` before you touch anything.
    - `decision`: add `chosen`, `by` and `why`;
    - `question`: add `asked` and `answer`, once Drillmaster or Owner has answered;
    - `assumption`: anything you took as true without being told;
-   - `required`: anything the work step asks you to report.
+   - `required`: anything the work step asks you to report;
+   - `added_step`: only after delivery (see below).
 4. Hand in the gate with `work_report({token, action: "gate", stage, step, self_check, text})`:
    - `self_check` holds exactly one `{rule, accepted, evidence}` per referenced rule. The evidence is
      what you actually checked, not a promise.
@@ -57,8 +58,17 @@ Call `work_report` with `{action: "start", issue}` before you touch anything.
 
 ## When Owner corrects delivered work
 
-Fix it inside the same work item. Don't start a new one for the fix. Owner's correction and your
-changes are recorded against that work item, and that is how the workflow learns what was missing.
+Ask Owner first, in one line: **"Fix it now, or create a separate issue?"**
+
+- **Fix now:**
+  1. Make the fix.
+  2. Report it as an added step:
+     `work_report({token, action: "report", kind: "added_step", text: "<what you did>", why: "<Owner's correction>"})`.
+
+  The work item stays delivered. Owner's correction and the added step are recorded against it, so
+  every added step can be found later, and that is how the workflow learns what was missing.
+- **Separate issue:** don't touch the code now. Write the issue down for Owner: its title and what
+  it must do. It becomes its own work item when Owner hands it to you.
 
 ## When you're lost
 

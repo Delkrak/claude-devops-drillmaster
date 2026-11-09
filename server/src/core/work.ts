@@ -54,7 +54,13 @@ function requireActive(item: WorkItemState) {
 }
 
 export function report(item: WorkItemState, args: ReportArgs): Decision {
-  requireActive(item)
+  // After delivery, only fixes Owner asked for are reported: as an added step, so they are searchable.
+  if (args.kind === 'added_step') {
+    if (item.status !== 'delivered') throw new Refused('An added step is a fix to delivered work. Before delivery, the work steps cover it.')
+    if (!args.why) throw new Refused("An added step needs `why`: Owner's correction that asked for it.")
+  } else {
+    requireActive(item)
+  }
   if (args.kind === 'decision' && !(args.chosen && args.by && args.why)) {
     throw new Refused('A decision report needs `chosen`, `by` and `why`.')
   }
@@ -71,6 +77,7 @@ export function report(item: WorkItemState, args: ReportArgs): Decision {
     text,
     ...(kind === 'decision' ? { chosen, by, why } : {}),
     ...(kind === 'question' ? { asked, answer } : {}),
+    ...(kind === 'added_step' ? { why } : {}),
   }
   return { events: [event], answer: { recorded: kind, stage: item.stage, step: item.step } }
 }

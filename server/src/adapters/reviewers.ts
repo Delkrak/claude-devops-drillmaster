@@ -14,6 +14,11 @@ export class ScriptedReviewer implements Reviewer {
     this.queues = new Map(Object.entries(script).map(([kind, answers]) => [kind, [...answers]]))
   }
 
+  /** Adds answers for a kind of request, after any still queued. */
+  enqueue(kind: string, ...answers: unknown[]) {
+    this.queues.set(kind, [...(this.queues.get(kind) ?? []), ...answers])
+  }
+
   static fromFile(file: string) {
     return new ScriptedReviewer(JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown[]>)
   }

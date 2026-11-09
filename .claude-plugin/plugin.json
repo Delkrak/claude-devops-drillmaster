@@ -5,5 +5,11 @@
   "author": {
     "name": "delkrak"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "mcpServers": {
+    "drillmaster": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/dist/cli.js", "mcp"]
+    }
+  }
 }

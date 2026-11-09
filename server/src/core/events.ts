@@ -105,7 +105,8 @@ export interface WorkTrace extends EventEnvelope {
   raw?: unknown
 }
 
-export const REPORT_KINDS = ['impediment', 'better_way', 'decision', 'question', 'assumption', 'required'] as const
+/** added_step: a fix to delivered work that Owner asked for, done right away; why holds Owner's correction. */
+export const REPORT_KINDS = ['impediment', 'better_way', 'decision', 'question', 'assumption', 'required', 'added_step'] as const
 export type ReportKind = (typeof REPORT_KINDS)[number]
 
 /** One work report from Agent: what it offers on its own, in real time. */

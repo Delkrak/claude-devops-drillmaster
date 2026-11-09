@@ -68,7 +68,9 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     expect(item).toMatchObject({ issue: expect.stringContaining('1'), status: 'delivered', pr: 'local' })
     expect(item.post_mortems.sort()).toEqual(['agent', 'drillmaster'])
     expect(item.sessions).toHaveLength(1)
-    const traces = (await events()).filter((e) => e.type === 'work_trace' && e.work_item_id === item.work_item_id)
-    expect(traces.some((t) => t.type === 'work_trace' && t.tool === 'Write')).toBe(true)
+    // Every action is traced; Agent may write the file just before or after starting the work item.
+    const traces = (await events()).filter((e) => e.type === 'work_trace')
+    expect(traces.map((t) => (t.type === 'work_trace' ? `${t.hook}:${t.tool ?? ''}` : ''))).toContain('PostToolUse:Write')
+    expect(item.traces).toBeGreaterThan(0)
   }, 600_000)
 })

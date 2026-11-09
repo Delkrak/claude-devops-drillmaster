@@ -21,6 +21,7 @@ import {
 import { buildGatePrompt, GATE_REVIEW, InvalidAnswer, readGateAnswer } from './core/review.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { foldState, itemByTokenHash, reportsOf, tracesOf, viewWorkflow, WorkflowQueryError, type ProjectState } from './core/state.js'
+import * as views from './core/views.js'
 import * as work from './core/work.js'
 import { Objective, workflowZero } from './core/workflow.js'
 import { projectId } from './env.js'
@@ -131,7 +132,8 @@ export const TOOLS: ToolDefinition[] = [
     description: [
       'The only way Agent reports to Drillmaster. The action decides the fields.',
       '- start {issue}: starts a work item. Returns its id, your token for every later call, and the first work stage and work step (null while the workflow has no work stages).',
-      '- report {token, kind, text}: report in real time. kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required. stage/step default to where the work item is.',
+      '- report {token, kind, text}: report in real time. kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required | added_step (+ why). stage/step default to where the work item is.',
+      "  added_step is the only report after delivery: a fix Owner asked for and chose to have done right away. text: what you did; why: Owner's correction.",
       '- gate {token, stage, step, self_check, text}: hand in a work gate. self_check holds exactly one {rule, accepted, evidence} per rule the gate references; text is what the work step requires reporting. Returns the verdict and where to go next.',
       '- deliver {token, pr}: once every work gate has passed (or the workflow has none).',
       '- post_mortem {token, keep, change, experiment_reflections, free_text}: your workflow post mortem, after delivery.',
@@ -229,6 +231,26 @@ export class Drillmaster {
 
   async events(dir: string) {
     return this.ports.store.read(projectId(dir))
+  }
+
+  // ------------------------------------------------------------ read-only views for the viewer
+
+  async listProjects() {
+    const ids = await this.ports.store.projects()
+    const summaries = await Promise.all(ids.map(async (id) => views.summarizeProject(id, await this.ports.store.read(id))))
+    return summaries.filter((s) => s !== undefined).sort((a, b) => (b.last_activity ?? '').localeCompare(a.last_activity ?? ''))
+  }
+
+  async projectView(id: string) {
+    const view = views.projectView(id, await this.ports.store.read(id))
+    if (!view) throw new UserError(`No project ${id}`, 404)
+    return view
+  }
+
+  async workItemView(id: string, workItemId: string) {
+    const view = views.workItemView(await this.ports.store.read(id), workItemId)
+    if (!view) throw new UserError(`No work item ${workItemId} in project ${id}`, 404)
+    return view
   }
 
   async state(dir: string): Promise<ProjectState> {

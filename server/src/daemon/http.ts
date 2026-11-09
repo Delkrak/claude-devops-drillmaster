@@ -5,6 +5,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { UserError, type Drillmaster } from '../app.js'
 import { VERSION } from '../version.js'
+import { serveViewer } from './static.js'
 
 const MAX_BODY = 5 * 1024 * 1024
 
@@ -46,6 +47,16 @@ export function createHandler(app: Drillmaster) {
       if (hook) {
         const body = await readJson(req)
         return send(res, 200, await app.hook(requireProject(body.project), hook[1]!, body.payload))
+      }
+      // The viewer's read-only API: projects by id, as the store keys them.
+      const api = /^GET \/api\/projects(?:\/([\w-]+)(?:\/items\/([\w-]+))?)?$/.exec(route)
+      if (api) {
+        const [, id, item] = api
+        if (!id) return send(res, 200, await app.listProjects())
+        return send(res, 200, item ? await app.workItemView(id, item) : await app.projectView(id))
+      }
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/ui'))) {
+        return serveViewer(res, url.pathname === '/' || url.pathname.startsWith('/ui') ? '/index.html' : url.pathname)
       }
       switch (route) {
         case 'GET /health':
