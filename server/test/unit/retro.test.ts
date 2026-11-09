@@ -132,17 +132,23 @@ describe('measures', () => {
     { id: 'd', at: at(3), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'looks good' },
     { id: 'e', at: at(3), type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 1, accepted: true, by: 'owner', why: 'Owner: "looks good"', rule: null, next: { stage: null, step: null }, done: true },
     { id: 'f', at: at(10), type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' },
-    { id: 'g', at: at(11), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'after delivery' },
+    // After delivery: a correction that makes Agent change the work counts once...
+    { id: 'g', at: at(11), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'you forgot CHANGES.md' },
+    { id: 'g2', at: at(11), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'Edit' },
+    { id: 'g3', at: at(11), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'Bash' },
+    // ...while the next instruction, followed only by Drillmaster's tools, does not.
+    { id: 'g4', at: at(12), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'now do issue #2' },
+    { id: 'g5', at: at(12), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'mcp__plugin_devops-drillmaster_drillmaster__work_report' },
     { id: 'h', at: at(12), type: 'work_item_started', work_item_id: 'wi_2', issue: '#2', workflow_version: 0, token_hash: 'h2', stage: null, step: null },
   ]
 
-  it('counts per delivered work item, and Owner approvals are not corrections', () => {
+  it('counts per delivered work item: Owner approvals are not corrections, changes after delivery are', () => {
     expect(measureItems(events)).toEqual([
       {
         work_item_id: 'wi_1',
         issue: '#1',
         delivered_at: at(10),
-        values: { owner_corrections_per_item: 1, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
+        values: { owner_corrections_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
       },
     ])
   })

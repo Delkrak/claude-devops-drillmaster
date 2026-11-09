@@ -20,7 +20,9 @@
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
     "test:api": "vitest run test/api",
-    "test:mcp": "vitest run test/mcp"
+    "test:mcp": "vitest run test/mcp",
+    "test:plugin": "vitest run test/plugin",
+    "sim": "npm run build && tsx test/sim/run.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

@@ -55,6 +55,11 @@ Call `work_report` with `{action: "start", issue}` before you touch anything.
    It's about the workflow, not the code: what to keep, what to change, how the running workflow
    experiments did, and anything else.
 
+## When Owner corrects delivered work
+
+Fix it inside the same work item. Don't start a new one for the fix. Owner's correction and your
+changes are recorded against that work item, and that is how the workflow learns what was missing.
+
 ## When you're lost
 
 `work_status({token})` shows where the work item is, any pending gate, and the last verdict.

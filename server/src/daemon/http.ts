@@ -52,6 +52,8 @@ export function createHandler(app: Drillmaster) {
           return send(res, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid })
         case 'GET /state': {
           const project = requireProject(url.searchParams.get('project'))
+          // idle=1 waits for background work (Drillmaster's post mortems) before answering.
+          if (url.searchParams.get('idle') === '1') await app.idle()
           const events = await app.events(project)
           return send(res, 200, { project, events, state: await app.state(project) })
         }

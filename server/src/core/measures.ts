@@ -3,7 +3,8 @@
 import type { DrillmasterEvent } from './events.js'
 
 export const MEASURES = {
-  owner_corrections_per_item: "Owner's prompts during a work item that were not approvals of an Owner gate",
+  owner_corrections_per_item:
+    "Owner's prompts during a work item that were not Owner-gate approvals, plus prompts after delivery that made Agent change the work",
   gate_rejections_per_item: 'Work gate rejections per work item',
   review_rounds_per_item: 'Drillmaster and Owner gate hand-ins per work item',
   minutes_per_item: 'Minutes from start to delivery',
@@ -21,8 +22,12 @@ export interface ItemMeasures {
   values: Record<MeasureName, number>
 }
 
+/** Tools that change the work. Owner's words after delivery that lead to one were a correction. */
+const CHANGES_WORK = /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/
+
 /** Every delivered work item's measures, in delivery order. */
 export function measureItems(events: readonly DrillmasterEvent[]): ItemMeasures[] {
+  const afterDelivery = new Map<string, boolean>() // work item -> an Owner prompt awaits a reaction
   const items = new Map<string, { issue: string; started: string; delivered?: string; values: Record<MeasureName, number> }>()
   const zero = (): Record<MeasureName, number> => ({
     owner_corrections_per_item: 0,
@@ -38,7 +43,17 @@ export function measureItems(events: readonly DrillmasterEvent[]): ItemMeasures[
     }
     if (!('work_item_id' in e) || !e.work_item_id) continue
     const item = items.get(e.work_item_id)
-    if (!item || item.delivered) continue
+    if (!item) continue
+    if (item.delivered) {
+      // Without gates, Owner often can only correct after delivery: count it when Agent then
+      // changes the work. A next-issue instruction or retrospective talk changes nothing here.
+      if (e.type === 'work_trace' && e.hook === 'UserPromptSubmit') afterDelivery.set(e.work_item_id, true)
+      if (e.type === 'work_trace' && e.hook === 'PostToolUse' && CHANGES_WORK.test(e.tool ?? '') && afterDelivery.get(e.work_item_id)) {
+        item.values.owner_corrections_per_item++
+        afterDelivery.set(e.work_item_id, false)
+      }
+      continue
+    }
     switch (e.type) {
       case 'work_trace':
         if (e.hook === 'UserPromptSubmit') item.values.owner_corrections_per_item++

@@ -184,7 +184,13 @@ drillmaster inspect [--json]
 
 ```
 cd server
-npm test            # unit, api, mcp and hooks layers
+npm test            # unit, api, mcp and hooks layers (CI)
 npm run typecheck
 claude plugin validate ..
+
+npm run build && DRILLMASTER_PLUGIN_TESTS=1 npm run test:plugin   # real Claude Code, scripted reviewer
+npm run sim -- test/sim/scenarios/export-features.json --owner llm # an agent plays Owner
 ```
+
+The simulated-Owner harness and its scenarios are described in
+[`server/test/sim/README.md`](server/test/sim/README.md).

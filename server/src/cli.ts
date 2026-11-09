@@ -56,7 +56,7 @@ async function main(argv: string[]) {
       const { values } = parseArgs({ args: rest, options: { project: { type: 'string' }, json: { type: 'boolean' } } })
       const url = await ensureDaemon()
       const project = values.project ?? process.cwd()
-      const result = await request<{ events: unknown[]; state: unknown }>(url, 'GET', `/state?project=${encodeURIComponent(project)}`)
+      const result = await request<{ events: unknown[]; state: unknown }>(url, 'GET', `/state?idle=1&project=${encodeURIComponent(project)}`)
       if (values.json) console.log(JSON.stringify(result, null, 2))
       else console.log(`${result.events.length} events\n\n${JSON.stringify(result.state, null, 2)}`)
       return

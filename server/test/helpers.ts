@@ -19,7 +19,8 @@ export function testPorts(script: Record<string, unknown[]> = {}): Ports & { rev
 
 export async function tempDir(prefix: string) {
   const dir = await mkdtemp(path.join(os.tmpdir(), `drillmaster-${prefix}-`))
-  return { dir, remove: () => rm(dir, { recursive: true, force: true }) }
+  // Windows can hold a folder a moment after a child process leaves it: retry, never fail a test.
+  return { dir, remove: () => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {}) }
 }
 
 export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] }
