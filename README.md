@@ -152,6 +152,11 @@ It runs as one shared local server and starts on its own the first time it's nee
 
 A workflow experiment's baseline is its measure's mean over the last 5 delivered work items.
 
+On `workflow_0` there are no gates, so Owner often corrects after delivery. That also counts as a
+correction when Agent then changes the work. Agent first asks Owner "fix it now, or create a
+separate issue?". A fix done now is reported as an `added_step` against the same work item. It's
+the only report allowed after delivery, and the viewer can search for it.
+
 Each work gate is judged by the level of the chain of command it belongs to:
 - **Self gate:** Agent's own self check decides it at once.
 - **Drillmaster gate:** a headless `claude -p` reviewer judges it. It gets the rules, the new and
@@ -173,9 +178,29 @@ claude --plugin-dir <path to this repo>
 The CLI:
 
 ```
+drillmaster open      # the viewer in your browser
 drillmaster init --objective "<Owner's objective>" --measure owner_corrections_per_item
 drillmaster inspect [--json]
 ```
+
+## The viewer
+
+The server also serves a read-only web viewer at its own address: run `drillmaster open`. It shows:
+- every project;
+- for each project, the overview (objective, measures and what is happening now), the workflow at
+  any version, the work items, the retrospectives with each proposal's status, and the measures per
+  work item;
+- for each work item, a timeline you can filter and search (for example for `added_step`), with
+  both post mortems.
+
+The viewer refreshes every few seconds, so you can follow a live session.
+
+It's a React app in `server/viewer/` with a token-driven design:
+- `styles/tokens.stylex.ts` holds the design tokens (StyleX `defineVars`, light and dark).
+- `ui/` holds the primitives, styled only from those tokens.
+- `views/` composes the primitives into pages.
+
+`npm run build` builds the viewer into `server/dist/viewer`.
 
 `DRILLMASTER_HOME` sets where the server keeps its port file and store. It defaults to
 `~/.drillmaster`.
@@ -188,9 +213,14 @@ npm test            # unit, api, mcp and hooks layers (CI)
 npm run typecheck
 claude plugin validate ..
 
+npm run build && npm run test:viewer                               # the viewer in a real browser (Playwright)
 npm run build && DRILLMASTER_PLUGIN_TESTS=1 npm run test:plugin   # real Claude Code, scripted reviewer
 npm run sim -- test/sim/scenarios/export-features.json --owner llm # an agent plays Owner
 ```
+
+The plugin's own MCP server is declared in `.claude-plugin/plugin.json`. The root `.mcp.json` is
+for development only: it adds the Playwright MCP, so a Claude Code session in this repo can check
+the viewer interactively.
 
 The simulated-Owner harness and its scenarios are described in
 [`server/test/sim/README.md`](server/test/sim/README.md).
