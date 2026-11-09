@@ -22,7 +22,20 @@ export interface WorkItemState {
   reports: number
   rejections: number
   passed_steps: string[]
+  skipped_steps: string[]
+  restarted: { from_version: string; to_version: string } | null
+  late_start: LateStart | null
   post_mortems: ('agent' | 'drillmaster')[]
+}
+
+export interface LateStart {
+  start_at: { stage: number; step: number }
+  skipped: string[]
+  owner_gates: string[]
+  justification: string
+  status: 'judging' | 'awaiting_owner' | 'approved' | 'rejected'
+  why: string | null
+  rule: string | null
 }
 
 export interface SessionState {
@@ -121,6 +134,9 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           reports: 0,
           rejections: 0,
           passed_steps: [],
+          skipped_steps: [],
+          restarted: null,
+          late_start: null,
           post_mortems: [],
         }
         break
@@ -132,6 +148,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
       case 'gate_submitted': {
         const item = state.workItems[event.work_item_id]
         if (item) {
+          item.restarted = null
           item.reports++
           if (event.gate !== 'self') item.pending_gate = { stage: event.stage, step: event.step, gate: event.gate }
         }
@@ -164,6 +181,57 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         }
         break
       }
+      case 'work_item_restarted': {
+        const item = state.workItems[event.work_item_id]
+        const workflow = state.versions.find((candidate) => candidate.version === event.to_version)
+        if (item && workflow) {
+          const first = firstPosition(workflow)
+          Object.assign(item, {
+            workflow_version: event.to_version,
+            stage: first.stage,
+            step: first.step,
+            pending_gate: null,
+            gates_done: first.stage === null,
+            passed_steps: [],
+            skipped_steps: [],
+            late_start: null,
+            restarted: { from_version: event.from_version, to_version: event.to_version },
+          })
+        }
+        break
+      }
+      case 'late_start_requested': {
+        const item = state.workItems[event.work_item_id]
+        if (item && event.start_at.stage !== null && event.start_at.step !== null) {
+          item.restarted = null
+          item.late_start = {
+            start_at: { stage: event.start_at.stage, step: event.start_at.step },
+            skipped: event.skipped,
+            owner_gates: event.owner_gates,
+            justification: event.justification,
+            status: 'judging',
+            why: null,
+            rule: null,
+          }
+        }
+        break
+      }
+      case 'late_start_judged': {
+        const item = state.workItems[event.work_item_id]
+        const lateStart = item?.late_start
+        if (!item || !lateStart) break
+        Object.assign(lateStart, { why: event.why, rule: event.rule })
+        const skipApproved = event.accepted && (event.by === 'owner' || lateStart.owner_gates.length === 0)
+        if (!event.accepted) lateStart.status = 'rejected'
+        else if (!skipApproved) lateStart.status = 'awaiting_owner'
+        else {
+          lateStart.status = 'approved'
+          item.stage = lateStart.start_at.stage
+          item.step = lateStart.start_at.step
+          item.skipped_steps = lateStart.skipped
+        }
+        break
+      }
       case 'metric_recorded': {
         const item = state.workItems[event.work_item_id]
         if (item) item.metrics[event.name] = { value: event.value, by: event.by, ...(event.explanation ? { explanation: event.explanation } : {}) }
@@ -192,6 +260,11 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
   }
   return state
 }
+export function firstPosition(workflow: WorkflowDocument): { stage: number | null; step: number | null } {
+  const firstStage = workflow.stages.find((stage) => stage.steps.length > 0)
+  return firstStage ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
+}
+
 export const findWorkItemByTokenHash = (state: ProjectState, tokenHash: string) =>
   Object.values(state.workItems).find((item) => item.token_hash === tokenHash)
 export function workReportsOf(events: readonly DrillmasterEvent[], workItemId: string, atStep?: { stage?: number; step?: number }) {

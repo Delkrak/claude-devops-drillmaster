@@ -23,6 +23,10 @@ Call `work_start({issue, description})` before you touch anything.
 - Keep the `agent_token` it returns. Every later work tool needs it, for the whole work item.
 - If the workflow has no work stages yet, do your best, deliver, and expect Owner to correct you.
   That is how the workflow grows.
+- **Late start:** if earlier work already meets the first work steps (for example it was done in
+  another session), add `start_at`, a `justification` and the `evidence`. Drillmaster judges the
+  skipped steps from the evidence and the work traces, and Owner decides any skipped Owner gate. If
+  it's rejected, start at the first step.
 
 ## 2. Each work step
 
@@ -92,6 +96,16 @@ Ask Owner first, in one line: **"Fix it now, or create a separate issue?"**
   every added step can be found later, and that is how the workflow learns what was missing.
 - **Separate issue:** don't touch the code now. Write the issue down for Owner: its title and what
   it must do. It becomes its own work item when Owner hands it to you.
+
+## When the workflow changes under you
+
+A retrospective can change the workflow while a work item is open.
+
+- A **minor** change (new text, metrics, an experiment) applies from your next step. Carry on.
+- A **major** change (steps, gates or rules added, removed or moved) restarts the work item at the
+  first work step of the new version. The next result says what changed. Your earlier work still
+  counts: call `work_skip({token, start_at, justification, evidence})` to skip the steps it already
+  meets.
 
 ## When you're lost
 

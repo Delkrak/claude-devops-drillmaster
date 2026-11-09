@@ -43,7 +43,7 @@ afterAll(async () => {
 describe('stdio MCP shim', () => {
   it('starts the shared server and lists the tools', async () => {
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_start', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
+    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_start', 'work_skip', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
     const info = JSON.parse(await readFile(path.join(home.dir, 'daemon.json'), 'utf8')) as { url: string }
     expect(info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
   })

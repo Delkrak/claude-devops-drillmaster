@@ -3,6 +3,9 @@ import type { VersionLevel, WorkflowDocument } from './workflow.js'
 export interface EventEnvelope {
   id: string
   at: string
+  /** The workflow version the event was made under: its work item's, or the project's. */
+  workflow_version?: string
+  drillmaster_version?: string
 }
 
 export interface ProjectInitialized extends EventEnvelope {
@@ -82,6 +85,26 @@ export interface WorkItemRestarted extends EventEnvelope {
   work_item_id: string
   from_version: string
   to_version: string
+}
+
+export interface LateStartRequested extends EventEnvelope {
+  type: 'late_start_requested'
+  work_item_id: string
+  start_at: Position
+  justification: string
+  evidence: string
+  skipped: string[]
+  owner_gates: string[]
+}
+
+export interface LateStartJudged extends EventEnvelope {
+  type: 'late_start_judged'
+  work_item_id: string
+  by: 'drillmaster' | 'owner'
+  via?: DecidedVia
+  accepted: boolean
+  why: string
+  rule: string | null
 }
 
 export interface SessionBound extends EventEnvelope {
@@ -215,6 +238,8 @@ export type DrillmasterEvent =
   | SessionRegistered
   | WorkItemStarted
   | WorkItemRestarted
+  | LateStartRequested
+  | LateStartJudged
   | SessionBound
   | WorkTrace
   | WorkReported

@@ -135,3 +135,42 @@ export function renderAskOwner(askInput: { questions: unknown[] }) {
     'Owner can pick an option, add a note, or type an answer of their own. Drillmaster records it.',
   ].join('\n')
 }
+
+export function renderRestart(args: { from: WorkflowDocument; to: WorkflowDocument; changes: string[]; first: Position }) {
+  return [
+    `**Workflow ${args.from.version} became ${args.to.version}, a major change, so this work item starts over** at the first work step. Your earlier work and its traces still count as evidence.`,
+    '',
+    'What changed:',
+    ...args.changes,
+    '',
+    'To skip work steps your earlier work already meets, call `work_skip` with `start_at`, a justification and the evidence. Drillmaster judges the self and Drillmaster gates you skip; Owner decides any Owner gate.',
+    '',
+    renderNext(args.to, args.first, args.first.stage === null),
+  ].join('\n')
+}
+
+export interface LateStartOutcome {
+  verdict: 'skipped' | 'rejected' | 'awaiting_owner'
+  why: string
+  rule: string | null
+  skipped: string[]
+  start_at: Position
+  first: Position
+}
+
+export function renderLateStart(workflow: WorkflowDocument, outcome: LateStartOutcome) {
+  switch (outcome.verdict) {
+    case 'skipped':
+      return [`**Late start approved.** Skipped, justified: work step ${outcome.skipped.join(', ')}. ${outcome.why}`, '', renderNext(workflow, outcome.start_at, false)].join('\n')
+    case 'awaiting_owner':
+      return `**Drillmaster approves the late start**, but it skips an Owner gate, so Owner decides. ${outcome.why}`
+    default:
+      return [
+        `**Late start rejected**${outcome.rule ? `, citing \`${outcome.rule}\`` : ''}: ${outcome.why}`,
+        '',
+        'Start at the first work step.',
+        '',
+        renderNext(workflow, outcome.first, outcome.first.stage === null),
+      ].join('\n')
+  }
+}

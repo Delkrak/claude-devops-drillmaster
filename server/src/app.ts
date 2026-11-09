@@ -19,6 +19,7 @@ import {
   RETRO_REVIEW_KIND,
   toRetroView,
 } from './core/retro.js'
+import { buildLateStartPrompt, describeWorkflowChange, LATE_START_REVIEW_KIND, readLateStartAnswer, requestLateStart } from './core/lateStart.js'
 import { askUserQuestionInput, pendingOwnerQuestions } from './core/questions.js'
 import * as render from './core/render.js'
 import {
@@ -34,6 +35,7 @@ import {
 import {
   findVersion,
   findWorkItemByTokenHash,
+  firstPosition,
   foldState,
   viewWorkflow,
   WorkflowQueryError,
@@ -41,12 +43,14 @@ import {
   workTracesOf,
   type ProjectState,
   type RetroState,
+  type WorkItemState,
 } from './core/state.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
-import { Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
+import { compareVersions, Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
 import { projectId as projectIdOf } from './env.js'
 import type { Ports } from './ports.js'
+import { VERSION } from './version.js'
 
 const POST_MORTEM_TIMEOUT_MS = 180_000
 const RETROSPECTIVE_TIMEOUT_MS = 300_000
@@ -76,6 +80,12 @@ export interface ToolResult {
   isError?: boolean
 }
 
+interface KnownVersions {
+  workflow?: string
+  items: Map<string, string>
+  newestDrillmaster: string
+}
+
 export interface DrillmasterOptions {
   recordRawHookPayloads?: boolean
 }
@@ -94,7 +104,12 @@ const tokenField = z.string().min(1)
 const textField = z.string().min(1)
 const MetricAnswerArgs = z.object({ name: textField, value: textField, explanation: z.string().optional() }).strict()
 
-const WorkStartArgs = z.object({ issue: textField, description: textField }).strict()
+const StartAt = z.object({ stage: z.number().int().positive(), step: z.number().int().positive() }).strict()
+const WorkStartArgs = z
+  .object({ issue: textField, description: textField, start_at: StartAt.optional(), justification: textField.optional(), evidence: textField.optional() })
+  .strict()
+  .refine((args) => !args.start_at || (args.justification && args.evidence), 'A late start (start_at) needs a justification and evidence.')
+const WorkSkipArgs = z.object({ token: tokenField, start_at: StartAt, justification: textField, evidence: textField }).strict()
 const WorkReportArgs = z
   .object({
     token: tokenField,
@@ -138,6 +153,16 @@ const WorkStatusArgs = z
   .strict()
 
 const tokenProperty = { token: { type: 'string', description: 'Your agent_token from work_start.' } }
+const lateStartProperties = {
+  start_at: {
+    type: 'object',
+    description: 'A late start: the work step to start at, skipping the ones before it. Needs justification and evidence.',
+    properties: { stage: { type: 'integer', minimum: 1 }, step: { type: 'integer', minimum: 1 } },
+    required: ['stage', 'step'],
+  },
+  justification: { type: 'string', description: 'Why the skipped work steps are already done.' },
+  evidence: { type: 'string', description: 'What shows it: commits, test output, files, earlier work items.' },
+}
 const selfCheckProperty = {
   type: 'array',
   description: 'Exactly one entry per rule the gate checks.',
@@ -171,8 +196,19 @@ export const TOOLS: ToolDefinition[] = [
       properties: {
         issue: { type: 'string', description: 'The issue the work item delivers, e.g. "#12".' },
         description: { type: 'string', description: 'What the work item is about, in a few sentences: the problem and the expected result.' },
+        ...lateStartProperties,
       },
       required: ['issue', 'description'],
+    },
+  },
+  {
+    name: 'work_skip',
+    description:
+      'Asks to skip ahead to a later work step, because earlier work (for example before a restart, or done outside a work item) already meets the skipped steps. Drillmaster judges the skipped self and Drillmaster gates from your evidence and the work traces; Owner decides any skipped Owner gate. Returns the verdict and the step to do.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tokenProperty, ...lateStartProperties },
+      required: ['token', 'start_at', 'justification', 'evidence'],
     },
   },
   {
@@ -282,6 +318,7 @@ export const TOOLS: ToolDefinition[] = [
 
 export class Drillmaster {
   private readonly lockByProject = new Map<string, Promise<unknown>>()
+  private readonly knownVersionsByProject = new Map<string, KnownVersions>()
   private readonly backgroundWork = new Set<Promise<unknown>>()
 
   constructor(
@@ -297,9 +334,40 @@ export class Drillmaster {
     return thisRun
   }
 
+  /** The versions events of a project are made under, kept as events are appended. */
+  private async versionsOf(projectId: string): Promise<KnownVersions> {
+    let known = this.knownVersionsByProject.get(projectId)
+    if (!known) {
+      const events = await this.ports.store.read(projectId)
+      const state = foldState(events)
+      known = {
+        workflow: state.workflow?.version,
+        items: new Map(Object.values(state.workItems).map((item) => [item.work_item_id, item.workflow_version])),
+        newestDrillmaster: events.reduce((newest, event) => (event.drillmaster_version && compareVersions(event.drillmaster_version, newest) > 0 ? event.drillmaster_version : newest), '0.0.0'),
+      }
+      this.knownVersionsByProject.set(projectId, known)
+    }
+    return known
+  }
+
   private async appendEvent(projectId: string, newEvent: NewEvent): Promise<DrillmasterEvent> {
-    const storedEvent = { ...newEvent, id: this.ports.ids.next('ev'), at: this.ports.clock.now() } as DrillmasterEvent
+    const known = await this.versionsOf(projectId)
+    if (compareVersions(known.newestDrillmaster, VERSION) > 0) {
+      throw new UserError(`This project was written by Drillmaster ${known.newestDrillmaster}, which is newer than this one (${VERSION}). Upgrade Drillmaster before you work on it.`, 409)
+    }
+    const workItemId = 'work_item_id' in newEvent && typeof newEvent.work_item_id === 'string' ? newEvent.work_item_id : undefined
+    const madeUnder = (workItemId ? known.items.get(workItemId) : undefined) ?? known.workflow
+    const storedEvent = {
+      id: this.ports.ids.next('ev'),
+      at: this.ports.clock.now(),
+      ...(madeUnder ? { workflow_version: madeUnder } : {}),
+      drillmaster_version: VERSION,
+      ...newEvent,
+    } as DrillmasterEvent
     await this.ports.store.append(projectId, storedEvent)
+    if (storedEvent.type === 'project_initialized' || storedEvent.type === 'workflow_changed') known.workflow = toSemver(storedEvent.workflow.version)
+    if (storedEvent.type === 'work_item_started') known.items.set(storedEvent.work_item_id, toSemver(storedEvent.workflow_version))
+    if (storedEvent.type === 'work_item_restarted') known.items.set(storedEvent.work_item_id, storedEvent.to_version)
     return storedEvent
   }
 
@@ -374,7 +442,9 @@ export class Drillmaster {
         case 'workflow_get':
           return jsonResult(await this.describeWorkflow(projectDir, parseToolArgs(WorkflowGetArgs, toolArgs)))
         case 'work_start':
-          return this.startWorkItem(projectDir, parseToolArgs(WorkStartArgs, toolArgs))
+          return await this.startWorkItem(projectDir, parseToolArgs(WorkStartArgs, toolArgs))
+        case 'work_skip':
+          return await this.skipToWorkStep(projectDir, parseToolArgs(WorkSkipArgs, toolArgs))
         case 'work_report':
         case 'work_gate':
         case 'work_deliver':
@@ -422,8 +492,8 @@ export class Drillmaster {
     return { ...view, measures, experiment_verdicts: judgeExperiments(workflow, deliveredItems) }
   }
 
-  private startWorkItem(projectDir: string, args: z.infer<typeof WorkStartArgs>) {
-    return this.withProjectLock(projectDir, async (projectId) => {
+  private async startWorkItem(projectDir: string, args: z.infer<typeof WorkStartArgs>): Promise<ToolResult> {
+    const started = await this.withProjectLock(projectDir, async (projectId) => {
       const workflow = foldState(await this.ports.store.read(projectId)).workflow
       if (!workflow) throw new UserError(NO_WORKFLOW_YET)
       const agentToken = this.ports.ids.secret()
@@ -442,6 +512,54 @@ export class Drillmaster {
       const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...position }
       return workResult(render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, position }), answer)
     })
+    if (!args.start_at) return started
+    const skipped = await this.skipToWorkStep(projectDir, {
+      token: (started.structuredContent as { agent_token: string }).agent_token,
+      start_at: args.start_at,
+      justification: args.justification!,
+      evidence: args.evidence!,
+    })
+    const startedHeader = started.content[0]!.text.split('\n## ')[0]!.trimEnd()
+    return workResult(`${startedHeader}\n\n${skipped.content[0]!.text}`, { ...started.structuredContent, late_start: skipped.structuredContent })
+  }
+
+  private async skipToWorkStep(projectDir: string, args: z.infer<typeof WorkSkipArgs>): Promise<ToolResult> {
+    const requested = await this.withProjectLock(projectDir, async (projectId) => {
+      const state = foldState(await this.ports.store.read(projectId))
+      const item = findWorkItemByTokenHash(state, hashToken(args.token))
+      if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+      const request = (await this.appendEvent(projectId, requestLateStart(state, item, args))) as Extract<DrillmasterEvent, { type: 'late_start_requested' }>
+      return { request, workItemId: item.work_item_id }
+    })
+
+    // Judged outside the project lock, like a Drillmaster gate.
+    const events = await this.events(projectDir)
+    const state = foldState(events)
+    const item = state.workItems[requested.workItemId]!
+    const workflow = work.workflowOfWorkItem(state, item)
+    let judged: ReturnType<typeof readLateStartAnswer>
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: LATE_START_REVIEW_KIND, prompt: buildLateStartPrompt(workflow, item, requested.request, events) })
+      judged = readLateStartAnswer(workflow, requested.request.skipped, answer)
+    } catch (error) {
+      judged = { accepted: false, why: `Drillmaster could not judge the late start (${error instanceof Error ? error.message : String(error)}).`, rule: null }
+    }
+    await this.withProjectLock(projectDir, (projectId) => this.appendEvent(projectId, { type: 'late_start_judged', work_item_id: item.work_item_id, by: 'drillmaster', ...judged }))
+
+    const verdict = !judged.accepted ? 'rejected' : requested.request.owner_gates.length ? 'awaiting_owner' : 'skipped'
+    const outcome: render.LateStartOutcome = { verdict, ...judged, skipped: requested.request.skipped, start_at: requested.request.start_at, first: firstPosition(workflow) }
+    const askOwner = await this.ownerQuestionsFor(projectDir, item.work_item_id)
+    const markdown = render.renderLateStart(workflow, outcome)
+    return askOwner ? workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...outcome, ask_owner: askOwner }) : workResult(markdown, outcome)
+  }
+
+  /** Shown on an item's next result after a major workflow change restarted it. */
+  private restartNotice(state: ProjectState, item: WorkItemState) {
+    if (!item.restarted) return undefined
+    const from = findVersion(state, item.restarted.from_version)
+    const to = work.workflowOfWorkItem(state, item)
+    if (!from) return undefined
+    return render.renderRestart({ from, to, changes: describeWorkflowChange(from, to), first: firstPosition(to) })
   }
 
   private async handleWorkTool(projectDir: string, toolName: string, toolArgs: unknown): Promise<ToolResult> {
@@ -453,6 +571,8 @@ export class Drillmaster {
       if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
       const { token, ...actionArgs } = toolArgs as { token?: unknown }
       const item = typeof token === 'string' ? findWorkItemByTokenHash(state, hashToken(token)) : undefined
+      const restartNotice = item ? this.restartNotice(state, item) : undefined
+      if (restartNotice && toolName === 'work_gate') throw new work.Refused(restartNotice)
       let decision: work.Decision
       switch (toolName) {
         case 'work_report':
@@ -485,13 +605,14 @@ export class Drillmaster {
         if (storedEvent.type === 'gate_verdict' && storedEvent.accepted) this.takeDrillmasterMetricsInBackground(projectDir, storedEvent.work_item_id, storedEvent.stage, storedEvent.step)
         if (storedEvent.type === 'work_item_delivered') this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
       }
-      return { answer: decision.answer, gateSubmissionToJudge, workflow: work.workflowOfWorkItem(state, item!), workItemId: item!.work_item_id }
+      return { answer: decision.answer, gateSubmissionToJudge, workflow: work.workflowOfWorkItem(state, item!), workItemId: item!.work_item_id, restartNotice }
     })
 
     // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
     const answer = outcome.gateSubmissionToJudge ? await this.judgeDrillmasterGate(projectDir, outcome.gateSubmissionToJudge) : outcome.answer
     const askOwner = await this.ownerQuestionsFor(projectDir, outcome.workItemId)
-    const markdown = this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>)
+    const rendered = this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>)
+    const markdown = outcome.restartNotice ? `${rendered}\n\n${outcome.restartNotice}` : rendered
     if (!askOwner) return workResult(markdown, answer)
     return workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...(answer as Record<string, unknown>), ask_owner: askOwner })
   }
@@ -604,7 +725,9 @@ export class Drillmaster {
       if (toApply.length === 0) throw new UserError('Owner has approved no proposal that is still to apply. Ask Owner.', 403)
 
       let workflow = state.workflow!
+      const activeItemVersions = new Map(Object.values(state.workItems).filter((item) => item.status === 'active').map((item) => [item.work_item_id, item.workflow_version]))
       const applied: { proposal: number; workflow_version: string; level: string; change: string; experiment: unknown }[] = []
+      const restartedItemIds = new Set<string>()
       const appliedIds = [...retro.applied]
       for (const proposalId of [...toApply].sort((a, b) => a - b)) {
         const proposal = retro.proposals.find((candidate) => candidate.id === proposalId)!
@@ -616,10 +739,17 @@ export class Drillmaster {
         await this.appendEvent(projectId, { type: 'workflow_changed', workflow: changed.workflow, reason: proposal.change, level: changed.level, retro_id: retro.retro_id, proposal: proposalId })
         const openedExperiment = changed.workflow.experiments.find((experiment) => !workflow.experiments.some((earlier) => earlier.id === experiment.id))
         applied.push({ proposal: proposalId, workflow_version: changed.workflow.version, level: changed.level, change: proposal.change, experiment: openedExperiment ?? null })
+        if (changed.level === 'major') {
+          for (const [workItemId, fromVersion] of activeItemVersions) {
+            await this.appendEvent(projectId, { type: 'work_item_restarted', work_item_id: workItemId, from_version: fromVersion, to_version: changed.workflow.version })
+            activeItemVersions.set(workItemId, changed.workflow.version)
+            restartedItemIds.add(workItemId)
+          }
+        }
         appliedIds.push(proposalId)
         workflow = changed.workflow
       }
-      return { applied, workflow_version: workflow.version }
+      return { applied, workflow_version: workflow.version, restarted: [...restartedItemIds] }
     })
   }
 
@@ -682,6 +812,11 @@ export class Drillmaster {
       reports: item.reports,
       rejections: item.rejections,
       post_mortems: item.post_mortems,
+      description: item.description,
+      metrics: item.metrics,
+      skipped_steps: item.skipped_steps,
+      late_start: item.late_start,
+      restarted: item.restarted,
     }
     const verdicts = events.filter((event) => event.type === 'gate_verdict' && event.work_item_id === item.work_item_id)
     status.last_verdict = verdicts.at(-1) ?? null

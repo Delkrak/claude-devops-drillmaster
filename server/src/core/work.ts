@@ -1,6 +1,6 @@
 import type { Artifact, MetricAnswer, NewEvent, Position, ReportKind, SelfCheck } from './events.js'
 import { findVersion, type ProjectState, type WorkItemState } from './state.js'
-import type { WorkflowDocument, WorkflowMetric, WorkStep } from './workflow.js'
+import { compareVersions, isMajorChange, type WorkflowDocument, type WorkflowMetric, type WorkStep } from './workflow.js'
 
 export class Refused extends Error {}
 
@@ -23,10 +23,15 @@ export type ReportArgs = {
 export type GateArgs = { stage: number; step: number; self_check: SelfCheck[]; text: string; metrics?: MetricAnswer[] }
 export type DeliverArgs = { pr: string; summary: string; artifacts: Artifact[] }
 export type PostMortemArgs = { keep: string; change: string; experiment_reflections: string; free_text: string }
+/**
+ * A work item runs on the latest version with the major version it started or restarted on: a
+ * minor change applies to it right away, and only a major one restarts it.
+ */
 export function workflowOfWorkItem(state: ProjectState, item: WorkItemState): WorkflowDocument {
-  const workflow = findVersion(state, item.workflow_version)
-  if (!workflow) throw new Error(`Work item ${item.work_item_id} runs on unknown workflow version ${item.workflow_version}`)
-  return workflow
+  const started = findVersion(state, item.workflow_version)
+  if (!started) throw new Error(`Work item ${item.work_item_id} runs on unknown workflow version ${item.workflow_version}`)
+  const sameMajor = state.versions.filter((candidate) => !isMajorChange(candidate.version, started.version))
+  return sameMajor.reduce((latest, candidate) => (compareVersions(candidate.version, latest.version) > 0 ? candidate : latest), started)
 }
 
 export function stepAt(workflow: WorkflowDocument, stage: number, step: number): WorkStep | undefined {
@@ -110,6 +115,9 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
         ? 'The workflow has no work stages, so there are no work gates. Deliver when the work is done.'
         : 'Every work gate has passed. Deliver the work item.',
     )
+  }
+  if (item.late_start?.status === 'judging' || item.late_start?.status === 'awaiting_owner') {
+    throw new Refused(`Your late start at work step ${item.late_start.start_at.stage}.${item.late_start.start_at.step} is being judged. Wait for the verdict (work_status).`)
   }
   if (item.pending_gate && !(item.pending_gate.gate === 'drillmaster' && item.pending_gate.review_failed)) {
     throw new Refused(`The ${item.pending_gate.gate} gate of ${describePosition(item)} is pending. Wait for its verdict (work_status).`)
