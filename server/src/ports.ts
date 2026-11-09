@@ -18,6 +18,8 @@ export interface Clock {
 
 export interface Ids {
   next(prefix: string): string
+  /** An unguessable secret, such as Agent's token. */
+  secret(): string
 }
 
 /** What Drillmaster is asked to judge: a work gate, a post mortem, a retrospective. */

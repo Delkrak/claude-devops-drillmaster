@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { Clock, Ids } from '../ports.js'
 
 export const systemClock: Clock = { now: () => new Date().toISOString() }
@@ -16,16 +16,18 @@ export function fixedClock(start: string): Clock {
   }
 }
 
-export const randomIds: Ids = { next: (prefix) => `${prefix}_${randomUUID().slice(0, 8)}` }
+export const randomIds: Ids = {
+  next: (prefix) => `${prefix}_${randomUUID().slice(0, 8)}`,
+  secret: () => randomBytes(24).toString('base64url'),
+}
 
-/** prefix_1, prefix_2 ... per prefix: deterministic ids for tests. */
+/** prefix_1, prefix_2 ... per prefix, and secret_1, secret_2 ...: deterministic ids for tests. */
 export function sequentialIds(): Ids {
   const counters = new Map<string, number>()
-  return {
-    next: (prefix) => {
-      const n = (counters.get(prefix) ?? 0) + 1
-      counters.set(prefix, n)
-      return `${prefix}_${n}`
-    },
+  const next = (prefix: string) => {
+    const n = (counters.get(prefix) ?? 0) + 1
+    counters.set(prefix, n)
+    return `${prefix}_${n}`
   }
+  return { next, secret: () => next('secret') }
 }

@@ -1,7 +1,25 @@
 // The folded state of one project. Every function here is pure: events in, state out.
 
-import type { DrillmasterEvent } from './events.js'
+import type { DrillmasterEvent, WorkTrace } from './events.js'
 import { findRule, type WorkflowDocument } from './workflow.js'
+
+export interface WorkItemState {
+  work_item_id: string
+  issue: string
+  workflow_version: number
+  token_hash: string
+  stage: number | null
+  step: number | null
+  sessions: string[]
+  started_at: string
+  traces: number
+}
+
+export interface SessionState {
+  session_id: string
+  /** The work item the session is bound to now, if any. */
+  work_item_id: string | null
+}
 
 export interface ProjectState {
   initialized: boolean
@@ -9,11 +27,14 @@ export interface ProjectState {
   workflow?: WorkflowDocument
   /** Every version, by number. */
   versions: WorkflowDocument[]
+  sessions: Record<string, SessionState>
+  workItems: Record<string, WorkItemState>
+  traces: number
   eventCount: number
 }
 
 export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
-  const state: ProjectState = { initialized: false, versions: [], eventCount: 0 }
+  const state: ProjectState = { initialized: false, versions: [], sessions: {}, workItems: {}, traces: 0, eventCount: 0 }
   for (const event of events) {
     state.eventCount++
     switch (event.type) {
@@ -26,9 +47,54 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         state.workflow = event.workflow
         state.versions.push(event.workflow)
         break
+      case 'session_registered':
+        state.sessions[event.session_id] ??= { session_id: event.session_id, work_item_id: null }
+        break
+      case 'work_item_started':
+        state.workItems[event.work_item_id] = {
+          work_item_id: event.work_item_id,
+          issue: event.issue,
+          workflow_version: event.workflow_version,
+          token_hash: event.token_hash,
+          stage: event.stage,
+          step: event.step,
+          sessions: [],
+          started_at: event.at,
+          traces: 0,
+        }
+        break
+      case 'session_bound': {
+        const session = (state.sessions[event.session_id] ??= { session_id: event.session_id, work_item_id: null })
+        session.work_item_id = event.work_item_id
+        const item = state.workItems[event.work_item_id]
+        if (item && !item.sessions.includes(event.session_id)) item.sessions.push(event.session_id)
+        break
+      }
+      case 'work_trace':
+        state.traces++
+        if (event.work_item_id) {
+          const item = state.workItems[event.work_item_id]
+          if (item) item.traces++
+        }
+        break
     }
   }
   return state
+}
+
+/** The work item whose token hashes to `tokenHash`. */
+export const itemByTokenHash = (state: ProjectState, tokenHash: string) =>
+  Object.values(state.workItems).find((item) => item.token_hash === tokenHash)
+
+/** The work traces of one work item, optionally only those captured at one work step. */
+export function tracesOf(events: readonly DrillmasterEvent[], workItemId: string, at?: { stage?: number; step?: number }) {
+  return events.filter(
+    (e): e is WorkTrace =>
+      e.type === 'work_trace' &&
+      e.work_item_id === workItemId &&
+      (at?.stage === undefined || e.stage === at.stage) &&
+      (at?.step === undefined || e.step === at.step),
+  )
 }
 
 /** What workflow_get returns. It describes the workflow only; work status is elsewhere. */

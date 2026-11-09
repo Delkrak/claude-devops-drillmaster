@@ -17,7 +17,8 @@ export async function runDaemon(env: NodeJS.ProcessEnv = process.env) {
     return
   }
 
-  const server = await listen(new Drillmaster(portsFromEnv(env)), Number(env.DRILLMASTER_PORT ?? 0))
+  const app = new Drillmaster(portsFromEnv(env), { record: env.DRILLMASTER_RECORD === '1' })
+  const server = await listen(app, Number(env.DRILLMASTER_PORT ?? 0))
   const info: DaemonInfo = { port: server.port, pid: process.pid, url: server.url }
 
   // Claim daemon.json. If another server claimed it first and answers, step aside for it.

@@ -42,6 +42,11 @@ export function createHandler(app: Drillmaster) {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1')
       const route = `${req.method} ${url.pathname}`
+      const hook = /^POST \/hooks\/([A-Za-z]+)$/.exec(route)
+      if (hook) {
+        const body = await readJson(req)
+        return send(res, 200, await app.hook(requireProject(body.project), hook[1]!, body.payload))
+      }
       switch (route) {
         case 'GET /health':
           return send(res, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid })

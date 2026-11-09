@@ -21,6 +21,7 @@ Environment:
   DRILLMASTER_HOME      Where the server keeps its port file and store (default ~/.drillmaster).
   DRILLMASTER_REVIEWER  none | scripted:<file>
   DRILLMASTER_CLOCK     system | fixed:<iso time>
+  DRILLMASTER_RECORD    1 keeps raw hook payloads in the work traces, for test fixtures.
 `
 
 async function main(argv: string[]) {

@@ -29,6 +29,16 @@ Drillmaster is built on it.
 
 It runs as one shared local server and starts on its own the first time it's needed.
 
+| MCP tool | What it does |
+|---|---|
+| `workflow_get` | Describes the workflow: the objective, the work stages and work steps, the rules, and the experiments. |
+| `work_report` | Agent's only write tool. `start` begins a work item and returns Agent's token. |
+| `work_status` | Shows where a work item is, with its work reports and work traces. |
+
+The hooks (`hooks/hooks.json`) record every action and every Owner prompt as a work trace. They
+cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and SubagentStop. A project
+without a workflow is never traced.
+
 Until the package is published, build it once, then load the plugin from this folder:
 
 ```
@@ -50,7 +60,7 @@ drillmaster inspect [--json]
 
 ```
 cd server
-npm test            # unit, api and mcp layers
+npm test            # unit, api, mcp and hooks layers
 npm run typecheck
 claude plugin validate ..
 ```
