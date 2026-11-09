@@ -72,4 +72,11 @@ describe('stdio MCP shim', () => {
     const { events } = (await res.json()) as { events: { type: string }[] }
     expect(events.map((e) => e.type)).toEqual(['project_initialized'])
   })
+
+  it('gives Claude Code the markdown rendering, without structuredContent to show instead', async () => {
+    const started = await client.callTool({ name: 'work_start', arguments: { issue: '#1', description: 'through the shim' } })
+    expect(started.structuredContent).toBeUndefined()
+    expect(text(started)).toContain('# Work item ')
+    expect(text(started)).toContain('work_item_id: wi_')
+  })
 })

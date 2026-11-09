@@ -1,6 +1,7 @@
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { averageMeasure, measureDeliveredItems } from '../../src/core/measures.js'
 import { foldState } from '../../src/core/state.js'
+import { workflowOfWorkItem } from '../../src/core/work.js'
 
 export interface Check {
   name: string
@@ -74,14 +75,23 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     detail: missingWorkReports.map((event) => (event.type === 'work_reported' ? event.text.slice(0, 120) : '')).join(' | ') || 'none',
     doesNotFailRun: true,
   })
-  const workflowMetrics = state.workflow?.metrics ?? []
-  if (workflowMetrics.length > 0) {
+  // A metric added by the last retrospective has had no work item to be taken on.
+  const takeableMetrics = items.flatMap((workItem) =>
+    workflowOfWorkItem(state, workItem).metrics.filter((metric) => workItem.passed_steps.includes(`${metric.at.stage}.${metric.at.step}`)).map((metric) => metric.name),
+  )
+  if (takeableMetrics.length > 0) {
     const recorded = events.filter((event) => event.type === 'metric_recorded')
-    checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded for ${workflowMetrics.map((metric) => metric.name).join(', ')}` })
+    checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded; ${new Set(takeableMetrics).size} metrics were due at steps work items passed` })
   }
   if (facts.expectsLateStart) {
     const judged = events.filter((event) => event.type === 'late_start_judged')
-    checks.push({ name: 'a late start was judged', ok: judged.length > 0, detail: judged.map((event) => (event.type === 'late_start_judged' ? `${event.by}: ${event.accepted ? 'approved' : 'rejected'}` : '')).join(', ') || 'none' })
+    // Agent may rightly start at the first step instead, when the earlier work no longer meets a grown workflow.
+    checks.push({
+      name: 'a late start was judged',
+      ok: judged.length > 0,
+      detail: judged.map((event) => (event.type === 'late_start_judged' ? `${event.by}: ${event.accepted ? 'approved' : 'rejected'}` : '')).join(', ') || 'none',
+      doesNotFailRun: true,
+    })
   }
   if (facts.storeCommits) {
     const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)

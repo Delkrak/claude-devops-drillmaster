@@ -19,11 +19,14 @@ export async function runShim(env: NodeJS.ProcessEnv = process.env) {
 
   mcp.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     try {
-      return await requestJson<ToolResult & CallToolResult>(await serverUrl(), 'POST', '/tools/call', {
+      // Claude Code shows the model structuredContent instead of the text when both are there, and
+      // the text is the rendering Agent should read.
+      const { structuredContent: _structured, ...result } = await requestJson<ToolResult & CallToolResult>(await serverUrl(), 'POST', '/tools/call', {
         project: projectDir,
         name: request.params.name,
         arguments: request.params.arguments ?? {},
       })
+      return result
     } catch (error) {
       // The server may have stopped: find or start it again on the next call.
       cachedServerUrl = undefined
