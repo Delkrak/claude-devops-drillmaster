@@ -7,6 +7,7 @@ import { serveViewer } from './static.js'
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
 const VIEWER_API_ROUTE = /^GET \/api\/projects(?:\/([\w-]+)(?:\/items\/([\w-]+))?)?$/
+const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
@@ -48,6 +49,12 @@ export function createRequestHandler(app: Drillmaster) {
       if (hookMatch) {
         const body = await readJsonBody(request)
         return sendJson(response, 200, await app.hook(requireProjectDir(body.project), hookMatch[1]!, body.payload))
+      }
+      const artifactMatch = ARTIFACT_ROUTE.exec(route)
+      if (artifactMatch) {
+        const artifact = await app.artifact(artifactMatch[1]!, artifactMatch[2]!, artifactMatch[3]!)
+        response.writeHead(200, { 'content-type': artifact.mediaType, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", 'x-content-type-options': 'nosniff' })
+        return response.end(artifact.bytes)
       }
       const viewerApiMatch = VIEWER_API_ROUTE.exec(route)
       if (viewerApiMatch) {

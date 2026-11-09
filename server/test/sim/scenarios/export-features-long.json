@@ -1,0 +1,28 @@
+{
+  "name": "export-features-long",
+  "project": "node-report",
+  "objective": "ship features without Owner stepping in",
+  "measures": ["owner_corrections_per_item"],
+  "issues": [
+    { "id": "#1", "text": "Add a toCsv(rows) function in src/csv.js that turns the report rows into CSV with a header line." },
+    { "id": "#2", "text": "Add a toJson(rows) function in src/json.js that returns the rows as pretty-printed JSON, with revenue added to each row." },
+    { "id": "#3", "text": "Add a totals(rows) function in src/totals.js that returns total units and total revenue." },
+    { "id": "#4", "text": "Add a byMonth(rows) function in src/months.js that groups the rows by the month of their date." }
+  ],
+  "hidden_rules": [
+    "Every new function has its own test file under test/, and Agent runs npm test and sees it pass before saying the work is done.",
+    "Every change adds one line to CHANGES.md saying what changed."
+  ],
+  "retro_after": [2, 4],
+  "max_turns_per_issue": 6,
+  "scripted": {
+    "setup": "Please set up Drillmaster for this project with the drillmaster setup skill. My objective: ship features without Owner stepping in. Measure it by owner_corrections_per_item. Keep the work traces in the git store at {store}.",
+    "issues": [
+      ["Please do issue #1 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "You didn't add a test for it. Every new function needs its own test file, and run npm test.", "Also add a line to CHANGES.md saying what changed.", "Looks good."],
+      ["Please do issue #2 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Add a line to CHANGES.md, like last time.", "Looks good."],
+      ["Please do issue #3 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Looks good."],
+      ["Please do issue #4 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Looks good."]
+    ],
+    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Yes, approve all of them."]
+  }
+}

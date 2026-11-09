@@ -89,6 +89,34 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
       return { group: 'reports', tone: 'ok', text: `delivered ${asText(event.pr)}`, body: <Strong>Delivered as {asText(event.pr)}</Strong> }
     case 'post_mortem_written':
       return { group: 'post mortems', tone: 'accent', text: `post mortem ${asText(event.author)} ${asText(event.keep)} ${asText(event.change)}`, body: <Muted>{asText(event.author)} wrote a workflow post mortem</Muted> }
+    case 'metric_recorded':
+      return {
+        group: 'reports',
+        tone: 'info',
+        text: `metric ${asText(event.name)} ${asText(event.value)} ${asText(event.explanation)}`,
+        body: (
+          <Muted>
+            Metric {asText(event.name)}: {asText(event.value)} (by {asText(event.by)}){event.explanation ? `: ${asText(event.explanation)}` : ''}
+          </Muted>
+        ),
+      }
+    case 'work_item_restarted':
+      return { group: 'gates', tone: 'warn', text: `restarted ${asText(event.from_version)} ${asText(event.to_version)}`, body: <Strong>Restarted: workflow {asText(event.from_version)} became {asText(event.to_version)}</Strong> }
+    case 'late_start_requested':
+      return { group: 'gates', tone: 'info', text: `late start ${asText(event.justification)}`, body: <Muted>Late start asked, skipping {(event.skipped as string[]).join(', ')}: {asText(event.justification)}</Muted> }
+    case 'late_start_judged':
+      return {
+        group: 'gates',
+        tone: event.accepted ? 'ok' : 'bad',
+        text: `late start ${event.accepted ? 'approved' : 'rejected'} ${asText(event.why)}`,
+        body: (
+          <Muted>
+            Late start {event.accepted ? 'approved' : 'rejected'} by {asText(event.by)}: {asText(event.why)}
+          </Muted>
+        ),
+      }
+    case 'owner_asked':
+      return { group: 'owner', tone: 'accent', text: `asked Owner ${(event.questions as string[]).join(' ')}`, body: <Muted>Agent asked Owner: {(event.questions as string[]).join(' / ')}</Muted> }
     case 'work_trace': {
       const owner = event.hook === 'UserPromptSubmit'
       return {

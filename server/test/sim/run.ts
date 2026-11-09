@@ -1,15 +1,17 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { extractFirstJsonObject } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
+import { compareVersions } from '../../src/core/versions.js'
+import { projectId } from '../../src/env.js'
+import { VERSION } from '../../src/version.js'
 import { checkRun } from './assertions.js'
 import { claudeTurn } from './claude.js'
+import { defaultAnswers, listenForOwnerQuestions, OWNER_PERMISSION_TOOL, ownerMcpConfig, type AskedQuestion, type OwnerAnswers } from './ownerAnswers.js'
 
 interface Scenario {
   name: string
@@ -20,38 +22,16 @@ interface Scenario {
   hidden_rules: string[]
   retro_after: number[]
   max_turns_per_issue: number
-  scripted: { setup: string; issues: string[][]; retro: string[] }
-}
-
-interface AskedQuestion {
-  question: string
-  options: { label: string; description?: string }[]
-}
-
-interface OwnerAnswers {
-  answers: Record<string, string>
-  annotations: Record<string, { notes: string }>
-}
-
-/** Owner's answer when no one decides otherwise: approve, or the first option. */
-const defaultAnswers = (questions: readonly AskedQuestion[]): OwnerAnswers => ({
-  answers: Object.fromEntries(questions.map((question) => [question.question, (question.options.find((option) => option.label === 'Approve') ?? question.options[0])?.label ?? 'Approve'])),
-  annotations: {},
-})
-
-/** The endpoint ownerMcp.mjs posts AskUserQuestion to, while Agent's turn waits for Owner. */
-function listenForOwnerQuestions(answer: (questions: AskedQuestion[]) => Promise<OwnerAnswers>) {
-  const server = createServer(async (request, response) => {
-    let body = ''
-    for await (const chunk of request) body += chunk
-    const { questions } = JSON.parse(body) as { questions: AskedQuestion[] }
-    const answered = await answer(questions).catch(() => defaultAnswers(questions))
-    response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify(answered))
-  })
-  return new Promise<{ url: string; close: () => void }>((resolve) =>
-    server.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => server.close() })),
-  )
+  /** A workflow to start from instead of setup, for example one with an Owner gate already. */
+  seed_workflow?: Record<string, unknown>
+  /** Give the project a local bare origin, so Agent can push a branch and merge it. */
+  origin?: boolean
+  /** The run expects a late start to be asked for and judged. */
+  expects_late_start?: boolean
+  /** Work done "in an earlier session": committed on a branch and pushed to origin before the run. */
+  prepared_branch?: { name: string; message: string; files: Record<string, string> }
+  extra_tools?: string[]
+  scripted: { setup?: string; issues: string[][]; retro: string[] }
 }
 
 const SIM = import.meta.dirname
@@ -74,6 +54,30 @@ const AGENT_TOOLS = [
   'Bash(cat:*)',
 ]
 
+/** A seeded project starts from a given workflow: its first event is written before the server starts. */
+function seedWorkflow(home: string, project: string, scenario: Scenario, storeRepo: string) {
+  const projectFolder = path.join(home, 'projects', projectId(project))
+  mkdirSync(projectFolder, { recursive: true })
+  const workflow = {
+    ...scenario.seed_workflow,
+    objective: { text: scenario.objective, measures: scenario.measures },
+    storage: { repo: storeRepo, path: projectId(project), branch: { pattern: 'drillmaster/{work_item_id}' } },
+  }
+  const init = { id: 'ev_seed', at: new Date().toISOString(), drillmaster_version: VERSION, type: 'project_initialized', dir: project, workflow }
+  writeFileSync(path.join(projectFolder, 'events.jsonl'), JSON.stringify(init) + '\n')
+}
+
+const usesStore = (scenario: Scenario) => scenario.seed_workflow !== undefined || (scenario.scripted.setup ?? '').includes('{store}')
+
+/** The subject of every commit on the store's main branch. */
+function storeCommitSubjects(storeRepo: string) {
+  try {
+    return execFileSync('git', ['log', '--format=%s', 'main'], { cwd: storeRepo, encoding: 'utf8' }).split('\n').filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir: string) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'dm-sim-home-'))
   const project = mkdtempSync(path.join(os.tmpdir(), `dm-sim-${scenario.project}-`))
@@ -82,6 +86,24 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   git('init', '-q')
   git('add', '-A')
   git('-c', 'user.name=sim', '-c', 'user.email=sim@example.invalid', 'commit', '-q', '-m', 'initial')
+  git('branch', '-M', 'main')
+  const storeRepo = path.join(home, 'store.git')
+  execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', storeRepo])
+  if (scenario.origin) {
+    const origin = path.join(home, 'origin.git')
+    execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', origin])
+    git('remote', 'add', 'origin', origin)
+    git('push', '-q', 'origin', 'main')
+    if (scenario.prepared_branch) {
+      git('checkout', '-q', '-b', scenario.prepared_branch.name)
+      for (const [file, content] of Object.entries(scenario.prepared_branch.files)) writeFileSync(path.join(project, file), content)
+      git('add', '-A')
+      git('-c', 'user.name=sim', '-c', 'user.email=sim@example.invalid', 'commit', '-q', '-m', scenario.prepared_branch.message)
+      git('push', '-q', 'origin', scenario.prepared_branch.name)
+      git('checkout', '-q', 'main')
+    }
+  }
+  if (scenario.seed_workflow) seedWorkflow(home, project, scenario, storeRepo)
 
   const env: NodeJS.ProcessEnv = { ...process.env, DRILLMASTER_HOME: home }
   delete env.DRILLMASTER_CLOCK
@@ -124,9 +146,9 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     return answered
   }
   const ownerAnswerEndpoint = await listenForOwnerQuestions(answerOwnerQuestions)
-  const ownerMcpConfig = path.join(home, 'owner-mcp.json')
-  writeFileSync(ownerMcpConfig, JSON.stringify({ mcpServers: { owner: { command: 'node', args: [path.join(SIM, 'ownerMcp.mjs')], env: { OWNER_ANSWER_URL: ownerAnswerEndpoint.url } } } }))
-  const agentArgs = ['--plugin-dir', REPO, '--mcp-config', ownerMcpConfig, '--permission-prompt-tool', 'mcp__owner__answer', '--allowedTools', ...AGENT_TOOLS]
+  const ownerMcpConfigFile = path.join(home, 'owner-mcp.json')
+  writeFileSync(ownerMcpConfigFile, JSON.stringify(ownerMcpConfig(ownerAnswerEndpoint.url)))
+  const agentArgs = ['--plugin-dir', REPO, '--mcp-config', ownerMcpConfigFile, '--permission-prompt-tool', OWNER_PERMISSION_TOOL, '--allowedTools', ...AGENT_TOOLS, ...(scenario.extra_tools ?? [])]
 
   const agent = async (prompt: string, countAsOwner = true) => {
     log('Owner', prompt)
@@ -177,7 +199,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   }
 
   try {
-    await agent(scenario.scripted.setup, false)
+    if (!scenario.seed_workflow) await agent((scenario.scripted.setup ?? '').replace('{store}', storeRepo), false)
 
     for (const [i, issue] of scenario.issues.entries()) {
       const lines = scenario.scripted.issues[i] ?? []
@@ -204,10 +226,10 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
 
       if (scenario.retro_after.includes(i + 1)) {
         retros++
-        const versionBefore = foldState(await events()).workflow?.version ?? 0
+        const versionBefore = foldState(await events()).workflow?.version ?? '0.0.0'
         said = await agent(scenario.scripted.retro[0] ?? "Let's do a workflow retrospective with the drillmaster retrospective skill.")
         for (let turn = 1; turn < 4; turn++) {
-          if ((foldState(await events()).workflow?.version ?? 0) > versionBefore) break
+          if (compareVersions(foldState(await events()).workflow?.version ?? '0.0.0', versionBefore) > 0) break
           const next =
             ownerMode === 'scripted'
               ? (scenario.scripted.retro[turn] ?? 'Please apply the proposals I approved.')
@@ -222,7 +244,14 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
 
   const final = await events(true)
   ownerAnswerEndpoint.close()
-  const { checks, metrics } = checkRun(final, { ownerMessages, ownerQuestions, issues: scenario.issues.length, retros })
+  const { checks, metrics } = checkRun(final, {
+    ownerMessages,
+    ownerQuestions,
+    issues: scenario.issues.length,
+    retros,
+    expectsLateStart: scenario.expects_late_start === true,
+    storeCommits: usesStore(scenario) ? storeCommitSubjects(storeRepo) : undefined,
+  })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)
   const passed = runFailingChecks.every((check) => check.ok)
   const result = { scenario: scenario.name, owner: ownerMode, passed, cost_usd: Math.round(cost * 100) / 100, checks, metrics }

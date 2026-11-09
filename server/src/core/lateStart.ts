@@ -102,7 +102,6 @@ export function readLateStartAnswer(workflow: WorkflowDocument, skipped: readonl
   return { accepted: parsed.accepted, why: parsed.why, rule }
 }
 
-/** What changed between two workflow versions, step by step, for an item that starts over. */
 export function describeWorkflowChange(from: WorkflowDocument, to: WorkflowDocument) {
   const lines: string[] = []
   const stepsOf = (workflow: WorkflowDocument) =>

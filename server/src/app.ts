@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
@@ -52,7 +53,7 @@ import {
 import * as views from './core/views.js'
 import * as work from './core/work.js'
 import { compareVersions, Objective, toSemver, WorkflowDocument, workflowZero } from './core/workflow.js'
-import { linkedStore, projectId as projectIdOf } from './env.js'
+import { linkedProjectName, linkedStore, projectId as projectIdOfFolder } from './env.js'
 import type { Ports } from './ports.js'
 import { VERSION } from './version.js'
 
@@ -94,6 +95,8 @@ export interface DrillmasterOptions {
   recordRawHookPayloads?: boolean
   /** Who this server writes as in git stores, and where it keeps its clones of them. */
   store?: { writer: string; clonesRoot: string }
+  /** This server's own record of which project each linked folder belongs to. */
+  linksFile?: string
 }
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
@@ -340,15 +343,40 @@ export class Drillmaster {
   private readonly knownVersionsByProject = new Map<string, KnownVersions>()
   private readonly publishChainByProject = new Map<string, Promise<void>>()
   private readonly storeProblemByProject = new Map<string, string>()
+  private readonly projectDirsSeen = new Set<string>()
+  private readonly projectByLinkedFolder: Map<string, string>
+  private readonly linkProblemByProject = new Map<string, string>()
   private readonly backgroundWork = new Set<Promise<unknown>>()
 
   constructor(
     private readonly ports: Ports,
     private readonly options: DrillmasterOptions = {},
-  ) {}
+  ) {
+    this.projectByLinkedFolder = new Map(Object.entries(readLinks(options.linksFile)))
+  }
+
+  /**
+   * A linked folder keeps the project it was first linked to. A drillmaster.json that later names
+   * another project is ignored and reported, so Agent can't re-link a folder to an empty project.
+   */
+  private projectIdOf(projectDir: string) {
+    const named = projectIdOfFolder(projectDir)
+    if (!linkedProjectName(projectDir) || !this.options.linksFile) return named
+    const folder = path.resolve(projectDir)
+    const recorded = this.projectByLinkedFolder.get(folder)
+    if (!recorded) {
+      this.projectByLinkedFolder.set(folder, named)
+      writeLinks(this.options.linksFile, this.projectByLinkedFolder)
+      return named
+    }
+    if (recorded !== named) {
+      this.linkProblemByProject.set(recorded, `.drillmaster/drillmaster.json names project ${named}, but this folder is linked to ${recorded}. Drillmaster keeps ${recorded}; tell Owner.`)
+    }
+    return recorded
+  }
 
   private withProjectLock<T>(projectDir: string, criticalSection: (projectId: string) => Promise<T>): Promise<T> {
-    const projectId = projectIdOf(projectDir)
+    const projectId = this.projectIdOf(projectDir)
     const previousRun = this.lockByProject.get(projectId) ?? Promise.resolve()
     const thisRun = previousRun.then(() => criticalSection(projectId))
     this.lockByProject.set(projectId, thisRun.catch(() => {}))
@@ -407,7 +435,7 @@ export class Drillmaster {
       const storage = foldState(events).workflow?.storage
       if (!storage) return
       try {
-        await this.publisherFor(projectId, storage).publish(events)
+        await this.publisherFor(projectId, storage).publish(events, (workItemId, name) => this.ports.artifacts.read(projectId, workItemId, name))
         this.storeProblemByProject.delete(projectId)
       } catch (error) {
         this.storeProblemByProject.set(projectId, error instanceof Error ? error.message : String(error))
@@ -417,9 +445,17 @@ export class Drillmaster {
     this.runInBackground(thisPublish)
   }
 
-  /** Adds the events other writers pushed to the store, which this server has not seen yet. */
+  /** Fetches what other machines pushed, for every project this server has seen, every `intervalMs`. */
+  syncStoresEvery(intervalMs: number) {
+    const timer = setInterval(() => {
+      for (const projectDir of this.projectDirsSeen) this.runInBackground(this.importFromStore(projectDir))
+    }, intervalMs)
+    timer.unref()
+    return () => clearInterval(timer)
+  }
+
   private async importFromStore(projectDir: string) {
-    const projectId = projectIdOf(projectDir)
+    const projectId = this.projectIdOf(projectDir)
     const linked = linkedStore(projectDir)
     const storage = (await this.state(projectDir)).workflow?.storage ?? (linked ? { ...linked, branch: { pattern: DEFAULT_BRANCH_PATTERN } } : undefined)
     if (!storage || !this.options.store) return
@@ -452,7 +488,7 @@ export class Drillmaster {
     await mkdir(folder, { recursive: true })
     await writeFile(
       path.join(folder, 'drillmaster.json'),
-      JSON.stringify({ drillmaster_version: VERSION, project: projectIdOf(projectDir), store: { repo: workflow.storage.repo, path: workflow.storage.path } }, null, 2) + '\n',
+      JSON.stringify({ drillmaster_version: VERSION, project: this.projectIdOf(projectDir), store: { repo: workflow.storage.repo, path: workflow.storage.path } }, null, 2) + '\n',
     )
     if (existing === content) return undefined
     await writeFile(workflowFile, content)
@@ -474,7 +510,7 @@ export class Drillmaster {
   }
 
   async events(projectDir: string) {
-    return this.ports.store.read(projectIdOf(projectDir))
+    return this.ports.store.read(this.projectIdOf(projectDir))
   }
 
   async state(projectDir: string): Promise<ProjectState> {
@@ -497,6 +533,14 @@ export class Drillmaster {
     const view = views.workItemView(await this.ports.store.read(projectId), workItemId)
     if (!view) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
     return view
+  }
+
+  async artifact(projectId: string, workItemId: string, name: string) {
+    const item = foldState(await this.ports.store.read(projectId)).workItems[workItemId]
+    const recorded = item?.artifacts.find((artifact) => artifact.name === name)
+    const bytes = recorded ? await this.ports.artifacts.read(projectId, workItemId, name) : undefined
+    if (!recorded || !bytes) throw new UserError(`No artifact ${name} on work item ${workItemId}`, 404)
+    return { mediaType: recorded.media_type, bytes }
   }
 
   async init(projectDir: string, objective: unknown, store?: { repo: string; path?: string }) {
@@ -532,9 +576,14 @@ export class Drillmaster {
       const state = foldState(events)
       const context =
         hookEvent === 'SessionStart'
-          ? { retrospectiveDue: retrospectiveDue(state, events), storeProblem: this.storeProblemByProject.get(projectId), mirrorNote: await this.writeWorkFolderMirror(projectDir, state) }
+          ? {
+              retrospectiveDue: retrospectiveDue(state, events),
+              storeProblem: this.storeProblemByProject.get(projectId),
+              mirrorNote: [this.linkProblemByProject.get(projectId), await this.writeWorkFolderMirror(projectDir, state)].filter(Boolean).join(' ') || undefined,
+            }
           : {}
       if (hookEvent === 'SessionStart') this.runInBackground(this.importFromStore(projectDir))
+      this.projectDirsSeen.add(projectDir)
       const outcome = handleHook(state, hookEvent, payload as HookPayload, this.options.recordRawHookPayloads ?? false, context)
       for (const event of outcome.events) await this.appendEvent(projectId, event)
       return { stored: outcome.events.length, output: outcome.output }
@@ -697,7 +746,7 @@ export class Drillmaster {
         case 'work_deliver': {
           const { pr, summary } = parseToolArgs(WorkDeliverArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          work.deliverWorkItem(item, { pr, summary, artifacts: [] })
+          work.refuseUndeliverable(item)
           const artifacts = await Promise.all(readArtifacts.map((artifact) => this.ports.artifacts.save(projectId, item.work_item_id, artifact)))
           decision = work.deliverWorkItem(item, { pr, summary, artifacts })
           break
@@ -731,7 +780,6 @@ export class Drillmaster {
     return workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...(answer as Record<string, unknown>), ask_owner: askOwner })
   }
 
-  /** The AskUserQuestion input for the Owner questions a work item waits on, if any. */
   private async ownerQuestionsFor(projectDir: string, workItemId: string) {
     const questions = pendingOwnerQuestions(await this.state(projectDir)).filter((question) => 'work_item_id' in question && question.work_item_id === workItemId)
     return questions.length ? askUserQuestionInput(questions) : undefined
@@ -955,6 +1003,20 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolArgs: unknown): T {
   const parsed = schema.safeParse(toolArgs ?? {})
   if (!parsed.success) throw new UserError(z.prettifyError(parsed.error))
   return parsed.data
+}
+
+function readLinks(linksFile: string | undefined): Record<string, string> {
+  if (!linksFile) return {}
+  try {
+    return JSON.parse(readFileSync(linksFile, 'utf8')) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+function writeLinks(linksFile: string, projectByLinkedFolder: Map<string, string>) {
+  mkdirSync(path.dirname(linksFile), { recursive: true })
+  writeFileSync(linksFile, JSON.stringify(Object.fromEntries(projectByLinkedFolder), null, 2) + '\n')
 }
 
 const jsonResult = (value: unknown): ToolResult => ({

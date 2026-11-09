@@ -91,12 +91,10 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
     }))
 }
 
-const passedSteps = (item: WorkItemState) => item.passed_steps
-
 function ownerMetricQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
   const workflow = workflowOfWorkItem(state, item)
   return workflow.metrics
-    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && passedSteps(item).includes(`${metric.at.stage}.${metric.at.step}`))
+    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && item.passed_steps.includes(`${metric.at.stage}.${metric.at.step}`))
     .map((metric: WorkflowMetric) => ({
       kind: 'owner_metric' as const,
       work_item_id: item.work_item_id,
@@ -120,7 +118,6 @@ export function pendingOwnerQuestions(state: ProjectState): OwnerQuestion[] {
   ]
 }
 
-/** The AskUserQuestion input Agent passes on unchanged. */
 export const askUserQuestionInput = (questions: readonly OwnerQuestion[]) => ({
   questions: questions.slice(0, MAX_QUESTIONS_PER_ASK).map(({ question, header: questionHeader, options, multiSelect }) => ({ question, header: questionHeader, options, multiSelect })),
 })
@@ -137,7 +134,6 @@ export interface AnswerOutcome {
   lines: string[]
 }
 
-/** Owner's answer to one pending question, from AskUserQuestion or typed. Unclear answers decide nothing. */
 export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion, ownerAnswer: OwnerAnswer, via: 'question' | 'prompt'): AnswerOutcome {
   const words = [ownerAnswer.answer, ownerAnswer.notes].filter(Boolean).join(' - ')
   const unclear = { events: [], lines: [`Owner answered "${quote(words)}" to "${question.question}", which does not decide it. Answer Owner, then ask again with the same question.`] }

@@ -251,7 +251,6 @@ export function deliveredSinceLastRetro(state: ProjectState, events: readonly Dr
   return measureDeliveredItems(events).filter((item) => item.delivered_at > lastRetroAt)
 }
 
-/** A retrospective is due once its experiments can be judged, or once a baseline's worth of items is delivered. */
 export function retrospectiveDue(state: ProjectState, events: readonly DrillmasterEvent[]): string | null {
   if (!state.workflow) return null
   const delivered = measureDeliveredItems(events)

@@ -13,6 +13,7 @@ export interface ProjectSummary {
 export interface WorkStep {
   n: number
   name: string
+  instruction?: string
   gate: GateKind
   rules: string[]
   report: string[]
@@ -21,7 +22,16 @@ export interface WorkStep {
 export interface WorkStage {
   n: number
   name: string
+  purpose?: string
   steps: WorkStep[]
+}
+
+export interface Metric {
+  name: string
+  categories: { value: string; description: string }[]
+  at: { stage: number; step: number }
+  by: 'agent' | 'drillmaster' | 'owner'
+  instruction: string
 }
 
 export interface PolicyRule {
@@ -34,9 +44,22 @@ export interface Experiment {
   id: number
   change: string
   purpose: string
+  hypothesis?: string
+  null_hypothesis?: string
   measure: string
   baseline: number
+  baseline_sd?: number
+  target?: number | null
+  judge_after?: number
   started: string
+}
+
+export interface ExperimentVerdict {
+  id: number
+  status: 'running' | 'keep' | 'rethink'
+  counted: number
+  judge_after: number
+  mean: number | null
 }
 
 export interface Workflow {
@@ -44,6 +67,7 @@ export interface Workflow {
   objective: { text: string; measures: string[] }
   stages: WorkStage[]
   policies: { name: string; rules: PolicyRule[] }[]
+  metrics?: Metric[]
   experiments: Experiment[]
 }
 
@@ -52,6 +76,7 @@ export interface Measure {
   last_5: number | null
   all: number | null
   per_item: { work_item_id: string; issue: string; value: number }[]
+  by_metric?: { metric: string; categories: { category: string; items: number; mean: number | null }[] }[]
 }
 
 export interface WorkItemRow {
@@ -86,7 +111,7 @@ export interface Retrospective {
   retro_id: string
   at: string
   work_items: string[]
-  findings: { should: string; did: string; why: string; keep: string; improve: string }
+  findings: { opening?: string; should: string; did: string; why: string; keep: string; improve: string }
   proposals: Proposal[]
   decisions: { at: string; prompt: string }[]
 }
@@ -99,6 +124,14 @@ export interface ProjectView {
   work_items: WorkItemRow[]
   retrospectives: Retrospective[]
   sessions: { session_id: string; work_item_id: string | null }[]
+  experiment_verdicts: ExperimentVerdict[]
+}
+
+export interface Artifact {
+  name: string
+  path: string
+  media_type: string
+  bytes: number
 }
 
 export interface TimelineEvent {
@@ -109,7 +142,17 @@ export interface TimelineEvent {
 }
 
 export interface WorkItemView {
-  item: Omit<WorkItemRow, 'added_steps' | 'measures'> & { sessions: string[]; gates_done: boolean }
+  item: Omit<WorkItemRow, 'added_steps' | 'measures'> & {
+    sessions: string[]
+    gates_done: boolean
+    description: string
+    summary: string | null
+    artifacts: Artifact[]
+    metrics: Record<string, { value: string; by: string; explanation?: string }>
+    skipped_steps: string[]
+    restarted: { from_version: string; to_version: string } | null
+    late_start: { status: string; skipped: string[]; start_at: { stage: number; step: number }; why: string | null } | null
+  }
   workflow: Workflow | undefined
   measures: Record<string, number> | null
   timeline: TimelineEvent[]

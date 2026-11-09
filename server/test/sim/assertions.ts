@@ -12,6 +12,9 @@ export interface Check {
 export interface RunFacts {
   ownerMessages: number
   ownerQuestions?: number
+  expectsLateStart?: boolean
+  /** The commit subjects on the git store's main branch, when the run used one. */
+  storeCommits?: string[]
   issues: number
   retros: number
 }
@@ -56,6 +59,39 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     },
     { name: "Agent's token never stored", ok: !leakedToken, detail: leakedToken ? 'a raw token is in the events' : 'only hashes and [redacted]' },
   ]
+  const workflowStages = state.workflow?.stages ?? []
+  checks.push({
+    name: 'every work stage has a work step with an instruction',
+    ok: workflowStages.every((stage) => stage.steps.length > 0 && stage.steps.every((step) => step.instruction.trim() !== '')),
+    detail: workflowStages.map((stage) => `${stage.name}: ${stage.steps.length} steps`).join(', ') || 'no stages',
+  })
+  const missingWorkReports = events.filter(
+    (event) => event.type === 'work_reported' && event.kind === 'impediment' && /workflow.{0,40}(missing|lacks|has no|had no|no step)|no (work )?step (for|to)/i.test(event.text),
+  )
+  checks.push({
+    name: 'no Agent reports the workflow missing its work',
+    ok: missingWorkReports.length === 0,
+    detail: missingWorkReports.map((event) => (event.type === 'work_reported' ? event.text.slice(0, 120) : '')).join(' | ') || 'none',
+    doesNotFailRun: true,
+  })
+  const workflowMetrics = state.workflow?.metrics ?? []
+  if (workflowMetrics.length > 0) {
+    const recorded = events.filter((event) => event.type === 'metric_recorded')
+    checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded for ${workflowMetrics.map((metric) => metric.name).join(', ')}` })
+  }
+  if (facts.expectsLateStart) {
+    const judged = events.filter((event) => event.type === 'late_start_judged')
+    checks.push({ name: 'a late start was judged', ok: judged.length > 0, detail: judged.map((event) => (event.type === 'late_start_judged' ? `${event.by}: ${event.accepted ? 'approved' : 'rejected'}` : '')).join(', ') || 'none' })
+  }
+  if (facts.storeCommits) {
+    const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)
+    const squashed = facts.storeCommits.filter((subject) => /^wi_\w+ \(/.test(subject))
+    checks.push({
+      name: 'the store holds one squash commit per complete work item',
+      ok: squashed.length === complete.length && complete.every((workItem) => squashed.some((subject) => subject.startsWith(`${workItem.work_item_id} `))),
+      detail: `${squashed.length} squash commits for ${complete.length} complete work items`,
+    })
+  }
   if (facts.retros > 0) {
     checks.push(
       { name: 'workflow retrospective ran', ok: retros.length >= facts.retros, detail: `${retros.length} ran` },

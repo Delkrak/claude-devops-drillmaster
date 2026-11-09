@@ -29,8 +29,7 @@ function readFolderLink(projectDir: string): FolderLink | undefined {
   }
 }
 
-/** A folder linked to a git store names its project in .drillmaster/drillmaster.json. */
-function linkedProjectName(projectDir: string) {
+export function linkedProjectName(projectDir: string) {
   const project = readFolderLink(projectDir)?.project
   return typeof project === 'string' && /^[A-Za-z0-9_-]+$/.test(project) ? project : undefined
 }
@@ -62,7 +61,7 @@ export function storeOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
     mkdirSync(home, { recursive: true })
     writeFileSync(writerFile, JSON.stringify({ writer }) + '\n')
   }
-  return { writer, clonesRoot: path.join(home, 'stores') }
+  return { writer, clonesRoot: path.join(home, 'stores'), linksFile: path.join(home, 'links.json') }
 }
 
 const secondsToMs = (seconds: string | undefined) => (seconds ? Number(seconds) * 1000 : undefined)

@@ -5,6 +5,8 @@ import { isDrillmasterServerAt, readDaemonInfo, type DaemonInfo } from '../clien
 import { daemonInfoFile, portsFromEnv, storeOptionsFromEnv } from '../env.js'
 import { listen } from './http.js'
 
+const STORE_SYNC_INTERVAL_MS = 5 * 60_000
+
 export async function runDaemon(env: NodeJS.ProcessEnv = process.env) {
   const infoFile = daemonInfoFile(env)
   await mkdir(path.dirname(infoFile), { recursive: true })
@@ -15,8 +17,10 @@ export async function runDaemon(env: NodeJS.ProcessEnv = process.env) {
     return
   }
 
-  const app = new Drillmaster(portsFromEnv(env), { recordRawHookPayloads: env.DRILLMASTER_RECORD === '1', store: storeOptionsFromEnv(env) })
+  const { linksFile, ...store } = storeOptionsFromEnv(env)
+  const app = new Drillmaster(portsFromEnv(env), { recordRawHookPayloads: env.DRILLMASTER_RECORD === '1', store, linksFile })
   const server = await listen(app, Number(env.DRILLMASTER_PORT ?? 0))
+  app.syncStoresEvery(STORE_SYNC_INTERVAL_MS)
   const ownInfo: DaemonInfo = { port: server.port, pid: process.pid, url: server.url }
 
   if (!(await claimDaemonInfoFile(env, ownInfo, existingInfo))) {

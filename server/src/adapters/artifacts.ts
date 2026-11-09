@@ -28,7 +28,6 @@ const isGitIgnored = (projectDir: string, file: string) =>
     execFile('git', ['check-ignore', '-q', file], { cwd: projectDir, windowsHide: true }, (error) => resolve(error === null))
   })
 
-/** An artifact must be an image or text file inside the work folder, not ignored by git, and small. */
 export async function readArtifactFromWorkFolder(projectDir: string, requestedPath: string) {
   const workFolder = await realpath(projectDir)
   const file = await realpath(path.resolve(workFolder, requestedPath)).catch(() => {

@@ -13,7 +13,7 @@ export class GitError extends Error {}
 
 interface GitRun {
   args: string[]
-  input?: string
+  input?: string | Buffer
   env?: NodeJS.ProcessEnv
   allowFailure?: boolean
 }
@@ -64,7 +64,6 @@ export class GitStore {
     return (await this.git({ args: ['rev-parse', `${commit}^{tree}`] })).stdout.trim()
   }
 
-  /** Builds a tree from `base` (or nothing) plus the given entries, through a throwaway index. */
   private async buildTree(base: string | null, entries: { path: string; blob: string }[]) {
     const indexFile = path.join(os.tmpdir(), `drillmaster-index-${process.pid}-${Math.random().toString(36).slice(2)}`)
     const env = { GIT_INDEX_FILE: indexFile }
@@ -85,12 +84,12 @@ export class GitStore {
     return commit
   }
 
-  private async blobOf(content: string) {
+  private async blobOf(content: string | Buffer) {
     return (await this.git({ args: ['hash-object', '-w', '--stdin'], input: content })).stdout.trim()
   }
 
   /** Writes files on a branch (new branches start from main). Returns false when nothing changed. */
-  async writeFiles(branch: string, files: Record<string, string>, message: string): Promise<boolean> {
+  async writeFiles(branch: string, files: Record<string, string | Buffer>, message: string): Promise<boolean> {
     const parent = (await this.tip(`refs/heads/${branch}`)) ?? (await this.tip(`refs/heads/${MAIN}`))
     const entries = await Promise.all(Object.entries(files).map(async ([filePath, content]) => ({ path: filePath, blob: await this.blobOf(content) })))
     const tree = await this.buildTree(parent, entries)
@@ -100,7 +99,6 @@ export class GitStore {
     return true
   }
 
-  /** Every file under `folder` on a ref, with its blob. */
   private async filesUnder(ref: string, folder?: string) {
     const { stdout } = await this.git({ args: ['ls-tree', '-r', ref, ...(folder ? ['--', folder] : [])] })
     return stdout

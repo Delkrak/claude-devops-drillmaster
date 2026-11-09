@@ -192,10 +192,14 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   }
 }
 
-export function deliverWorkItem(item: WorkItemState, args: DeliverArgs): Decision {
+export function refuseUndeliverable(item: WorkItemState) {
   refuseIfDelivered(item)
   if (item.pending_gate) throw new Refused(`The ${item.pending_gate.gate} gate of ${describePosition(item)} is still pending.`)
   if (!item.gates_done) throw new Refused(`The work item is at ${describePosition(item)}. Every work gate must pass before delivery.`)
+}
+
+export function deliverWorkItem(item: WorkItemState, args: DeliverArgs): Decision {
+  refuseUndeliverable(item)
   return {
     events: [{ type: 'work_item_delivered', work_item_id: item.work_item_id, pr: args.pr, summary: args.summary, artifacts: args.artifacts }],
     answer: { delivered: item.work_item_id, pr: args.pr, artifacts: args.artifacts.map((artifact) => artifact.name), note: 'Now write your workflow post mortem (work_post_mortem).' },

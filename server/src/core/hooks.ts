@@ -216,7 +216,6 @@ function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId
   return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}` } } }
 }
 
-/** Owner's typed words decide a pending Owner gate, or the open proposals by number. Anything unclear is just a prompt. */
 function decideTypedPrompt(state: ProjectState, item: WorkItemState | undefined, prompt: string): AnswerOutcome {
   const gateQuestion = pendingOwnerQuestions(state).find((question) => question.kind === 'owner_gate' && question.work_item_id === item?.work_item_id)
   if (gateQuestion) {

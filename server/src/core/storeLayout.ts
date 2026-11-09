@@ -10,8 +10,8 @@ export const itemBranch = (storage: Storage, workItemId: string) => storage.bran
 export const itemFolder = (storage: Storage, workItemId: string) => `${storage.path}/items/${workItemId}`
 export const projectFile = (storage: Storage, writer: string) => `${storage.path}/project/${writer}.jsonl`
 export const itemFile = (storage: Storage, workItemId: string, writer: string) => `${itemFolder(storage, workItemId)}/${writer}.jsonl`
+export const artifactFile = (storage: Storage, workItemId: string, name: string) => `${itemFolder(storage, workItemId)}/artifacts/${name}`
 
-/** A work item's workflow is complete once it is delivered and both post mortems are written. */
 export const isComplete = (item: WorkItemState) => item.status === 'delivered' && item.post_mortems.includes('agent') && item.post_mortems.includes('drillmaster')
 
 const toJsonl = (events: readonly DrillmasterEvent[]) => events.map((event) => JSON.stringify(event)).join('\n') + (events.length ? '\n' : '')
@@ -28,12 +28,12 @@ export function filesOfWriter(events: readonly DrillmasterEvent[], state: Projec
     branch: itemBranch(storage, item.work_item_id),
     folder: itemFolder(storage, item.work_item_id),
     files: { [itemFile(storage, item.work_item_id, writer)]: toJsonl(ours.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)) },
+    artifacts: ours.some((event) => event.type === 'work_item_delivered' && event.work_item_id === item.work_item_id) ? item.artifacts : [],
     complete: isComplete(item),
   }))
   return { project: { [projectFile(storage, writer)]: toJsonl(projectEvents) }, items: items.filter((entry) => Object.values(entry.files)[0] !== '') }
 }
 
-/** Stage ends, deliveries, post mortems and project changes are when the store is committed and pushed. */
 export function isPublishMoment(event: DrillmasterEvent) {
   switch (event.type) {
     case 'gate_verdict':

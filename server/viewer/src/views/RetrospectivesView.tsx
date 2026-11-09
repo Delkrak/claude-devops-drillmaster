@@ -9,6 +9,7 @@ import { Heading, Muted, Pre, Strong } from '../ui/Text'
 export const proposalTone: Record<Proposal['status'], Tone> = { applied: 'ok', approved: 'info', declined: 'bad', open: 'neutral' }
 
 const FINDINGS = [
+  ['opening', "How the last retrospective's actions did"],
   ['should', 'What should have happened'],
   ['did', 'What happened'],
   ['why', 'Why'],
@@ -30,7 +31,7 @@ export function RetrospectivesView({ project }: { project: ProjectView }) {
 function RetrospectiveCard({ retro }: { retro: Retrospective }) {
   return (
     <Card title={`Retrospective ${retro.retro_id}`} subtitle={`${formatDateTime(retro.at)}, on ${retro.work_items.join(', ') || 'no delivered work items'}`}>
-      {FINDINGS.map(([key, label]) => (
+      {FINDINGS.filter(([key]) => retro.findings[key]).map(([key, label]) => (
         <Stack key={key} tight>
           <Muted>{label}</Muted>
           <span>{retro.findings[key]}</span>

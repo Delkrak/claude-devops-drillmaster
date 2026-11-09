@@ -8,7 +8,6 @@ function metricLine(metric: WorkflowMetric) {
   return `- \`${metric.name}\`, by ${metric.by}: ${metric.instruction} Categories: ${categories}.`
 }
 
-/** The next work step in full, so Agent never has to look anything up before doing it. */
 export function renderStep(workflow: WorkflowDocument, stageNumber: number, stepNumber: number) {
   const stage = workflow.stages.find((candidate) => candidate.n === stageNumber)
   const step = stage?.steps.find((candidate) => candidate.n === stepNumber)
