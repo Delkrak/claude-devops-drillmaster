@@ -1,12 +1,8 @@
-// What a Claude Code hook payload means for Drillmaster. Pure: state and payload in, the events to
-// append and the hook's output out. The server only stores and replies.
-
 import type { NewEvent } from './events.js'
+import { classifyOwnerWords, decideProposals } from './owner.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { classifyOwner, decideProposals } from './owner.js'
-import { nextPosition, stepAt, workflowOf } from './work.js'
+import { nextPosition, stepAt, workflowOfWorkItem } from './work.js'
 
-/** The fields Drillmaster reads from a Claude Code hook payload. Anything else is ignored. */
 export interface HookPayload {
   session_id?: string
   hook_event_name?: string
@@ -20,72 +16,67 @@ export interface HookPayload {
 
 export interface HookOutcome {
   events: NewEvent[]
-  /** JSON the hook prints to stdout for Claude Code, if any. */
   output?: Record<string, unknown>
 }
 
 export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const
 
-const MAX_INPUT = 500
+const MAX_TRACED_INPUT_LENGTH = 500
+const MAX_QUOTED_PROMPT_LENGTH = 300
 
-const SECRET_KEY = /token/i
-const SECRET_IN_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
+const SECRET_KEY_NAME = /token/i
+const SECRET_IN_JSON_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
 
-/** Agent's token never reaches the store: not in tool inputs, responses or recorded payloads. */
-export function redact(value: unknown): unknown {
-  if (typeof value === 'string') return value.replace(SECRET_IN_TEXT, '$1[redacted]')
-  if (Array.isArray(value)) return value.map(redact)
+export function redactTokens(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(SECRET_IN_JSON_TEXT, '$1[redacted]')
+  if (Array.isArray(value)) return value.map(redactTokens)
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) && typeof v === 'string' ? '[redacted]' : redact(v)]))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, field]) => [key, SECRET_KEY_NAME.test(key) && typeof field === 'string' ? '[redacted]' : redactTokens(field)]),
+    )
   }
   return value
 }
 
-/** A short, single-line view of a tool input, so traces stay small. */
-export function summarize(value: unknown) {
+export function truncateForTrace(value: unknown) {
   if (value === undefined) return undefined
   const text = typeof value === 'string' ? value : JSON.stringify(value)
-  return text.length > MAX_INPUT ? `${text.slice(0, MAX_INPUT)}...` : text
+  return text.length > MAX_TRACED_INPUT_LENGTH ? `${text.slice(0, MAX_TRACED_INPUT_LENGTH)}...` : text
 }
 
-/** Drillmaster's own work_report tool, whatever prefix Claude Code gives MCP tools. */
-const isWorkReport = (tool?: string) => tool === 'work_report' || (tool?.endsWith('__work_report') ?? false)
+const isWorkReportTool = (toolName?: string) => toolName === 'work_report' || (toolName?.endsWith('__work_report') ?? false)
 
-/** The work item id from a successful work_report(start) response. */
-export function startedWorkItem(payload: HookPayload): string | undefined {
-  if (payload.hook_event_name !== 'PostToolUse' || !isWorkReport(payload.tool_name)) return undefined
+export function startedWorkItemId(payload: HookPayload): string | undefined {
+  if (payload.hook_event_name !== 'PostToolUse' || !isWorkReportTool(payload.tool_name)) return undefined
   const input = payload.tool_input as { action?: string } | undefined
   if (input?.action !== 'start') return undefined
   const match = /\\?"work_item_id\\?"\s*:\s*\\?"([^"\\]+)\\?"/.exec(JSON.stringify(payload.tool_response ?? ''))
   return match?.[1]
 }
 
-function toolFailed(response: unknown) {
-  if (response && typeof response === 'object') {
-    const r = response as { isError?: unknown; is_error?: unknown; error?: unknown; success?: unknown }
-    return r.isError === true || r.is_error === true || (r.error !== undefined && r.error !== null) || r.success === false
-  }
-  return false
+function toolResponseIsError(toolResponse: unknown) {
+  if (!toolResponse || typeof toolResponse !== 'object') return false
+  const { isError, is_error, error, success } = toolResponse as { isError?: unknown; is_error?: unknown; error?: unknown; success?: unknown }
+  return isError === true || is_error === true || (error !== undefined && error !== null) || success === false
 }
 
-export function handleHook(state: ProjectState, event: string, payload: HookPayload, record: boolean): HookOutcome {
-  // A project without a workflow doesn't use Drillmaster: nothing is stored, nothing is said.
+export function handleHook(state: ProjectState, hookEvent: string, payload: HookPayload, recordRaw: boolean): HookOutcome {
   if (!state.initialized || !state.workflow) return { events: [] }
   const sessionId = payload.session_id
   if (!sessionId) return { events: [] }
 
   const events: NewEvent[] = []
-  const known = state.sessions[sessionId]
-  if (!known) {
-    events.push({ type: 'session_registered', session_id: sessionId, source: event === 'SessionStart' ? (payload.source ?? 'startup') : 'implicit' })
+  const knownSession = state.sessions[sessionId]
+  if (!knownSession) {
+    events.push({ type: 'session_registered', session_id: sessionId, source: hookEvent === 'SessionStart' ? (payload.source ?? 'startup') : 'implicit' })
   }
 
   // Binding comes first, so this PostToolUse trace already belongs to the new work item.
-  let workItemId = known?.work_item_id ?? null
-  const started = startedWorkItem({ ...payload, hook_event_name: event })
-  if (started && state.workItems[started]) {
-    events.push({ type: 'session_bound', session_id: sessionId, work_item_id: started })
-    workItemId = started
+  let workItemId = knownSession?.work_item_id ?? null
+  const startedId = startedWorkItemId({ ...payload, hook_event_name: hookEvent })
+  if (startedId && state.workItems[startedId]) {
+    events.push({ type: 'session_bound', session_id: sessionId, work_item_id: startedId })
+    workItemId = startedId
   }
   const item = workItemId ? state.workItems[workItemId] : undefined
 
@@ -95,50 +86,36 @@ export function handleHook(state: ProjectState, event: string, payload: HookPayl
     work_item_id: workItemId,
     stage: item?.stage ?? null,
     step: item?.step ?? null,
-    hook: event,
+    hook: hookEvent,
   }
   if (payload.tool_name) {
     trace.tool = payload.tool_name
-    trace.input = summarize(redact(payload.tool_input))
+    trace.input = truncateForTrace(redactTokens(payload.tool_input))
   }
-  if (event === 'PostToolUse') trace.error = toolFailed(payload.tool_response)
-  if (event === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
-  if (record) trace.raw = redact(payload)
+  if (hookEvent === 'PostToolUse') trace.error = toolResponseIsError(payload.tool_response)
+  if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
+  if (recordRaw) trace.raw = redactTokens(payload)
   events.push(trace)
 
-  if (event === 'UserPromptSubmit' && item?.pending_gate?.gate === 'owner' && typeof payload.prompt === 'string') {
-    const owner = ownerVerdict(state, item, payload.prompt)
-    if (owner) {
-      events.push(owner.event)
-      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: owner.context } } }
-    }
-  } else if (event === 'UserPromptSubmit' && typeof payload.prompt === 'string' && state.latestRetro) {
-    // Owner's words on the latest workflow retrospective's open proposals.
-    const retro = state.retros[state.latestRetro]!
-    const open = retro.proposals.map((p) => p.id).filter((id) => ![...retro.approved, ...retro.declined, ...retro.applied].includes(id))
-    const decision = decideProposals(payload.prompt, open)
-    if (decision && (decision.approved.length || decision.declined.length)) {
-      events.push({ type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt: payload.prompt })
-      const parts = [
-        decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply each with workflow_retrospective (action "apply").` : '',
-        decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
-      ].filter(Boolean)
-      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `Drillmaster: ${parts.join(' ')}` } } }
+  if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') {
+    const ownerDecision = item?.pending_gate?.gate === 'owner' ? decideOwnerGate(state, item, payload.prompt) : decideRetroProposals(state, payload.prompt)
+    if (ownerDecision) {
+      events.push(ownerDecision.event)
+      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ownerDecision.context } } }
     }
   }
-  return { events, output: event === 'SessionStart' ? sessionBrief(state, item) : undefined }
+  return { events, output: hookEvent === 'SessionStart' ? briefSession(state, item) : undefined }
 }
 
-export { classifyOwner }
-
-function ownerVerdict(state: ProjectState, item: WorkItemState, prompt: string) {
+function decideOwnerGate(state: ProjectState, item: WorkItemState, prompt: string) {
   const gate = item.pending_gate!
-  const verdict = classifyOwner(prompt)
-  if (verdict === 'unclear') return undefined
-  const doc = workflowOf(state, item)
-  const rules = stepAt(doc, gate.stage, gate.step)?.rules ?? []
-  const accepted = verdict === 'approve'
-  const position = accepted ? nextPosition(doc, gate.stage, gate.step) : { next: { stage: gate.stage, step: gate.step }, done: false }
+  const classification = classifyOwnerWords(prompt)
+  if (classification === 'unclear') return undefined
+  const workflow = workflowOfWorkItem(state, item)
+  const rules = stepAt(workflow, gate.stage, gate.step)?.rules ?? []
+  const accepted = classification === 'approve'
+  const position = accepted ? nextPosition(workflow, gate.stage, gate.step) : { next: { stage: gate.stage, step: gate.step }, done: false }
+  const quotedPrompt = prompt.length > MAX_QUOTED_PROMPT_LENGTH ? `${prompt.slice(0, MAX_QUOTED_PROMPT_LENGTH)}...` : prompt
   const event: NewEvent = {
     type: 'gate_verdict',
     work_item_id: item.work_item_id,
@@ -146,18 +123,33 @@ function ownerVerdict(state: ProjectState, item: WorkItemState, prompt: string) 
     step: gate.step,
     accepted,
     by: 'owner',
-    why: `Owner: "${prompt.length > 300 ? `${prompt.slice(0, 300)}...` : prompt}"`,
+    why: `Owner: "${quotedPrompt}"`,
     rule: rules.length ? rules.join(', ') : null,
     ...position,
   }
-  const where = `work step ${gate.stage}.${gate.step}`
+  const stepLabel = `work step ${gate.stage}.${gate.step}`
   const context = accepted
-    ? `Drillmaster: Owner approved the Owner gate of ${where}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: work step ${position.next.stage}.${position.next.step}.`}`
-    : `Drillmaster: Owner rejected the Owner gate of ${where}. Do what Owner asks, report the impediment, and hand the gate in again.`
+    ? `Drillmaster: Owner approved the Owner gate of ${stepLabel}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: work step ${position.next.stage}.${position.next.step}.`}`
+    : `Drillmaster: Owner rejected the Owner gate of ${stepLabel}. Do what Owner asks, report the impediment, and hand the gate in again.`
   return { event, context }
 }
 
-function sessionBrief(state: ProjectState, item: ProjectState['workItems'][string] | undefined) {
+function decideRetroProposals(state: ProjectState, prompt: string) {
+  if (!state.latestRetroId) return undefined
+  const retro = state.retros[state.latestRetroId]!
+  const decidedIds = [...retro.approved, ...retro.declined, ...retro.applied]
+  const openProposalIds = retro.proposals.map((proposal) => proposal.id).filter((id) => !decidedIds.includes(id))
+  const decision = decideProposals(prompt, openProposalIds)
+  if (!decision || (decision.approved.length === 0 && decision.declined.length === 0)) return undefined
+  const event: NewEvent = { type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt }
+  const contextParts = [
+    decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply each with workflow_retrospective (action "apply").` : '',
+    decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
+  ].filter(Boolean)
+  return { event, context: `Drillmaster: ${contextParts.join(' ')}` }
+}
+
+function briefSession(state: ProjectState, item: WorkItemState | undefined) {
   const workflow = state.workflow!
   const lines = [
     `Drillmaster runs this project (workflow version ${workflow.version}). Owner's objective: "${workflow.objective.text}".`,

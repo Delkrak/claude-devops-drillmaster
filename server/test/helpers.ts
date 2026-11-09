@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { fixedClock, sequentialIds } from '../src/adapters/clocks.js'
+import { steppingClock, sequentialIds } from '../src/adapters/clocks.js'
 import { ScriptedReviewer } from '../src/adapters/reviewers.js'
 import { MemoryStore } from '../src/adapters/stores.js'
 import type { WorkflowDocument } from '../src/core/workflow.js'
@@ -11,7 +11,7 @@ import type { Ports } from '../src/ports.js'
 export function testPorts(script: Record<string, unknown[]> = {}): Ports & { reviewer: ScriptedReviewer } {
   return {
     store: new MemoryStore(),
-    clock: fixedClock('2026-11-09T10:00:00Z'),
+    clock: steppingClock('2026-11-09T10:00:00Z'),
     ids: sequentialIds(),
     reviewer: new ScriptedReviewer(script),
   }

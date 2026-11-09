@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { handleHook, redact, startedWorkItem, summarize } from '../../src/core/hooks.js'
+import { handleHook, redactTokens, startedWorkItemId, truncateForTrace } from '../../src/core/hooks.js'
 import { foldState } from '../../src/core/state.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE } from '../helpers.js'
@@ -76,7 +76,7 @@ describe('recorded payloads from a real Claude Code session', () => {
     const fixture = JSON.parse(
       await readFile(new URL('../hooks/fixtures/recorded-posttooluse-work_report.json', import.meta.url), 'utf8'),
     ) as { payload: Record<string, unknown> }
-    const id = startedWorkItem({ ...fixture.payload, hook_event_name: 'PostToolUse' })
+    const id = startedWorkItemId({ ...fixture.payload, hook_event_name: 'PostToolUse' })
     expect(id).toMatch(/^wi_/)
     const state = foldState([INIT, { ...STARTED, work_item_id: id! }])
     const outcome = handleHook(state, 'PostToolUse', fixture.payload, false)
@@ -87,20 +87,20 @@ describe('recorded payloads from a real Claude Code session', () => {
 describe('hook helpers', () => {
   it('finds the work item only in a successful work_report start', () => {
     const base = { hook_event_name: 'PostToolUse', tool_name: 'work_report', tool_input: { action: 'start' } }
-    expect(startedWorkItem({ ...base, tool_response: startResponse })).toBe('wi_1')
-    expect(startedWorkItem({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
-    expect(startedWorkItem({ ...base, tool_input: { action: 'report' }, tool_response: startResponse })).toBeUndefined()
-    expect(startedWorkItem({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
+    expect(startedWorkItemId({ ...base, tool_response: startResponse })).toBe('wi_1')
+    expect(startedWorkItemId({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
+    expect(startedWorkItemId({ ...base, tool_input: { action: 'report' }, tool_response: startResponse })).toBeUndefined()
+    expect(startedWorkItemId({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
   })
 
   it('redacts tokens in objects and in JSON text', () => {
-    expect(redact({ token: 'abc', nested: { agent_token: 'def', n: 1 } })).toEqual({ token: '[redacted]', nested: { agent_token: '[redacted]', n: 1 } })
-    expect(redact(JSON.stringify({ agent_token: 'abc' }, null, 2))).not.toContain('abc')
-    expect(redact(JSON.stringify(JSON.stringify({ token: 'abc' })))).not.toContain('abc')
+    expect(redactTokens({ token: 'abc', nested: { agent_token: 'def', n: 1 } })).toEqual({ token: '[redacted]', nested: { agent_token: '[redacted]', n: 1 } })
+    expect(redactTokens(JSON.stringify({ agent_token: 'abc' }, null, 2))).not.toContain('abc')
+    expect(redactTokens(JSON.stringify(JSON.stringify({ token: 'abc' })))).not.toContain('abc')
   })
 
   it('keeps tool inputs short', () => {
-    expect(summarize('x'.repeat(600))).toHaveLength(503)
-    expect(summarize(undefined)).toBeUndefined()
+    expect(truncateForTrace('x'.repeat(600))).toHaveLength(503)
+    expect(truncateForTrace(undefined)).toBeUndefined()
   })
 })

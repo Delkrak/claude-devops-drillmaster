@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// drillmaster daemon | mcp | init | inspect
 
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
-import { ensureDaemon, request } from './client.js'
+import { findOrStartServer, requestJson } from './client.js'
 import { runDaemon } from './daemon/main.js'
 import { runShim } from './mcp/shim.js'
 import { VERSION } from './version.js'
@@ -29,8 +28,8 @@ Environment:
   DRILLMASTER_RECORD    1 keeps raw hook payloads in the work traces, for test fixtures.
 `
 
-async function main(argv: string[]) {
-  const [command, ...rest] = argv
+async function runCommand(argv: string[]) {
+  const [command, ...commandArgs] = argv
   switch (command) {
     case 'daemon':
       return runDaemon()
@@ -38,7 +37,7 @@ async function main(argv: string[]) {
       return runShim()
     case 'init': {
       const { values } = parseArgs({
-        args: rest,
+        args: commandArgs,
         options: {
           objective: { type: 'string' },
           measure: { type: 'string', multiple: true },
@@ -46,8 +45,8 @@ async function main(argv: string[]) {
         },
       })
       if (!values.objective || !values.measure?.length) throw new Error(`init needs --objective and at least one --measure.\n\n${USAGE}`)
-      const url = await ensureDaemon()
-      const { workflow } = await request<{ workflow: unknown }>(url, 'POST', '/projects/init', {
+      const url = await findOrStartServer()
+      const { workflow } = await requestJson<{ workflow: unknown }>(url, 'POST', '/projects/init', {
         project: values.project ?? process.cwd(),
         objective: { text: values.objective, measures: values.measure },
       })
@@ -55,16 +54,16 @@ async function main(argv: string[]) {
       return
     }
     case 'inspect': {
-      const { values } = parseArgs({ args: rest, options: { project: { type: 'string' }, json: { type: 'boolean' } } })
-      const url = await ensureDaemon()
-      const project = values.project ?? process.cwd()
-      const result = await request<{ events: unknown[]; state: unknown }>(url, 'GET', `/state?idle=1&project=${encodeURIComponent(project)}`)
-      if (values.json) console.log(JSON.stringify(result, null, 2))
-      else console.log(`${result.events.length} events\n\n${JSON.stringify(result.state, null, 2)}`)
+      const { values } = parseArgs({ args: commandArgs, options: { project: { type: 'string' }, json: { type: 'boolean' } } })
+      const url = await findOrStartServer()
+      const projectDir = values.project ?? process.cwd()
+      const inspection = await requestJson<{ events: unknown[]; state: unknown }>(url, 'GET', `/state?idle=1&project=${encodeURIComponent(projectDir)}`)
+      if (values.json) console.log(JSON.stringify(inspection, null, 2))
+      else console.log(`${inspection.events.length} events\n\n${JSON.stringify(inspection.state, null, 2)}`)
       return
     }
     case 'open': {
-      const url = await ensureDaemon()
+      const url = await findOrStartServer()
       console.log(`Drillmaster viewer: ${url}/`)
       openInBrowser(`${url}/`)
       return
@@ -83,12 +82,12 @@ async function main(argv: string[]) {
 }
 
 function openInBrowser(url: string) {
-  const [command, args] =
+  const [opener, openerArgs] =
     process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]]
-  spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  spawn(opener, openerArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
 }
 
-main(process.argv.slice(2)).catch((error: unknown) => {
+runCommand(process.argv.slice(2)).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error)
   // Not process.exit(): on Windows it can abort while fetch's sockets are still closing.
   process.exitCode = 1

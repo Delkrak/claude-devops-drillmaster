@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent, GateSubmitted } from '../../src/core/events.js'
-import { buildGatePrompt, extractJson, InvalidAnswer, readGateAnswer } from '../../src/core/review.js'
+import { buildGatePrompt, extractFirstJsonObject, InvalidAnswer, readGateAnswer } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { WORKFLOW_DM } from '../helpers.js'
 
@@ -60,7 +60,7 @@ describe("reading Drillmaster's answer", () => {
   it('reads a JSON answer wrapped in prose', () => {
     const text = 'Verdict:\n```json\n{"accepted": false, "rule": "pr 1.1", "why": "The PR body is empty."}\n```'
     expect(readGateAnswer(WORKFLOW_DM, submission, text)).toMatchObject({ accepted: false, rule: 'pr 1.1' })
-    expect(extractJson('no json here')).toBeUndefined()
+    expect(extractFirstJsonObject('no json here')).toBeUndefined()
   })
 
   it('refuses answers that are not verdicts, or rejections that cite no rule', () => {

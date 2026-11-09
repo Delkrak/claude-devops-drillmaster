@@ -1,92 +1,91 @@
-// The Drillmaster server over HTTP on 127.0.0.1. It is the only thing that stores anything:
-// the stdio shim forwards MCP tool calls here, and the hooks and the CLI use the REST endpoints.
-
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { UserError, type Drillmaster } from '../app.js'
 import { VERSION } from '../version.js'
 import { serveViewer } from './static.js'
 
-const MAX_BODY = 5 * 1024 * 1024
+const MAX_BODY_BYTES = 5 * 1024 * 1024
+const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
+const VIEWER_API_ROUTE = /^GET \/api\/projects(?:\/([\w-]+)(?:\/items\/([\w-]+))?)?$/
 
-async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
-  let size = 0
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length
-    if (size > MAX_BODY) throw new UserError('Request body too large', 413)
+  let bodyBytes = 0
+  for await (const chunk of request) {
+    bodyBytes += (chunk as Buffer).length
+    if (bodyBytes > MAX_BODY_BYTES) throw new UserError('Request body too large', 413)
     chunks.push(chunk as Buffer)
   }
-  const text = Buffer.concat(chunks).toString('utf8')
-  if (text.trim() === '') return {}
+  const bodyText = Buffer.concat(chunks).toString('utf8')
+  if (bodyText.trim() === '') return {}
   try {
-    const value = JSON.parse(text) as unknown
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
-    return value as Record<string, unknown>
+    const body = JSON.parse(bodyText) as unknown
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new Error()
+    return body as Record<string, unknown>
   } catch {
     throw new UserError('The body must be a JSON object')
   }
 }
 
-function send(res: http.ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify(body))
+function sendJson(response: http.ServerResponse, status: number, body: unknown) {
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+  response.end(JSON.stringify(body))
 }
 
-function requireProject(value: unknown) {
+function requireProjectDir(value: unknown) {
   if (typeof value !== 'string' || value.trim() === '') throw new UserError('`project` (the project directory) is required')
   return value
 }
 
-export function createHandler(app: Drillmaster) {
-  return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+const isViewerPath = (pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
+
+export function createRequestHandler(app: Drillmaster) {
+  return async (request: http.IncomingMessage, response: http.ServerResponse) => {
     try {
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-      const route = `${req.method} ${url.pathname}`
-      const hook = /^POST \/hooks\/([A-Za-z]+)$/.exec(route)
-      if (hook) {
-        const body = await readJson(req)
-        return send(res, 200, await app.hook(requireProject(body.project), hook[1]!, body.payload))
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+      const route = `${request.method} ${url.pathname}`
+      const hookMatch = HOOK_ROUTE.exec(route)
+      if (hookMatch) {
+        const body = await readJsonBody(request)
+        return sendJson(response, 200, await app.hook(requireProjectDir(body.project), hookMatch[1]!, body.payload))
       }
-      // The viewer's read-only API: projects by id, as the store keys them.
-      const api = /^GET \/api\/projects(?:\/([\w-]+)(?:\/items\/([\w-]+))?)?$/.exec(route)
-      if (api) {
-        const [, id, item] = api
-        if (!id) return send(res, 200, await app.listProjects())
-        return send(res, 200, item ? await app.workItemView(id, item) : await app.projectView(id))
+      const viewerApiMatch = VIEWER_API_ROUTE.exec(route)
+      if (viewerApiMatch) {
+        const [, projectId, workItemId] = viewerApiMatch
+        if (!projectId) return sendJson(response, 200, await app.listProjects())
+        return sendJson(response, 200, workItemId ? await app.workItemView(projectId, workItemId) : await app.projectView(projectId))
       }
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/ui'))) {
-        return serveViewer(res, url.pathname === '/' || url.pathname.startsWith('/ui') ? '/index.html' : url.pathname)
+      if (request.method === 'GET' && isViewerPath(url.pathname)) {
+        return serveViewer(response, url.pathname.startsWith('/assets/') ? url.pathname : '/index.html')
       }
       switch (route) {
         case 'GET /health':
-          return send(res, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid })
+          return sendJson(response, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid })
         case 'GET /state': {
-          const project = requireProject(url.searchParams.get('project'))
-          // idle=1 waits for background work (Drillmaster's post mortems) before answering.
+          const projectDir = requireProjectDir(url.searchParams.get('project'))
           if (url.searchParams.get('idle') === '1') await app.idle()
-          const events = await app.events(project)
-          return send(res, 200, { project, events, state: await app.state(project) })
+          const events = await app.events(projectDir)
+          return sendJson(response, 200, { project: projectDir, events, state: await app.state(projectDir) })
         }
         case 'POST /projects/init': {
-          const body = await readJson(req)
-          const workflow = await app.init(requireProject(body.project), body.objective)
-          return send(res, 201, { workflow })
+          const body = await readJsonBody(request)
+          const workflow = await app.init(requireProjectDir(body.project), body.objective)
+          return sendJson(response, 201, { workflow })
         }
         case 'GET /tools':
-          return send(res, 200, { tools: app.tools() })
+          return sendJson(response, 200, { tools: app.tools() })
         case 'POST /tools/call': {
-          const body = await readJson(req)
+          const body = await readJsonBody(request)
           if (typeof body.name !== 'string') throw new UserError('`name` (the tool name) is required')
-          return send(res, 200, await app.callTool(requireProject(body.project), body.name, body.arguments))
+          return sendJson(response, 200, await app.callTool(requireProjectDir(body.project), body.name, body.arguments))
         }
         default:
-          return send(res, 404, { error: `No route for ${route}` })
+          return sendJson(response, 404, { error: `No route for ${route}` })
       }
     } catch (error) {
-      if (error instanceof UserError) return send(res, error.status, { error: error.message })
+      if (error instanceof UserError) return sendJson(response, error.status, { error: error.message })
       console.error(error)
-      return send(res, 500, { error: error instanceof Error ? error.message : String(error) })
+      return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
     }
   }
 }
@@ -97,17 +96,16 @@ export interface RunningServer {
   close(): Promise<void>
 }
 
-/** Listens on 127.0.0.1. Port 0 picks a free port, which is what tests and the daemon use. */
 export async function listen(app: Drillmaster, port = 0): Promise<RunningServer> {
-  const server = http.createServer(createHandler(app))
+  const server = http.createServer(createRequestHandler(app))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, '127.0.0.1', () => resolve())
   })
-  const actual = (server.address() as AddressInfo).port
+  const boundPort = (server.address() as AddressInfo).port
   return {
-    port: actual,
-    url: `http://127.0.0.1:${actual}`,
+    port: boundPort,
+    url: `http://127.0.0.1:${boundPort}`,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   }
 }

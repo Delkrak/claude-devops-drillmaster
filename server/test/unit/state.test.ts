@@ -16,11 +16,11 @@ describe('folding events', () => {
     expect(foldState([])).toEqual({
       initialized: false,
       retros: {},
-      latestRetro: null,
+      latestRetroId: null,
       versions: [],
       sessions: {},
       workItems: {},
-      traces: 0,
+      traceCount: 0,
       eventCount: 0,
     })
   })

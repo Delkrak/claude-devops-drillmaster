@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { fixedClock, sequentialIds } from '../../src/adapters/clocks.js'
+import { steppingClock, sequentialIds } from '../../src/adapters/clocks.js'
 import { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { JsonlStore } from '../../src/adapters/stores.js'
 import type { DrillmasterEvent } from '../../src/core/events.js'
@@ -30,7 +30,7 @@ describe('JSONL store', () => {
     expect((await store.read('p1')).map((e) => e.id)).toEqual(['ev_1', 'ev_2'])
     const lines = (await readFile(path.join(dir, 'p1', 'events.jsonl'), 'utf8')).trim().split('\n')
     expect(lines).toHaveLength(2)
-    expect(await store.projects()).toEqual(['p1'])
+    expect(await store.projectIds()).toEqual(['p1'])
   })
 
   it('never interleaves concurrent appends', async () => {
@@ -50,8 +50,8 @@ describe('JSONL store', () => {
 })
 
 describe('test adapters', () => {
-  it('the fixed clock moves one second per call', () => {
-    const clock = fixedClock('2026-11-09T10:00:00Z')
+  it('the stepping clock moves one second per call', () => {
+    const clock = steppingClock('2026-11-09T10:00:00Z')
     expect([clock.now(), clock.now()]).toEqual(['2026-11-09T10:00:00.000Z', '2026-11-09T10:00:01.000Z'])
   })
 

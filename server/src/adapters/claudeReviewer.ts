@@ -1,20 +1,17 @@
-// The production reviewer: a headless `claude -p` run, so Drillmaster needs no API key of its own.
-// It runs with no tools, no MCP servers and no session persistence, in a neutral directory, so the
-// plugin's own hooks never trace it into the project it judges.
-
 import { spawn } from 'node:child_process'
 import os from 'node:os'
 import type { Reviewer, ReviewRequest } from '../ports.js'
 
+const DEFAULT_TIMEOUT_PER_ATTEMPT_MS = 90_000
+const DEFAULT_ATTEMPTS = 2
+const MAX_STDERR_IN_ERROR = 300
+const MAX_ERROR_LENGTH = 500
+
 export interface ClaudeReviewerOptions {
-  /** The claude executable, or a stand-in in tests. */
   command?: string
-  /** Extra arguments before the reviewer's own, e.g. a script path for a stand-in. */
   prefixArgs?: string[]
   model?: string
-  /** Per attempt. */
-  timeoutMs?: number
-  /** A first `claude -p` next to a busy session can stall once; a second attempt usually answers. */
+  timeoutPerAttemptMs?: number
   attempts?: number
 }
 
@@ -22,11 +19,11 @@ export class ClaudeReviewer implements Reviewer {
   constructor(private readonly options: ClaudeReviewerOptions = {}) {}
 
   async review(request: ReviewRequest) {
-    const attempts = this.options.attempts ?? 2
+    const attempts = this.options.attempts ?? DEFAULT_ATTEMPTS
     const errors: string[] = []
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        return await this.once(request)
+        return await this.runClaudeOnce(request)
       } catch (error) {
         errors.push(`attempt ${attempt}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -34,9 +31,11 @@ export class ClaudeReviewer implements Reviewer {
     throw new Error(errors.join(' | '))
   }
 
-  private once(request: ReviewRequest) {
+  private runClaudeOnce(request: ReviewRequest) {
     const { command = 'claude', prefixArgs = [], model } = this.options
-    const timeoutMs = Math.max(this.options.timeoutMs ?? 90_000, request.timeoutMs ?? 0)
+    const timeoutMs = Math.max(this.options.timeoutPerAttemptMs ?? DEFAULT_TIMEOUT_PER_ATTEMPT_MS, request.minTimeoutMs ?? 0)
+    // No tools, no MCP servers and a neutral directory: the plugin's own hooks must never trace
+    // the reviewer's session into the project it judges.
     const args = [
       ...prefixArgs,
       '-p',
@@ -55,26 +54,26 @@ export class ClaudeReviewer implements Reviewer {
       let stderr = ''
       const timer = setTimeout(() => {
         child.kill()
-        const tail = stderr.trim().slice(-300)
-        reject(new Error(`The reviewer did not answer within ${timeoutMs / 1000}s.${tail ? ` stderr: ${tail}` : ''}`))
+        const stderrTail = stderr.trim().slice(-MAX_STDERR_IN_ERROR)
+        reject(new Error(`The reviewer did not answer within ${timeoutMs / 1000}s.${stderrTail ? ` stderr: ${stderrTail}` : ''}`))
       }, timeoutMs)
-      child.stdout.on('data', (d) => (stdout += d))
-      child.stderr.on('data', (d) => (stderr += d))
+      child.stdout.on('data', (chunk) => (stdout += chunk))
+      child.stderr.on('data', (chunk) => (stderr += chunk))
       child.on('error', (error) => {
         clearTimeout(timer)
         reject(new Error(`Could not run the reviewer (${command}): ${error.message}`))
       })
-      child.on('close', (code) => {
+      child.on('close', (exitCode) => {
         clearTimeout(timer)
         try {
-          const out = JSON.parse(stdout) as { result?: unknown; is_error?: boolean }
-          if (code !== 0 || out.is_error) throw new Error(String(out.result ?? stderr ?? `exit ${code}`))
-          resolve({ answer: out.result })
+          const claudeOutput = JSON.parse(stdout) as { result?: unknown; is_error?: boolean }
+          if (exitCode !== 0 || claudeOutput.is_error) throw new Error(String(claudeOutput.result ?? stderr ?? `exit ${exitCode}`))
+          resolve({ answer: claudeOutput.result })
         } catch (error) {
-          reject(new Error(`The reviewer failed (exit ${code}): ${error instanceof Error ? error.message : stderr}`.slice(0, 500)))
+          reject(new Error(`The reviewer failed (exit ${exitCode}): ${error instanceof Error ? error.message : stderr}`.slice(0, MAX_ERROR_LENGTH)))
         }
       })
-      child.stdin.end(`${request.prompt}`)
+      child.stdin.end(request.prompt)
     })
   }
 }

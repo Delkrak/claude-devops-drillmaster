@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { classifyOwner, handleHook } from '../../src/core/hooks.js'
+import { handleHook } from '../../src/core/hooks.js'
+import { classifyOwnerWords } from '../../src/core/owner.js'
 import { foldState } from '../../src/core/state.js'
 import { WORKFLOW_DM } from '../helpers.js'
 
@@ -17,7 +18,7 @@ describe("classifying Owner's words", () => {
     ['what does this do?', 'unclear'],
     ['hmm', 'unclear'],
   ])('%s -> %s', (prompt, expected) => {
-    expect(classifyOwner(prompt)).toBe(expected)
+    expect(classifyOwnerWords(prompt)).toBe(expected)
   })
 })
 

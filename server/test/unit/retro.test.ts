@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { average, baseline, measureItems } from '../../src/core/measures.js'
+import { averageMeasure, measureBaseline, measureDeliveredItems } from '../../src/core/measures.js'
 import { decideProposals } from '../../src/core/owner.js'
-import { applyOps, applyProposal, InvalidChange, readPostMortemAnswer, readRetroAnswer } from '../../src/core/retro.js'
+import { applyWorkflowOps, applyProposal, InvalidChange, readPostMortemAnswer, readRetroAnswer } from '../../src/core/retro.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE, WORKFLOW_3 } from '../helpers.js'
 
@@ -12,7 +12,7 @@ const testRule = { id: '1.1', rule: 'the tests run green before a PR', verified_
 
 describe('workflow operations', () => {
   it('grows workflow_0 into a first work stage with its work policy', () => {
-    const next = applyOps(w0, [
+    const next = applyWorkflowOps(w0, [
       { op: 'add_policy', name: 'test', rules: [testRule] },
       { op: 'add_stage', name: 'build', steps: [testStep] },
     ])
@@ -21,7 +21,7 @@ describe('workflow operations', () => {
   })
 
   it('renumbers after inserting and removing', () => {
-    const next = applyOps(WORKFLOW_3, [
+    const next = applyWorkflowOps(WORKFLOW_3, [
       { op: 'add_step', stage: 1, after: 0, step: { name: 'read the issue', gate: 'self', rules: [], report: [] } },
       { op: 'remove_step', stage: 1, step: 3 },
       { op: 'add_stage', name: 'refine', after: 0, steps: [{ name: 'write criteria', gate: 'owner', rules: [], report: [] }] },
@@ -34,7 +34,7 @@ describe('workflow operations', () => {
   })
 
   it('changes steps, rules and the objective', () => {
-    const next = applyOps(WORKFLOW_3, [
+    const next = applyWorkflowOps(WORKFLOW_3, [
       { op: 'change_step', stage: 1, step: 2, gate: 'drillmaster' },
       { op: 'change_rule', ref: 'pr 1.1', verified_by: 'reading the PR' },
       { op: 'set_objective', measures: ['gate_rejections_per_item'] },
@@ -45,9 +45,9 @@ describe('workflow operations', () => {
   })
 
   it('refuses changes that leave the workflow invalid', () => {
-    expect(() => applyOps(WORKFLOW_3, [{ op: 'remove_rule', ref: 'pr 1.1' }])).toThrow(/unknown rule/)
-    expect(() => applyOps(w0, [{ op: 'remove_stage', stage: 1 }])).toThrow(InvalidChange)
-    expect(() => applyOps(w0, [{ op: 'add_stage', name: 'b', steps: [{ ...testStep }] }])).toThrow(/unknown rule/)
+    expect(() => applyWorkflowOps(WORKFLOW_3, [{ op: 'remove_rule', ref: 'pr 1.1' }])).toThrow(/unknown rule/)
+    expect(() => applyWorkflowOps(w0, [{ op: 'remove_stage', stage: 1 }])).toThrow(InvalidChange)
+    expect(() => applyWorkflowOps(w0, [{ op: 'add_stage', name: 'b', steps: [{ ...testStep }] }])).toThrow(/unknown rule/)
   })
 })
 
@@ -143,7 +143,7 @@ describe('measures', () => {
   ]
 
   it('counts per delivered work item: Owner approvals are not corrections, changes after delivery are', () => {
-    expect(measureItems(events)).toEqual([
+    expect(measureDeliveredItems(events)).toEqual([
       {
         work_item_id: 'wi_1',
         issue: '#1',
@@ -154,8 +154,8 @@ describe('measures', () => {
   })
 
   it('averages, with a baseline of 0 before any work item is delivered', () => {
-    expect(average([], 'minutes_per_item')).toBeNull()
-    expect(baseline([], 'minutes_per_item')).toBe(0)
-    expect(average(measureItems(events), 'minutes_per_item')).toBe(10)
+    expect(averageMeasure([], 'minutes_per_item')).toBeNull()
+    expect(measureBaseline([], 'minutes_per_item')).toBe(0)
+    expect(averageMeasure(measureDeliveredItems(events), 'minutes_per_item')).toBe(10)
   })
 })

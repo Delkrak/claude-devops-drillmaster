@@ -1,5 +1,3 @@
-// The measures v1 can compute from the events. Owner's objective names measures from this set.
-
 import type { DrillmasterEvent } from './events.js'
 
 export const MEASURES = {
@@ -22,70 +20,66 @@ export interface ItemMeasures {
   values: Record<MeasureName, number>
 }
 
-/** Tools that change the work. Owner's words after delivery that lead to one were a correction. */
-const CHANGES_WORK = /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/
+const WORK_CHANGING_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/
 
-/** Every delivered work item's measures, in delivery order. */
-export function measureItems(events: readonly DrillmasterEvent[]): ItemMeasures[] {
-  const afterDelivery = new Map<string, boolean>() // work item -> an Owner prompt awaits a reaction
-  const items = new Map<string, { issue: string; started: string; delivered?: string; values: Record<MeasureName, number> }>()
-  const zero = (): Record<MeasureName, number> => ({
-    owner_corrections_per_item: 0,
-    gate_rejections_per_item: 0,
-    review_rounds_per_item: 0,
-    minutes_per_item: 0,
-    tool_calls_per_item: 0,
-  })
-  for (const e of events) {
-    if (e.type === 'work_item_started') {
-      items.set(e.work_item_id, { issue: e.issue, started: e.at, values: zero() })
+const zeroMeasures = (): Record<MeasureName, number> => ({
+  owner_corrections_per_item: 0,
+  gate_rejections_per_item: 0,
+  review_rounds_per_item: 0,
+  minutes_per_item: 0,
+  tool_calls_per_item: 0,
+})
+
+export function measureDeliveredItems(events: readonly DrillmasterEvent[]): ItemMeasures[] {
+  const ownerPromptAwaitingChange = new Map<string, boolean>()
+  const items = new Map<string, { issue: string; startedAt: string; deliveredAt?: string; values: Record<MeasureName, number> }>()
+  for (const event of events) {
+    if (event.type === 'work_item_started') {
+      items.set(event.work_item_id, { issue: event.issue, startedAt: event.at, values: zeroMeasures() })
       continue
     }
-    if (!('work_item_id' in e) || !e.work_item_id) continue
-    const item = items.get(e.work_item_id)
+    if (!('work_item_id' in event) || !event.work_item_id) continue
+    const item = items.get(event.work_item_id)
     if (!item) continue
-    if (item.delivered) {
-      // Without gates, Owner often can only correct after delivery: count it when Agent then
-      // changes the work. A next-issue instruction or retrospective talk changes nothing here.
-      if (e.type === 'work_trace' && e.hook === 'UserPromptSubmit') afterDelivery.set(e.work_item_id, true)
-      if (e.type === 'work_trace' && e.hook === 'PostToolUse' && CHANGES_WORK.test(e.tool ?? '') && afterDelivery.get(e.work_item_id)) {
+    if (item.deliveredAt) {
+      // Without gates, Owner can often only correct after delivery. A prompt counts as a correction
+      // when Agent then changes the work; a next-issue instruction or retrospective talk does not.
+      if (event.type === 'work_trace' && event.hook === 'UserPromptSubmit') ownerPromptAwaitingChange.set(event.work_item_id, true)
+      if (event.type === 'work_trace' && event.hook === 'PostToolUse' && WORK_CHANGING_TOOLS.test(event.tool ?? '') && ownerPromptAwaitingChange.get(event.work_item_id)) {
         item.values.owner_corrections_per_item++
-        afterDelivery.set(e.work_item_id, false)
+        ownerPromptAwaitingChange.set(event.work_item_id, false)
       }
       continue
     }
-    switch (e.type) {
+    switch (event.type) {
       case 'work_trace':
-        if (e.hook === 'UserPromptSubmit') item.values.owner_corrections_per_item++
-        if (e.hook === 'PostToolUse') item.values.tool_calls_per_item++
+        if (event.hook === 'UserPromptSubmit') item.values.owner_corrections_per_item++
+        if (event.hook === 'PostToolUse') item.values.tool_calls_per_item++
         break
       case 'gate_submitted':
-        if (e.gate !== 'self') item.values.review_rounds_per_item++
+        if (event.gate !== 'self') item.values.review_rounds_per_item++
         break
       case 'gate_verdict':
-        if (!e.accepted) item.values.gate_rejections_per_item++
-        // Owner approving an Owner gate is not a correction.
-        if (e.by === 'owner' && e.accepted) item.values.owner_corrections_per_item--
+        if (!event.accepted) item.values.gate_rejections_per_item++
+        if (event.by === 'owner' && event.accepted) item.values.owner_corrections_per_item--
         break
       case 'work_item_delivered':
-        item.delivered = e.at
-        item.values.minutes_per_item = Math.round(((Date.parse(e.at) - Date.parse(item.started)) / 60000) * 10) / 10
+        item.deliveredAt = event.at
+        item.values.minutes_per_item = Math.round(((Date.parse(event.at) - Date.parse(item.startedAt)) / 60000) * 10) / 10
         break
     }
   }
   return [...items.entries()]
-    .filter(([, i]) => i.delivered)
-    .map(([id, i]) => ({ work_item_id: id, issue: i.issue, delivered_at: i.delivered!, values: i.values }))
+    .filter(([, item]) => item.deliveredAt)
+    .map(([workItemId, item]) => ({ work_item_id: workItemId, issue: item.issue, delivered_at: item.deliveredAt!, values: item.values }))
     .sort((a, b) => a.delivered_at.localeCompare(b.delivered_at))
 }
 
-/** The mean of a measure over work items; null when there are none. */
-export function average(items: readonly ItemMeasures[], measure: MeasureName): number | null {
+export function averageMeasure(items: readonly ItemMeasures[], measure: MeasureName): number | null {
   if (items.length === 0) return null
-  return Math.round((items.reduce((sum, i) => sum + i.values[measure], 0) / items.length) * 100) / 100
+  return Math.round((items.reduce((sum, item) => sum + item.values[measure], 0) / items.length) * 100) / 100
 }
 
 export const BASELINE_WINDOW = 5
 
-/** A measure's baseline: its mean over the last few delivered work items. */
-export const baseline = (items: readonly ItemMeasures[], measure: MeasureName) => average(items.slice(-BASELINE_WINDOW), measure) ?? 0
+export const measureBaseline = (items: readonly ItemMeasures[], measure: MeasureName) => averageMeasure(items.slice(-BASELINE_WINDOW), measure) ?? 0

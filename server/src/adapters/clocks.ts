@@ -1,17 +1,18 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Clock, Ids } from '../ports.js'
 
+const STEP_MS = 1000
+
 export const systemClock: Clock = { now: () => new Date().toISOString() }
 
-/** A clock that starts at a fixed time and moves one second per call, so order stays visible. */
-export function fixedClock(start: string): Clock {
-  let t = Date.parse(start)
-  if (Number.isNaN(t)) throw new Error(`Not a valid time for the fixed clock: ${start}`)
+export function steppingClock(startAt: string): Clock {
+  let currentMs = Date.parse(startAt)
+  if (Number.isNaN(currentMs)) throw new Error(`Not a valid time for the stepping clock: ${startAt}`)
   return {
     now: () => {
-      const iso = new Date(t).toISOString()
-      t += 1000
-      return iso
+      const timestamp = new Date(currentMs).toISOString()
+      currentMs += STEP_MS
+      return timestamp
     },
   }
 }
@@ -21,13 +22,12 @@ export const randomIds: Ids = {
   secret: () => randomBytes(24).toString('base64url'),
 }
 
-/** prefix_1, prefix_2 ... per prefix, and secret_1, secret_2 ...: deterministic ids for tests. */
 export function sequentialIds(): Ids {
-  const counters = new Map<string, number>()
+  const countByPrefix = new Map<string, number>()
   const next = (prefix: string) => {
-    const n = (counters.get(prefix) ?? 0) + 1
-    counters.set(prefix, n)
-    return `${prefix}_${n}`
+    const count = (countByPrefix.get(prefix) ?? 0) + 1
+    countByPrefix.set(prefix, count)
+    return `${prefix}_${count}`
   }
   return { next, secret: () => next('secret') }
 }

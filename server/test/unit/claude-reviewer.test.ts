@@ -34,7 +34,7 @@ process.stdin.on('end', () => {
 afterAll(() => dir.remove())
 
 describe('ClaudeReviewer', () => {
-  const reviewer = (timeoutMs = 10_000, attempts = 1) => new ClaudeReviewer({ command: process.execPath, prefixArgs: [fake], timeoutMs, attempts })
+  const reviewer = (timeoutMs = 10_000, attempts = 1) => new ClaudeReviewer({ command: process.execPath, prefixArgs: [fake], timeoutPerAttemptMs: timeoutMs, attempts })
 
   it('answers on the second attempt when the first stalls', async () => {
     const { answer } = await reviewer(800, 2).review({ kind: 'gate', prompt: 'STALL_ONCE' })

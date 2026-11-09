@@ -1,7 +1,7 @@
 // What a simulation run must show, read from the server's events. Pure, so it is unit tested too.
 
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { average, measureItems } from '../../src/core/measures.js'
+import { averageMeasure, measureDeliveredItems } from '../../src/core/measures.js'
 import { foldState } from '../../src/core/state.js'
 
 export interface Check {
@@ -31,12 +31,12 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   const raw = JSON.stringify(events)
   const leakedToken = /"(?:agent_)?token\\?"\s*:\s*\\?"(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(raw)
 
-  const measured = measureItems(events)
+  const measured = measureDeliveredItems(events)
   const cut = facts.retros > 0 ? (retros[0]?.at ?? '') : ''
   const before = measured.filter((i) => i.delivered_at <= cut)
   const after = measured.filter((i) => i.delivered_at > cut)
-  const corrBefore = average(before, 'owner_corrections_per_item')
-  const corrAfter = average(after, 'owner_corrections_per_item')
+  const corrBefore = averageMeasure(before, 'owner_corrections_per_item')
+  const corrAfter = averageMeasure(after, 'owner_corrections_per_item')
 
   const checks: Check[] = [
     { name: 'workflow set up from the objective', ok: state.initialized, detail: `version ${state.workflow?.version ?? 'none'}` },

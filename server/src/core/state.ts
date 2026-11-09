@@ -1,5 +1,3 @@
-// The folded state of one project. Every function here is pure: events in, state out.
-
 import type { DrillmasterEvent, Proposal, WorkTrace } from './events.js'
 import { findRule, type WorkflowDocument } from './workflow.js'
 
@@ -10,9 +8,7 @@ export interface WorkItemState {
   token_hash: string
   stage: number | null
   step: number | null
-  /** The work gate waiting for Drillmaster or Owner, if any. */
   pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner'; review_failed?: string } | null
-  /** Every work gate of every work stage has passed. Always true when the workflow has none. */
   gates_done: boolean
   status: 'active' | 'delivered'
   pr: string | null
@@ -26,7 +22,6 @@ export interface WorkItemState {
 
 export interface SessionState {
   session_id: string
-  /** The work item the session is bound to now, if any. */
   work_item_id: string | null
 }
 
@@ -34,7 +29,6 @@ export interface RetroState {
   retro_id: string
   at: string
   proposals: Proposal[]
-  /** Proposal ids Owner approved or declined, in Owner's own words. */
   approved: number[]
   declined: number[]
   applied: number[]
@@ -43,15 +37,12 @@ export interface RetroState {
 export interface ProjectState {
   initialized: boolean
   retros: Record<string, RetroState>
-  /** The most recent workflow retrospective, if any. */
-  latestRetro: string | null
-  /** The current workflow, or undefined before the project is initialized. */
+  latestRetroId: string | null
   workflow?: WorkflowDocument
-  /** Every version, by number. */
   versions: WorkflowDocument[]
   sessions: Record<string, SessionState>
   workItems: Record<string, WorkItemState>
-  traces: number
+  traceCount: number
   eventCount: number
 }
 
@@ -59,11 +50,11 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
   const state: ProjectState = {
     initialized: false,
     retros: {},
-    latestRetro: null,
+    latestRetroId: null,
     versions: [],
     sessions: {},
     workItems: {},
-    traces: 0,
+    traceCount: 0,
     eventCount: 0,
   }
   for (const event of events) {
@@ -81,7 +72,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       case 'retrospective_ran':
         state.retros[event.retro_id] = { retro_id: event.retro_id, at: event.at, proposals: event.proposals, approved: [], declined: [], applied: [] }
-        state.latestRetro = event.retro_id
+        state.latestRetroId = event.retro_id
         break
       case 'owner_decided': {
         const retro = state.retros[event.retro_id]
@@ -164,7 +155,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       }
       case 'work_trace':
-        state.traces++
+        state.traceCount++
         if (event.work_item_id) {
           const item = state.workItems[event.work_item_id]
           if (item) item.traces++
@@ -174,34 +165,26 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
   }
   return state
 }
-
-/** The work item whose token hashes to `tokenHash`. */
-export const itemByTokenHash = (state: ProjectState, tokenHash: string) =>
+export const findWorkItemByTokenHash = (state: ProjectState, tokenHash: string) =>
   Object.values(state.workItems).find((item) => item.token_hash === tokenHash)
-
-/** Agent's work reports for one work item (free reports and gate reports), oldest first. */
-export function reportsOf(events: readonly DrillmasterEvent[], workItemId: string, at?: { stage?: number; step?: number }) {
+export function workReportsOf(events: readonly DrillmasterEvent[], workItemId: string, atStep?: { stage?: number; step?: number }) {
   return events.filter(
-    (e): e is Extract<DrillmasterEvent, { type: 'work_reported' | 'gate_submitted' }> =>
-      (e.type === 'work_reported' || e.type === 'gate_submitted') &&
-      e.work_item_id === workItemId &&
-      (at?.stage === undefined || e.stage === at.stage) &&
-      (at?.step === undefined || e.step === at.step),
+    (event): event is Extract<DrillmasterEvent, { type: 'work_reported' | 'gate_submitted' }> =>
+      (event.type === 'work_reported' || event.type === 'gate_submitted') &&
+      event.work_item_id === workItemId &&
+      (atStep?.stage === undefined || event.stage === atStep.stage) &&
+      (atStep?.step === undefined || event.step === atStep.step),
   )
 }
-
-/** The work traces of one work item, optionally only those captured at one work step. */
-export function tracesOf(events: readonly DrillmasterEvent[], workItemId: string, at?: { stage?: number; step?: number }) {
+export function workTracesOf(events: readonly DrillmasterEvent[], workItemId: string, atStep?: { stage?: number; step?: number }) {
   return events.filter(
-    (e): e is WorkTrace =>
-      e.type === 'work_trace' &&
-      e.work_item_id === workItemId &&
-      (at?.stage === undefined || e.stage === at.stage) &&
-      (at?.step === undefined || e.step === at.step),
+    (event): event is WorkTrace =>
+      event.type === 'work_trace' &&
+      event.work_item_id === workItemId &&
+      (atStep?.stage === undefined || event.stage === atStep.stage) &&
+      (atStep?.step === undefined || event.step === atStep.step),
   )
 }
-
-/** What workflow_get returns. It describes the workflow only; work status is elsewhere. */
 export type WorkflowView =
   | { kind: 'overview'; version: number; objective: WorkflowDocument['objective']; stages: { n: number; name: string; steps: number }[]; experiments: WorkflowDocument['experiments'] }
   | { kind: 'stage'; version: number; stage: { n: number; name: string }; steps: StepView[] }
@@ -227,31 +210,31 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
   if (!state.workflow) {
     throw new WorkflowQueryError('This project has no workflow yet. Owner sets the objective first (setup).')
   }
-  const doc = query.version === undefined ? state.workflow : state.versions[query.version]
-  if (!doc) {
+  const workflow = query.version === undefined ? state.workflow : state.versions[query.version]
+  if (!workflow) {
     throw new WorkflowQueryError(`There is no workflow version ${query.version}; the latest is ${state.workflow.version}.`)
   }
-  if (query.full) return { kind: 'full', workflow: doc }
+  if (query.full) return { kind: 'full', workflow }
   if (query.stage !== undefined) {
-    const stage = doc.stages.find((s) => s.n === query.stage)
+    const stage = workflow.stages.find((candidate) => candidate.n === query.stage)
     if (!stage) {
       throw new WorkflowQueryError(
-        doc.stages.length === 0
-          ? `Workflow version ${doc.version} has no work stages yet.`
-          : `There is no work stage ${query.stage}; the work stages are 1-${doc.stages.length}.`,
+        workflow.stages.length === 0
+          ? `Workflow version ${workflow.version} has no work stages yet.`
+          : `There is no work stage ${query.stage}; the work stages are 1-${workflow.stages.length}.`,
       )
     }
     return {
       kind: 'stage',
-      version: doc.version,
+      version: workflow.version,
       stage: { n: stage.n, name: stage.name },
       steps: stage.steps.map((step) => ({
         n: `${stage.n}.${step.n}`,
         name: step.name,
         gate: step.gate,
-        rules: step.rules.map((ref) => {
-          const rule = findRule(doc, ref)!
-          return { ref, rule: rule.rule, verified_by: rule.verified_by }
+        rules: step.rules.map((ruleRef) => {
+          const rule = findRule(workflow, ruleRef)!
+          return { ref: ruleRef, rule: rule.rule, verified_by: rule.verified_by }
         }),
         report: step.report,
       })),
@@ -259,9 +242,9 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
   }
   return {
     kind: 'overview',
-    version: doc.version,
-    objective: doc.objective,
-    stages: doc.stages.map((s) => ({ n: s.n, name: s.name, steps: s.steps.length })),
-    experiments: doc.experiments,
+    version: workflow.version,
+    objective: workflow.objective,
+    stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, steps: stage.steps.length })),
+    experiments: workflow.experiments,
   }
 }

@@ -1,7 +1,5 @@
-// Read-only views for the human viewer. Pure: events in, what a page shows out.
-
 import type { DrillmasterEvent } from './events.js'
-import { average, measureItems, type ItemMeasures } from './measures.js'
+import { averageMeasure, BASELINE_WINDOW, measureDeliveredItems, type ItemMeasures } from './measures.js'
 import { foldState, type ProjectState } from './state.js'
 
 export interface ProjectSummary {
@@ -14,60 +12,72 @@ export interface ProjectSummary {
   last_activity: string | null
 }
 
-const lastAt = (events: readonly DrillmasterEvent[]) => events.at(-1)?.at ?? null
+export type ProposalStatus = 'applied' | 'approved' | 'declined' | 'open'
 
-export function summarizeProject(id: string, events: readonly DrillmasterEvent[]): ProjectSummary | undefined {
-  const init = events.find((e) => e.type === 'project_initialized')
-  if (!init || init.type !== 'project_initialized') return undefined
+const lastEventAt = (events: readonly DrillmasterEvent[]) => events.at(-1)?.at ?? null
+
+export function summarizeProject(projectId: string, events: readonly DrillmasterEvent[]): ProjectSummary | undefined {
+  const initEvent = events.find((event) => event.type === 'project_initialized')
+  if (!initEvent || initEvent.type !== 'project_initialized') return undefined
   const state = foldState(events)
   const items = Object.values(state.workItems)
   return {
-    id,
-    dir: init.dir,
+    id: projectId,
+    dir: initEvent.dir,
     objective: state.workflow!.objective.text,
     workflow_version: state.workflow!.version,
     work_items: items.length,
-    active: items.filter((i) => i.status === 'active').length,
-    last_activity: lastAt(events),
+    active: items.filter((item) => item.status === 'active').length,
+    last_activity: lastEventAt(events),
   }
 }
 
-export type ProposalStatus = 'applied' | 'approved' | 'declined' | 'open'
-
-function retrosOf(state: ProjectState, events: readonly DrillmasterEvent[]) {
+function retrospectiveViewsNewestFirst(state: ProjectState, events: readonly DrillmasterEvent[]) {
   return events
-    .filter((e): e is Extract<DrillmasterEvent, { type: 'retrospective_ran' }> => e.type === 'retrospective_ran')
-    .map((e) => {
-      const retro = state.retros[e.retro_id]!
-      const status = (id: number): ProposalStatus =>
-        retro.applied.includes(id) ? 'applied' : retro.approved.includes(id) ? 'approved' : retro.declined.includes(id) ? 'declined' : 'open'
-      const decisions = events.filter((d) => d.type === 'owner_decided' && d.retro_id === e.retro_id).map((d) => ({ at: d.at, prompt: (d as { prompt: string }).prompt }))
+    .filter((event): event is Extract<DrillmasterEvent, { type: 'retrospective_ran' }> => event.type === 'retrospective_ran')
+    .map((retroEvent) => {
+      const retro = state.retros[retroEvent.retro_id]!
+      const proposalStatus = (proposalId: number): ProposalStatus =>
+        retro.applied.includes(proposalId) ? 'applied' : retro.approved.includes(proposalId) ? 'approved' : retro.declined.includes(proposalId) ? 'declined' : 'open'
+      const decisions = events
+        .filter((event): event is Extract<DrillmasterEvent, { type: 'owner_decided' }> => event.type === 'owner_decided' && event.retro_id === retroEvent.retro_id)
+        .map((decision) => ({ at: decision.at, prompt: decision.prompt }))
       return {
-        retro_id: e.retro_id,
-        at: e.at,
-        work_items: e.work_items,
-        findings: e.findings,
-        proposals: e.proposals.map((p) => ({ ...p, status: status(p.id) })),
+        retro_id: retroEvent.retro_id,
+        at: retroEvent.at,
+        work_items: retroEvent.work_items,
+        findings: retroEvent.findings,
+        proposals: retroEvent.proposals.map((proposal) => ({ ...proposal, status: proposalStatus(proposal.id) })),
         decisions,
       }
     })
     .reverse()
 }
 
-export function projectView(id: string, events: readonly DrillmasterEvent[]) {
-  const summary = summarizeProject(id, events)
+export function projectView(projectId: string, events: readonly DrillmasterEvent[]) {
+  const summary = summarizeProject(projectId, events)
   if (!summary) return undefined
   const state = foldState(events)
-  const measured = new Map<string, ItemMeasures>(measureItems(events).map((m) => [m.work_item_id, m]))
+  const measuresByItemId = new Map<string, ItemMeasures>(measureDeliveredItems(events).map((measured) => [measured.work_item_id, measured]))
+  const deliveredItems = [...measuresByItemId.values()]
   const workflow = state.workflow!
-  const all = [...measured.values()]
   return {
     summary,
     workflow,
     versions: events
-      .filter((e) => e.type === 'project_initialized' || e.type === 'workflow_changed')
-      .map((e) => ({ version: (e as { workflow: { version: number } }).workflow.version, at: e.at, reason: e.type === 'workflow_changed' ? e.reason : "Owner's objective (workflow_0)", workflow: (e as { workflow: unknown }).workflow })),
-    measures: workflow.objective.measures.map((m) => ({ name: m, last_5: average(all.slice(-5), m), all: average(all, m), per_item: all.map((i) => ({ work_item_id: i.work_item_id, issue: i.issue, value: i.values[m] })) })),
+      .filter((event): event is Extract<DrillmasterEvent, { type: 'project_initialized' | 'workflow_changed' }> => event.type === 'project_initialized' || event.type === 'workflow_changed')
+      .map((event) => ({
+        version: event.workflow.version,
+        at: event.at,
+        reason: event.type === 'workflow_changed' ? event.reason : "Owner's objective (workflow_0)",
+        workflow: event.workflow,
+      })),
+    measures: workflow.objective.measures.map((measure) => ({
+      name: measure,
+      last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure),
+      all: averageMeasure(deliveredItems, measure),
+      per_item: deliveredItems.map((item) => ({ work_item_id: item.work_item_id, issue: item.issue, value: item.values[measure] })),
+    })),
     work_items: Object.values(state.workItems)
       .sort((a, b) => b.started_at.localeCompare(a.started_at))
       .map((item) => ({
@@ -84,28 +94,37 @@ export function projectView(id: string, events: readonly DrillmasterEvent[]) {
         traces: item.traces,
         rejections: item.rejections,
         post_mortems: item.post_mortems,
-        added_steps: events.filter((e) => e.type === 'work_reported' && e.work_item_id === item.work_item_id && e.kind === 'added_step').length,
-        measures: measured.get(item.work_item_id)?.values ?? null,
+        added_steps: events.filter((event) => event.type === 'work_reported' && event.work_item_id === item.work_item_id && event.kind === 'added_step').length,
+        measures: measuresByItemId.get(item.work_item_id)?.values ?? null,
       })),
-    retrospectives: retrosOf(state, events),
+    retrospectives: retrospectiveViewsNewestFirst(state, events),
     sessions: Object.values(state.sessions),
   }
+}
+
+function withoutSecrets(event: DrillmasterEvent) {
+  if (event.type === 'work_trace') {
+    const { raw: _raw, ...trace } = event
+    return trace
+  }
+  if (event.type === 'work_item_started') {
+    const { token_hash: _tokenHash, ...started } = event
+    return started
+  }
+  return event
 }
 
 export function workItemView(events: readonly DrillmasterEvent[], workItemId: string) {
   const state = foldState(events)
   const item = state.workItems[workItemId]
   if (!item) return undefined
-  const { token_hash: _hash, ...shown } = item
-  // Neither raw hook payloads nor the token hash ever leave the server.
-  const timeline = events
-    .filter((e) => 'work_item_id' in e && e.work_item_id === workItemId)
-    .map((e) => (e.type === 'work_trace' ? (({ raw: _raw, ...rest }) => rest)(e) : e.type === 'work_item_started' ? (({ token_hash: _hash, ...rest }) => rest)(e) : e))
+  const { token_hash: _tokenHash, ...itemWithoutHash } = item
+  const timeline = events.filter((event) => 'work_item_id' in event && event.work_item_id === workItemId).map(withoutSecrets)
   return {
-    item: shown,
+    item: itemWithoutHash,
     workflow: state.versions[item.workflow_version],
-    measures: measureItems(events).find((m) => m.work_item_id === workItemId)?.values ?? null,
+    measures: measureDeliveredItems(events).find((measured) => measured.work_item_id === workItemId)?.values ?? null,
     timeline,
-    post_mortems: timeline.filter((e) => e.type === 'post_mortem_written'),
+    post_mortems: timeline.filter((event) => event.type === 'post_mortem_written'),
   }
 }
