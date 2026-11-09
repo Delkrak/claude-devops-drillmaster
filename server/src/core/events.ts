@@ -22,6 +22,39 @@ export interface WorkflowChanged extends EventEnvelope {
   /** The whole next version, so every version can be read back without replaying changes. */
   workflow: WorkflowDocument
   reason: string
+  /** The workflow retrospective and proposal it came from. */
+  retro_id?: string
+  proposal?: number
+}
+
+/** One proposed workflow change: small, checked operations on the workflow. */
+export interface Proposal {
+  id: number
+  change: string
+  purpose: string
+  measure: string
+  ops: unknown[]
+  /** Earlier proposals this one builds on: it only applies once they are applied. */
+  depends_on?: number[]
+}
+
+/** A workflow retrospective's findings and proposals, waiting for Owner. */
+export interface RetrospectiveRan extends EventEnvelope {
+  type: 'retrospective_ran'
+  retro_id: string
+  /** Delivered work items it looked at. */
+  work_items: string[]
+  findings: { should: string; did: string; why: string; keep: string; improve: string }
+  proposals: Proposal[]
+}
+
+/** Owner's own words on a retrospective's proposals, captured by the UserPromptSubmit hook. */
+export interface OwnerDecided extends EventEnvelope {
+  type: 'owner_decided'
+  retro_id: string
+  approved: number[]
+  declined: number[]
+  prompt: string
 }
 
 /** A Claude Code session the hooks have seen. */
@@ -170,6 +203,8 @@ export type DrillmasterEvent =
   | ReviewFailed
   | WorkItemDelivered
   | PostMortemWritten
+  | RetrospectiveRan
+  | OwnerDecided
 
 export type EventType = DrillmasterEvent['type']
 

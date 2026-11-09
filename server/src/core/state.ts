@@ -1,6 +1,6 @@
 // The folded state of one project. Every function here is pure: events in, state out.
 
-import type { DrillmasterEvent, WorkTrace } from './events.js'
+import type { DrillmasterEvent, Proposal, WorkTrace } from './events.js'
 import { findRule, type WorkflowDocument } from './workflow.js'
 
 export interface WorkItemState {
@@ -30,8 +30,21 @@ export interface SessionState {
   work_item_id: string | null
 }
 
+export interface RetroState {
+  retro_id: string
+  at: string
+  proposals: Proposal[]
+  /** Proposal ids Owner approved or declined, in Owner's own words. */
+  approved: number[]
+  declined: number[]
+  applied: number[]
+}
+
 export interface ProjectState {
   initialized: boolean
+  retros: Record<string, RetroState>
+  /** The most recent workflow retrospective, if any. */
+  latestRetro: string | null
   /** The current workflow, or undefined before the project is initialized. */
   workflow?: WorkflowDocument
   /** Every version, by number. */
@@ -43,7 +56,16 @@ export interface ProjectState {
 }
 
 export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
-  const state: ProjectState = { initialized: false, versions: [], sessions: {}, workItems: {}, traces: 0, eventCount: 0 }
+  const state: ProjectState = {
+    initialized: false,
+    retros: {},
+    latestRetro: null,
+    versions: [],
+    sessions: {},
+    workItems: {},
+    traces: 0,
+    eventCount: 0,
+  }
   for (const event of events) {
     state.eventCount++
     switch (event.type) {
@@ -55,7 +77,20 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
       case 'workflow_changed':
         state.workflow = event.workflow
         state.versions.push(event.workflow)
+        if (event.retro_id && event.proposal !== undefined) state.retros[event.retro_id]?.applied.push(event.proposal)
         break
+      case 'retrospective_ran':
+        state.retros[event.retro_id] = { retro_id: event.retro_id, at: event.at, proposals: event.proposals, approved: [], declined: [], applied: [] }
+        state.latestRetro = event.retro_id
+        break
+      case 'owner_decided': {
+        const retro = state.retros[event.retro_id]
+        if (retro) {
+          retro.approved = [...new Set([...retro.approved, ...event.approved])]
+          retro.declined = [...new Set([...retro.declined, ...event.declined])]
+        }
+        break
+      }
       case 'session_registered':
         state.sessions[event.session_id] ??= { session_id: event.session_id, work_item_id: null }
         break

@@ -35,7 +35,8 @@ export class ClaudeReviewer implements Reviewer {
   }
 
   private once(request: ReviewRequest) {
-    const { command = 'claude', prefixArgs = [], model, timeoutMs = 90_000 } = this.options
+    const { command = 'claude', prefixArgs = [], model } = this.options
+    const timeoutMs = Math.max(this.options.timeoutMs ?? 90_000, request.timeoutMs ?? 0)
     const args = [
       ...prefixArgs,
       '-p',

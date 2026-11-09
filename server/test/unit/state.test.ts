@@ -13,7 +13,16 @@ const EVENTS: DrillmasterEvent[] = [
 
 describe('folding events', () => {
   it('knows nothing before the project is initialized', () => {
-    expect(foldState([])).toEqual({ initialized: false, versions: [], sessions: {}, workItems: {}, traces: 0, eventCount: 0 })
+    expect(foldState([])).toEqual({
+      initialized: false,
+      retros: {},
+      latestRetro: null,
+      versions: [],
+      sessions: {},
+      workItems: {},
+      traces: 0,
+      eventCount: 0,
+    })
   })
 
   it('keeps every workflow version and the latest as current', () => {

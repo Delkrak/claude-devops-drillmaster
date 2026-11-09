@@ -26,6 +26,8 @@ export interface Ids {
 export interface ReviewRequest {
   kind: string
   prompt: string
+  /** How long this kind of review may take per attempt, if longer than the reviewer's default. */
+  timeoutMs?: number
 }
 
 export interface ReviewResult {

@@ -3,6 +3,7 @@
 
 import type { NewEvent } from './events.js'
 import type { ProjectState, WorkItemState } from './state.js'
+import { classifyOwner, decideProposals } from './owner.js'
 import { nextPosition, stepAt, workflowOf } from './work.js'
 
 /** The fields Drillmaster reads from a Claude Code hook payload. Anything else is ignored. */
@@ -111,19 +112,24 @@ export function handleHook(state: ProjectState, event: string, payload: HookPayl
       events.push(owner.event)
       return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: owner.context } } }
     }
+  } else if (event === 'UserPromptSubmit' && typeof payload.prompt === 'string' && state.latestRetro) {
+    // Owner's words on the latest workflow retrospective's open proposals.
+    const retro = state.retros[state.latestRetro]!
+    const open = retro.proposals.map((p) => p.id).filter((id) => ![...retro.approved, ...retro.declined, ...retro.applied].includes(id))
+    const decision = decideProposals(payload.prompt, open)
+    if (decision && (decision.approved.length || decision.declined.length)) {
+      events.push({ type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt: payload.prompt })
+      const parts = [
+        decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply each with workflow_retrospective (action "apply").` : '',
+        decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
+      ].filter(Boolean)
+      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `Drillmaster: ${parts.join(' ')}` } } }
+    }
   }
   return { events, output: event === 'SessionStart' ? sessionBrief(state, item) : undefined }
 }
 
-const REJECT = /\b(no|nope|don'?t|do not|reject(ed)?|not (yet|ok|okay|good|approved|done)|wait|stop|wrong|redo|fix|change|nej|vent)\b/i
-const APPROVE = /\b(yes|yep|yeah|ok|okay|approved?|lgtm|looks good|go ahead|ship it|merge it|accept(ed)?|fine|good|great|ja|godkendt|fint)\b/i
-
-/** v1: any direct agreement Owner writes to Agent is enough. A rejection word wins; unclear waits. */
-export function classifyOwner(prompt: string): 'approve' | 'reject' | 'unclear' {
-  if (REJECT.test(prompt)) return 'reject'
-  if (APPROVE.test(prompt)) return 'approve'
-  return 'unclear'
-}
+export { classifyOwner }
 
 function ownerVerdict(state: ProjectState, item: WorkItemState, prompt: string) {
   const gate = item.pending_gate!
