@@ -1,4 +1,4 @@
-import type { WorkflowDocument } from './workflow.js'
+import type { VersionLevel, WorkflowDocument } from './workflow.js'
 
 export interface EventEnvelope {
   id: string
@@ -15,6 +15,7 @@ export interface WorkflowChanged extends EventEnvelope {
   type: 'workflow_changed'
   workflow: WorkflowDocument
   reason: string
+  level?: VersionLevel
   retro_id?: string
   proposal?: number
 }
@@ -24,6 +25,10 @@ export interface Proposal {
   change: string
   purpose: string
   measure: string
+  hypothesis?: string
+  null_hypothesis?: string
+  target?: number | null
+  judge_after?: number
   ops: unknown[]
   depends_on?: number[]
 }
@@ -54,10 +59,18 @@ export interface WorkItemStarted extends EventEnvelope {
   type: 'work_item_started'
   work_item_id: string
   issue: string
-  workflow_version: number
+  description?: string
+  workflow_version: string
   token_hash: string
   stage: number | null
   step: number | null
+}
+
+export interface WorkItemRestarted extends EventEnvelope {
+  type: 'work_item_restarted'
+  work_item_id: string
+  from_version: string
+  to_version: string
 }
 
 export interface SessionBound extends EventEnvelope {
@@ -115,6 +128,23 @@ export interface GateSubmitted extends EventEnvelope {
   text: string
 }
 
+export interface MetricAnswer {
+  name: string
+  value: string
+  explanation?: string
+}
+
+export interface MetricRecorded extends EventEnvelope {
+  type: 'metric_recorded'
+  work_item_id: string
+  stage: number
+  step: number
+  name: string
+  value: string
+  explanation?: string
+  by: 'agent' | 'drillmaster' | 'owner'
+}
+
 export interface Position {
   stage: number | null
   step: number | null
@@ -145,6 +175,15 @@ export interface WorkItemDelivered extends EventEnvelope {
   type: 'work_item_delivered'
   work_item_id: string
   pr: string
+  summary?: string
+  artifacts?: Artifact[]
+}
+
+export interface Artifact {
+  name: string
+  path: string
+  media_type: string
+  bytes: number
 }
 
 export interface PostMortemWritten extends EventEnvelope {
@@ -162,12 +201,14 @@ export type DrillmasterEvent =
   | WorkflowChanged
   | SessionRegistered
   | WorkItemStarted
+  | WorkItemRestarted
   | SessionBound
   | WorkTrace
   | WorkReported
   | GateSubmitted
   | GateVerdict
   | ReviewFailed
+  | MetricRecorded
   | WorkItemDelivered
   | PostMortemWritten
   | RetrospectiveRan

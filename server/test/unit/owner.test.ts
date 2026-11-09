@@ -25,7 +25,7 @@ describe("classifying Owner's words", () => {
 const at = '2026-11-09T10:00:00Z'
 const base: DrillmasterEvent[] = [
   { id: 'e0', at, type: 'project_initialized', dir: '/p', workflow: WORKFLOW_DM },
-  { id: 's', at, type: 'work_item_started', work_item_id: 'wi_1', issue: '#7', workflow_version: 0, token_hash: 'h', stage: 2, step: 1 },
+  { id: 's', at, type: 'work_item_started', work_item_id: 'wi_1', issue: '#7', workflow_version: '1.0.0', token_hash: 'h', stage: 2, step: 1 },
   { id: 'r', at, type: 'session_registered', session_id: 's1', source: 'startup' },
   { id: 'b', at, type: 'session_bound', session_id: 's1', work_item_id: 'wi_1' },
   { id: 'g', at, type: 'gate_submitted', work_item_id: 'wi_1', stage: 2, step: 1, gate: 'owner', self_check: [], text: 'PR #40' },

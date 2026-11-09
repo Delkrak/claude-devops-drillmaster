@@ -29,8 +29,8 @@ corrections at each workflow retrospective. Nothing is copied from another workf
    - If the project already has a workflow, say so and stop. The objective changes only at a
      workflow retrospective (`/devops-drillmaster:retrospective`).
 4. **Tell Owner how it goes from here,** in a few lines:
-   - Give me issues as usual. I start each one with Drillmaster and report as I go, and every
-     action I take is recorded.
+   - Give me issues as usual. I start each one with Drillmaster (`work_start`) and report as I
+     go, and every action I take is recorded.
    - Correct me whenever I get something wrong. Your corrections are what the workflow is built
      from.
    - Call `/devops-drillmaster:retrospective` when you want the workflow to improve.

@@ -1,7 +1,7 @@
-import type { DrillmasterEvent, GateSubmitted, Position, WorkTrace } from './events.js'
+import type { DrillmasterEvent, GateSubmitted, MetricAnswer, Position, WorkTrace } from './events.js'
 import type { WorkItemState } from './state.js'
 import { nextPosition, stepAt } from './work.js'
-import { findRule, type WorkflowDocument } from './workflow.js'
+import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
 
 export const GATE_REVIEW_KIND = 'gate'
 const MAX_TRACES_IN_PROMPT = 120
@@ -36,6 +36,9 @@ export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState,
     'what Agent actually did, independent of Agent.',
     '',
     `Work item ${item.work_item_id} (${item.issue}). Drillmaster gate of work step ${submission.stage}.${submission.step}: "${step.name}".`,
+    ...(item.description ? [`What the work item is about: ${item.description}`] : []),
+    `The stage's purpose: ${workflow.stages[submission.stage - 1]?.purpose || 'not stated'}`,
+    `The work step's instruction to Agent: ${step.instruction || 'not stated'}`,
     `The work step requires reporting: ${step.report.length ? step.report.join('; ') : 'nothing extra'}.`,
     '',
     'Rules this gate references:',
@@ -50,11 +53,57 @@ export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState,
     `Work traces (${shownTraces.length} of ${traces.length}, most recent last):`,
     ...(shownTraces.length ? shownTraces.map(formatTraceLine) : ['- none']),
     '',
+    ...metricQuestionLines(dueDrillmasterMetrics(workflow, submission.stage, submission.step)),
     'Answer with JSON only, no prose around it:',
-    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": {"stage": n, "step": n}}',
+    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": {"stage": n, "step": n}, "metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
     'Reject when any referenced rule is not met or the evidence is not backed by the work traces, and cite that rule.',
     'back_to is only for a rejection: the work step the work goes back to (this one or an earlier one).',
   ].join('\n')
+}
+
+export const dueDrillmasterMetrics = (workflow: WorkflowDocument, stage: number, step: number) =>
+  workflow.metrics.filter((metric) => metric.by === 'drillmaster' && metric.at.stage === stage && metric.at.step === step)
+
+function metricQuestionLines(metrics: readonly WorkflowMetric[]) {
+  if (metrics.length === 0) return []
+  return [
+    'Also take these metrics: pick one category for each, following its instruction.',
+    ...metrics.map((metric) => `- ${metric.name}: ${metric.instruction} Categories: ${metric.categories.map((category) => `${category.value} (${category.description})`).join('; ')}`),
+    '',
+  ]
+}
+
+export const METRIC_REVIEW_KIND = 'metrics'
+
+export function buildMetricPrompt(workflow: WorkflowDocument, item: WorkItemState, stage: number, step: number, events: readonly DrillmasterEvent[]) {
+  const itemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)
+  const traces = itemEvents.filter((event): event is WorkTrace => event.type === 'work_trace').slice(-MAX_TRACES_IN_PROMPT)
+  const reports = itemEvents.filter((event) => event.type === 'work_reported' || event.type === 'gate_submitted').map((event) => `- ${JSON.stringify(event)}`)
+  return [
+    `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) passed work step ${stage}.${step}.`,
+    ...(item.description ? [`What the work item is about: ${item.description}`] : []),
+    '',
+    ...metricQuestionLines(dueDrillmasterMetrics(workflow, stage, step)),
+    "Agent's work reports:",
+    ...(reports.length ? reports : ['- none']),
+    '',
+    'Work traces, most recent last:',
+    ...(traces.length ? traces.map(formatTraceLine) : ['- none']),
+    '',
+    'Answer with JSON only:',
+    '{"metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
+  ].join('\n')
+}
+
+/** Keeps the answers that name a due metric and one of its categories. */
+export function readMetricAnswers(metrics: readonly WorkflowMetric[], answer: unknown): MetricAnswer[] {
+  const parsed = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { metrics?: unknown } | undefined
+  if (!parsed || !Array.isArray(parsed.metrics)) return []
+  return parsed.metrics.flatMap((candidate: Partial<MetricAnswer>) => {
+    const metric = metrics.find((due) => due.name === candidate.name)
+    if (!metric || !metric.categories.some((category) => category.value === candidate.value)) return []
+    return [{ name: metric.name, value: candidate.value!, ...(typeof candidate.explanation === 'string' ? { explanation: candidate.explanation } : {}) }]
+  })
 }
 
 export class InvalidAnswer extends Error {}
@@ -69,10 +118,11 @@ export function readGateAnswer(workflow: WorkflowDocument, submission: GateSubmi
   if (!gateAnswer.accepted && step.rules.length > 0 && !citedRule) {
     throw new InvalidAnswer(`A rejection must cite one of the referenced rules (${step.rules.join(', ')}).`)
   }
+  const metrics = readMetricAnswers(dueDrillmasterMetrics(workflow, submission.stage, submission.step), gateAnswer)
   if (gateAnswer.accepted) {
-    return { accepted: true, why: gateAnswer.why, rule: citedRule, ...nextPosition(workflow, submission.stage, submission.step) }
+    return { verdict: { accepted: true, why: gateAnswer.why, rule: citedRule, ...nextPosition(workflow, submission.stage, submission.step) }, metrics }
   }
-  return { accepted: false, why: gateAnswer.why, rule: citedRule, next: backToThisOrEarlierStep(workflow, submission, gateAnswer.back_to), done: false }
+  return { verdict: { accepted: false, why: gateAnswer.why, rule: citedRule, next: backToThisOrEarlierStep(workflow, submission, gateAnswer.back_to), done: false }, metrics }
 }
 
 function backToThisOrEarlierStep(workflow: WorkflowDocument, submission: GateSubmitted, backTo: Position | undefined): Position {

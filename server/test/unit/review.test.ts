@@ -18,7 +18,7 @@ const submission: GateSubmitted = {
 }
 const events: DrillmasterEvent[] = [
   { id: 'e0', at, type: 'project_initialized', dir: '/p', workflow: WORKFLOW_DM },
-  { id: 's', at, type: 'work_item_started', work_item_id: 'wi_1', issue: '#7', workflow_version: 0, token_hash: 'h', stage: 1, step: 2 },
+  { id: 's', at, type: 'work_item_started', work_item_id: 'wi_1', issue: '#7', workflow_version: '1.0.0', token_hash: 'h', stage: 1, step: 2 },
   { id: 't1', at, type: 'work_trace', session_id: 's1', work_item_id: 'wi_1', stage: 1, step: 2, hook: 'PostToolUse', tool: 'Bash', input: '{"command":"gh pr create"}', error: false },
   { id: 'r1', at, type: 'work_reported', work_item_id: 'wi_1', stage: 1, step: 1, kind: 'assumption', text: 'CSV uses ;' },
   submission,
@@ -42,7 +42,7 @@ describe('the Drillmaster gate prompt', () => {
 
 describe("reading Drillmaster's answer", () => {
   it('accepts and moves on', () => {
-    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: true, rule: null, why: 'ok' })).toEqual({
+    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: true, rule: null, why: 'ok' }).verdict).toEqual({
       accepted: true,
       why: 'ok',
       rule: null,
@@ -52,14 +52,14 @@ describe("reading Drillmaster's answer", () => {
   })
 
   it('rejects citing the rule, back to where Drillmaster says, never forward', () => {
-    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'no What', back_to: { stage: 1, step: 1 } }).next).toEqual({ stage: 1, step: 1 })
-    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'x', back_to: { stage: 2, step: 1 } }).next).toEqual({ stage: 1, step: 2 })
-    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'x' }).next).toEqual({ stage: 1, step: 2 })
+    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'no What', back_to: { stage: 1, step: 1 } }).verdict.next).toEqual({ stage: 1, step: 1 })
+    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'x', back_to: { stage: 2, step: 1 } }).verdict.next).toEqual({ stage: 1, step: 2 })
+    expect(readGateAnswer(WORKFLOW_DM, submission, { accepted: false, rule: 'pr 1.1', why: 'x' }).verdict.next).toEqual({ stage: 1, step: 2 })
   })
 
   it('reads a JSON answer wrapped in prose', () => {
     const text = 'Verdict:\n```json\n{"accepted": false, "rule": "pr 1.1", "why": "The PR body is empty."}\n```'
-    expect(readGateAnswer(WORKFLOW_DM, submission, text)).toMatchObject({ accepted: false, rule: 'pr 1.1' })
+    expect(readGateAnswer(WORKFLOW_DM, submission, text).verdict).toMatchObject({ accepted: false, rule: 'pr 1.1' })
     expect(extractFirstJsonObject('no json here')).toBeUndefined()
   })
 

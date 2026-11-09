@@ -1,10 +1,11 @@
-import type { DrillmasterEvent, Proposal, WorkTrace } from './events.js'
-import { findRule, type WorkflowDocument } from './workflow.js'
+import type { Artifact, DrillmasterEvent, Proposal, WorkTrace } from './events.js'
+import { findRule, migrateWorkflow, toSemver, type WorkflowDocument } from './workflow.js'
 
 export interface WorkItemState {
   work_item_id: string
   issue: string
-  workflow_version: number
+  description: string
+  workflow_version: string
   token_hash: string
   stage: number | null
   step: number | null
@@ -12,6 +13,9 @@ export interface WorkItemState {
   gates_done: boolean
   status: 'active' | 'delivered'
   pr: string | null
+  summary: string | null
+  artifacts: Artifact[]
+  metrics: Record<string, { value: string; by: string; explanation?: string }>
   sessions: string[]
   started_at: string
   traces: number
@@ -60,16 +64,20 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
   for (const event of events) {
     state.eventCount++
     switch (event.type) {
-      case 'project_initialized':
+      case 'project_initialized': {
+        const workflow = migrateWorkflow(event.workflow)
         state.initialized = true
-        state.workflow = event.workflow
-        state.versions = [event.workflow]
+        state.workflow = workflow
+        state.versions = [workflow]
         break
-      case 'workflow_changed':
-        state.workflow = event.workflow
-        state.versions.push(event.workflow)
+      }
+      case 'workflow_changed': {
+        const workflow = migrateWorkflow(event.workflow)
+        state.workflow = workflow
+        state.versions.push(workflow)
         if (event.retro_id && event.proposal !== undefined) state.retros[event.retro_id]?.applied.push(event.proposal)
         break
+      }
       case 'retrospective_ran':
         state.retros[event.retro_id] = { retro_id: event.retro_id, at: event.at, proposals: event.proposals, approved: [], declined: [], applied: [] }
         state.latestRetroId = event.retro_id
@@ -89,7 +97,8 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         state.workItems[event.work_item_id] = {
           work_item_id: event.work_item_id,
           issue: event.issue,
-          workflow_version: event.workflow_version,
+          description: event.description ?? '',
+          workflow_version: toSemver(event.workflow_version),
           token_hash: event.token_hash,
           stage: event.stage,
           step: event.step,
@@ -97,6 +106,9 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           gates_done: event.stage === null,
           status: 'active',
           pr: null,
+          summary: null,
+          artifacts: [],
+          metrics: {},
           sessions: [],
           started_at: event.at,
           traces: 0,
@@ -139,7 +151,14 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         if (item) {
           item.status = 'delivered'
           item.pr = event.pr
+          item.summary = event.summary ?? null
+          item.artifacts = event.artifacts ?? []
         }
+        break
+      }
+      case 'metric_recorded': {
+        const item = state.workItems[event.work_item_id]
+        if (item) item.metrics[event.name] = { value: event.value, by: event.by, ...(event.explanation ? { explanation: event.explanation } : {}) }
         break
       }
       case 'post_mortem_written': {
@@ -186,13 +205,21 @@ export function workTracesOf(events: readonly DrillmasterEvent[], workItemId: st
   )
 }
 export type WorkflowView =
-  | { kind: 'overview'; version: number; objective: WorkflowDocument['objective']; stages: { n: number; name: string; steps: number }[]; experiments: WorkflowDocument['experiments'] }
-  | { kind: 'stage'; version: number; stage: { n: number; name: string }; steps: StepView[] }
+  | {
+      kind: 'overview'
+      version: string
+      objective: WorkflowDocument['objective']
+      stages: { n: number; name: string; purpose: string; steps: number }[]
+      metrics: WorkflowDocument['metrics']
+      experiments: WorkflowDocument['experiments']
+    }
+  | { kind: 'stage'; version: string; stage: { n: number; name: string; purpose: string }; steps: StepView[] }
   | { kind: 'full'; workflow: WorkflowDocument }
 
 export interface StepView {
   n: string
   name: string
+  instruction: string
   gate: string
   rules: { ref: string; rule: string; verified_by: string }[]
   report: string[]
@@ -201,8 +228,10 @@ export interface StepView {
 export interface WorkflowQuery {
   stage?: number
   full?: boolean
-  version?: number
+  version?: string
 }
+
+export const findVersion = (state: ProjectState, version: string) => state.versions.find((candidate) => candidate.version === version)
 
 export class WorkflowQueryError extends Error {}
 
@@ -210,7 +239,7 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
   if (!state.workflow) {
     throw new WorkflowQueryError('This project has no workflow yet. Owner sets the objective first (setup).')
   }
-  const workflow = query.version === undefined ? state.workflow : state.versions[query.version]
+  const workflow = query.version === undefined ? state.workflow : findVersion(state, query.version)
   if (!workflow) {
     throw new WorkflowQueryError(`There is no workflow version ${query.version}; the latest is ${state.workflow.version}.`)
   }
@@ -227,10 +256,11 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
     return {
       kind: 'stage',
       version: workflow.version,
-      stage: { n: stage.n, name: stage.name },
+      stage: { n: stage.n, name: stage.name, purpose: stage.purpose },
       steps: stage.steps.map((step) => ({
         n: `${stage.n}.${step.n}`,
         name: step.name,
+        instruction: step.instruction,
         gate: step.gate,
         rules: step.rules.map((ruleRef) => {
           const rule = findRule(workflow, ruleRef)!
@@ -244,7 +274,8 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
     kind: 'overview',
     version: workflow.version,
     objective: workflow.objective,
-    stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, steps: stage.steps.length })),
+    stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, purpose: stage.purpose, steps: stage.steps.length })),
+    metrics: workflow.metrics,
     experiments: workflow.experiments,
   }
 }

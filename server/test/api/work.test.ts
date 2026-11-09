@@ -1,19 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { seedWorkflow, testPorts, WORKFLOW_3 } from '../helpers.js'
+import { seedWorkflow, testPorts, workToolCall, WORKFLOW_3 } from '../helpers.js'
 
 let server: RunningServer
 const PROJECT = '/projects/work'
 
-const tool = async (name: string, args: unknown) => {
+const tool = async (name: string, args: Record<string, unknown>) => {
   const res = await fetch(`${server.url}/tools/call`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ project: PROJECT, name, arguments: args }),
+    body: JSON.stringify({ project: PROJECT, ...workToolCall(name, args) }),
   })
-  const body = (await res.json()) as { isError?: boolean; content: { text: string }[] }
-  return { isError: body.isError === true, value: body.isError ? body.content[0]!.text : JSON.parse(body.content[0]!.text) }
+  const body = (await res.json()) as { isError?: boolean; content: { text: string }[]; structuredContent?: any }
+  return { isError: body.isError === true, value: body.isError ? body.content[0]!.text : body.structuredContent, text: body.content[0]!.text }
 }
 
 beforeAll(async () => {

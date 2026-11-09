@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ClaudeReviewer } from './adapters/claudeReviewer.js'
 import { randomIds, steppingClock, systemClock } from './adapters/clocks.js'
 import { ScriptedReviewer, UnavailableReviewer } from './adapters/reviewers.js'
+import { FileArtifactStore } from './adapters/artifacts.js'
 import { JsonlStore } from './adapters/stores.js'
 import type { Ports } from './ports.js'
 
@@ -28,6 +29,7 @@ export function portsFromEnv(env: NodeJS.ProcessEnv = process.env): Ports {
   const reviewerSetting = env.DRILLMASTER_REVIEWER ?? 'claude'
   return {
     store: new JsonlStore(path.join(drillmasterHome(env), 'projects')),
+    artifacts: new FileArtifactStore(path.join(drillmasterHome(env), 'projects')),
     clock: clockSetting.startsWith('fixed:') ? steppingClock(clockSetting.slice('fixed:'.length)) : systemClock,
     ids: randomIds,
     reviewer: reviewerSetting.startsWith('scripted:')

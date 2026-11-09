@@ -18,7 +18,7 @@ export function WorkflowView({ project }: { project: ProjectView }) {
       title={`Workflow version ${shown.version}`}
       subtitle={`${formatDateTime(shown.at)}: ${shown.reason}`}
       actions={
-        <Select label="Workflow version" value={version} onChange={(selectedVersion) => setVersion(Number(selectedVersion))}>
+        <Select label="Workflow version" value={version} onChange={(selectedVersion) => setVersion(selectedVersion)}>
           {project.versions.map((workflowVersion) => (
             <option key={workflowVersion.version} value={workflowVersion.version}>
               v{workflowVersion.version}

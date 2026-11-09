@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { OBJECTIVE, testPorts } from '../helpers.js'
+import { OBJECTIVE, testPorts, workToolCall } from '../helpers.js'
 
 let server: RunningServer
 const PROJECT = '/projects/session'
 const SESSION = 'session-1'
-const WORK_REPORT = 'mcp__plugin_devops-drillmaster_drillmaster__work_report'
+const WORK_START = 'mcp__plugin_devops-drillmaster_drillmaster__work_start'
 
 const post = async (route: string, body: unknown) => {
   const res = await fetch(`${server.url}${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -14,8 +14,8 @@ const post = async (route: string, body: unknown) => {
 }
 const hook = (event: string, payload: Record<string, unknown>) => post(`/hooks/${event}`, { project: PROJECT, payload: { session_id: SESSION, ...payload } })
 const tool = async (name: string, args: unknown) => {
-  const { body } = await post('/tools/call', { project: PROJECT, name, arguments: args })
-  return { isError: body.isError === true, value: body.isError ? body.content[0].text : JSON.parse(body.content[0].text) }
+  const { body } = await post('/tools/call', { project: PROJECT, ...workToolCall(name, args as Record<string, unknown>) })
+  return { isError: body.isError === true, value: body.isError ? body.content[0].text : body.structuredContent }
 }
 const state = async () => (await (await fetch(`${server.url}/state?project=${encodeURIComponent(PROJECT)}`)).json()) as any
 
@@ -49,8 +49,8 @@ describe('a session working one item on workflow_0', () => {
     expect(started.value).toMatchObject({ work_item_id: 'wi_1', agent_token: 'secret_1', stage: null, step: null })
     token = started.value.agent_token
     await hook('PostToolUse', {
-      tool_name: WORK_REPORT,
-      tool_input: { action: 'start', issue: '#12' },
+      tool_name: WORK_START,
+      tool_input: { issue: '#12', description: 'the work item under test' },
       tool_response: [{ type: 'text', text: JSON.stringify(started.value, null, 2) }],
     })
     expect((await state()).state.sessions[SESSION]).toEqual({ session_id: SESSION, work_item_id: 'wi_1' })

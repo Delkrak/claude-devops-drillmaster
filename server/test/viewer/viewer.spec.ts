@@ -23,7 +23,7 @@ test("navigates from a project's overview through every tab", async ({ page }) =
   await expect(page.getByTestId('stage')).toHaveCount(2)
   await expect(page.getByTestId('step').filter({ hasText: 'describe the PR' })).toContainText('Drillmaster gate')
   await expect(page.getByTestId('experiment')).toContainText('baseline 1.5')
-  await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0')
+  await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0.0.0')
   await expect(page.getByTestId('workflow')).toContainText('No work stages yet')
 
   await page.getByRole('tab', { name: 'Work items' }).click()
@@ -77,7 +77,7 @@ test('follows a live session: a new work item appears without reloading', async 
   await projectRow(page, 'gates-demo').click()
   await page.getByRole('tab', { name: 'Work items' }).click()
   await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
-  await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_report', arguments: { action: 'start', issue: '#3 live' } } })
+  await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_start', arguments: { issue: '#3 live', description: 'started while the viewer is open' } } })
   await expect(page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#3 live' })).toBeVisible({ timeout: 10_000 })
 })
 

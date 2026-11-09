@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
 import { projectId } from '../../src/env.js'
-import { seedWorkflow, testPorts, WORKFLOW_3 } from '../helpers.js'
+import { seedWorkflow, testPorts, WORKFLOW_3, workToolCall } from '../helpers.js'
 
 let server: RunningServer
 const DIR = '/projects/viewer'
@@ -18,8 +18,11 @@ beforeAll(async () => {
   await seedWorkflow(ports, DIR, WORKFLOW_3)
   const app = new Drillmaster(ports)
   server = await listen(app)
-  const call = (args: unknown) => app.callTool(DIR, 'work_report', args)
-  const started = JSON.parse((await call({ action: 'start', issue: '#9' })).content[0]!.text) as { agent_token: string }
+  const call = (args: Record<string, unknown>) => {
+    const { name, arguments: toolArgs } = workToolCall('work_report', args)
+    return app.callTool(DIR, name, toolArgs)
+  }
+  const started = (await call({ action: 'start', issue: '#9' })).structuredContent as { agent_token: string }
   const token = started.agent_token
   await app.hook(DIR, 'UserPromptSubmit', { session_id: 's1', prompt: 'do #9' })
   await call({ token, action: 'report', kind: 'impediment', text: 'no fixtures' })
@@ -30,13 +33,13 @@ afterAll(() => server.close())
 describe('viewer API', () => {
   it('lists projects with their summary', async () => {
     const { body } = await get('/api/projects')
-    expect(body).toEqual([expect.objectContaining({ id: ID, dir: DIR, workflow_version: 3, work_items: 1, active: 1 })])
+    expect(body).toEqual([expect.objectContaining({ id: ID, dir: DIR, workflow_version: '3.0.0', work_items: 1, active: 1 })])
   })
 
   it("gives a project's full status", async () => {
     const { body } = await get(`/api/projects/${ID}`)
-    expect(body.workflow.version).toBe(3)
-    expect(body.versions.map((v: any) => v.version)).toEqual([0, 1, 2, 3])
+    expect(body.workflow.version).toBe('3.0.0')
+    expect(body.versions.map((v: any) => v.version)).toEqual(['0.0.0', '1.0.0', '2.0.0', '3.0.0'])
     expect(body.work_items[0]).toMatchObject({ issue: '#9', status: 'active', stage: 1, step: 2, reports: 2, added_steps: 0 })
     expect(body.measures[0]).toMatchObject({ name: 'owner_corrections_per_item', all: null })
     expect(body.retrospectives).toEqual([])

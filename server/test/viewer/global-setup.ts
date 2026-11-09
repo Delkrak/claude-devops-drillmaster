@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { workToolCall } from '../helpers.js'
 import { VIEWER_PORT } from './port.js'
 
 const dist = (file: string) => import(pathToFileURL(path.resolve(import.meta.dirname, '../../dist', file)).href)
@@ -11,6 +12,7 @@ export const DEMO_DIR = '/demo/gates-demo'
 export default async function setup() {
   const { Drillmaster } = await dist('app.js')
   const { JsonlStore } = await dist('adapters/stores.js')
+  const { FileArtifactStore } = await dist('adapters/artifacts.js')
   const { systemClock, sequentialIds } = await dist('adapters/clocks.js')
   const { ScriptedReviewer } = await dist('adapters/reviewers.js')
   const { listen } = await dist('daemon/http.js')
@@ -30,7 +32,7 @@ export default async function setup() {
     gate: [{ accepted: false, rule: 'pr 1.1', why: 'The PR description does not say what changed.', back_to: { stage: 1, step: 1 } }],
     post_mortem: [{ keep: 'Small PRs', change: 'Ask for CHANGES.md in a rule', experiment_reflections: 'none running', free_text: '' }],
   })
-  const app = new Drillmaster({ store, clock: systemClock, ids: sequentialIds(), reviewer })
+  const app = new Drillmaster({ store, artifacts: new FileArtifactStore(path.join(home, 'projects')), clock: systemClock, ids: sequentialIds(), reviewer })
   await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', objective: 'every change is documented', measures: ['owner_corrections_per_item'] })
   const workflow = {
     version: 1,
@@ -54,12 +56,15 @@ export default async function setup() {
   }
   await store.append(projectId(DEMO_DIR), { id: 'demo_change', at: new Date().toISOString(), type: 'workflow_changed', workflow, reason: 'add a build stage' })
 
-  const call = async (args: unknown) => JSON.parse((await app.callTool(DEMO_DIR, 'work_report', args)).content[0].text)
+  const call = async (args: Record<string, unknown>) => {
+    const { name, arguments: toolArgs } = workToolCall('work_report', args)
+    return (await app.callTool(DEMO_DIR, name, toolArgs)).structuredContent as any
+  }
   const check = (rule: string) => [{ rule, accepted: true, evidence: `checked ${rule}` }]
 
   // Item 1: through the Drillmaster gate (rejected once), the Owner gate, delivery, an added step.
   const one = await call({ action: 'start', issue: '#1 CSV export' })
-  await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'mcp__x__work_report', tool_input: { action: 'start' }, tool_response: { work_item_id: one.work_item_id } })
+  await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'mcp__x__work_start', tool_input: { issue: '#1 CSV export' }, tool_response: { work_item_id: one.work_item_id } })
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
   await call({ token: one.agent_token, action: 'report', kind: 'assumption', text: 'CSV uses ; as separator' })
   await call({ token: one.agent_token, action: 'gate', stage: 1, step: 1, self_check: check('test 1.1'), text: 'green' })

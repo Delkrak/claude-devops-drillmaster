@@ -43,7 +43,7 @@ afterAll(async () => {
 describe('stdio MCP shim', () => {
   it('starts the shared server and lists the tools', async () => {
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_report', 'workflow_retrospective', 'work_status'])
+    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_start', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
     const info = JSON.parse(await readFile(path.join(home.dir, 'daemon.json'), 'utf8')) as { url: string }
     expect(info.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
   })
@@ -63,7 +63,7 @@ describe('stdio MCP shim', () => {
 
     const after = await client.callTool({ name: 'workflow_get', arguments: {} })
     expect(after.isError).toBeFalsy()
-    expect(JSON.parse(text(after))).toMatchObject({ kind: 'overview', version: 0, objective: OBJECTIVE })
+    expect(JSON.parse(text(after))).toMatchObject({ kind: 'overview', version: '0.0.0', objective: OBJECTIVE })
   })
 
   it('stores events in the isolated home only', async () => {

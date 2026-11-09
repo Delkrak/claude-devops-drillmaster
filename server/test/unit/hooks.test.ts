@@ -13,7 +13,7 @@ const STARTED: DrillmasterEvent = {
   type: 'work_item_started',
   work_item_id: 'wi_1',
   issue: '#12',
-  workflow_version: 0,
+  workflow_version: '0.0.0',
   token_hash: 'h',
   stage: null,
   step: null,
@@ -21,6 +21,7 @@ const STARTED: DrillmasterEvent = {
 
 /** The shape Claude Code gives a PostToolUse for an MCP tool: the result's text holds our JSON. */
 const startResponse = { content: [{ type: 'text', text: JSON.stringify({ work_item_id: 'wi_1', agent_token: 'secret_1' }, null, 2) }] }
+const markdownStartResponse = [{ type: 'text', text: '# Work item wi_1 started: #12\n\nwork_item_id: wi_1\nagent_token: secret_1\n' }]
 
 describe('handling hooks', () => {
   it('ignores projects without a workflow', () => {
@@ -31,8 +32,8 @@ describe('handling hooks', () => {
     const outcome = handleHook(foldState([INIT]), 'SessionStart', { session_id: 's1', source: 'startup' }, false)
     expect(outcome.events.map((e) => e.type)).toEqual(['session_registered', 'work_trace'])
     const context = (outcome.output as any).hookSpecificOutput.additionalContext as string
-    expect(context).toMatch(/workflow version 0/)
-    expect(context).toMatch(/work_report tool \(action "start"\)/)
+    expect(context).toMatch(/workflow version 0.0.0/)
+    expect(context).toMatch(/work_start tool/)
     expect(context).toMatch(/no work stages yet/)
   })
 
@@ -42,12 +43,12 @@ describe('handling hooks', () => {
     expect(outcome.events[1]).toMatchObject({ type: 'work_trace', hook: 'PreToolUse', tool: 'Bash', input: '{"command":"ls"}', work_item_id: null })
   })
 
-  it('binds the session when its work_report start succeeds, and traces it to the work item', () => {
+  it('binds the session when its work_start succeeds, and traces it to the work item', () => {
     const state = foldState([INIT, { id: 'ev_s', at, type: 'session_registered', session_id: 's1', source: 'startup' }, STARTED])
     const outcome = handleHook(
       state,
       'PostToolUse',
-      { session_id: 's1', tool_name: 'mcp__plugin_devops-drillmaster_drillmaster__work_report', tool_input: { action: 'start', issue: '#12' }, tool_response: startResponse },
+      { session_id: 's1', tool_name: 'mcp__plugin_devops-drillmaster_drillmaster__work_start', tool_input: { issue: '#12', description: 'd' }, tool_response: markdownStartResponse },
       false,
     )
     expect(outcome.events).toEqual([
@@ -87,10 +88,10 @@ describe('handling hooks', () => {
 })
 
 describe('recorded payloads from a real Claude Code session', () => {
-  it('binds the session from the real work_report start response', async () => {
+  it('binds the session from the real work_start response', async () => {
     const { readFile } = await import('node:fs/promises')
     const fixture = JSON.parse(
-      await readFile(new URL('../hooks/fixtures/recorded-posttooluse-work_report.json', import.meta.url), 'utf8'),
+      await readFile(new URL('../hooks/fixtures/recorded-posttooluse-work_start.json', import.meta.url), 'utf8'),
     ) as { payload: Record<string, unknown> }
     const id = startedWorkItemId({ ...fixture.payload, hook_event_name: 'PostToolUse' })
     expect(id).toMatch(/^wi_/)
@@ -101,11 +102,12 @@ describe('recorded payloads from a real Claude Code session', () => {
 })
 
 describe('hook helpers', () => {
-  it('finds the work item only in a successful work_report start', () => {
-    const base = { hook_event_name: 'PostToolUse', tool_name: 'work_report', tool_input: { action: 'start' } }
+  it('finds the work item only in a work_start response', () => {
+    const base = { hook_event_name: 'PostToolUse', tool_name: 'work_start', tool_input: { issue: '#1' } }
     expect(startedWorkItemId({ ...base, tool_response: startResponse })).toBe('wi_1')
+    expect(startedWorkItemId({ ...base, tool_response: markdownStartResponse })).toBe('wi_1')
     expect(startedWorkItemId({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
-    expect(startedWorkItemId({ ...base, tool_input: { action: 'report' }, tool_response: startResponse })).toBeUndefined()
+    expect(startedWorkItemId({ ...base, tool_name: 'work_report', tool_response: startResponse })).toBeUndefined()
     expect(startedWorkItemId({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
   })
 
@@ -113,6 +115,7 @@ describe('hook helpers', () => {
     expect(redactTokens({ token: 'abc', nested: { agent_token: 'def', n: 1 } })).toEqual({ token: '[redacted]', nested: { agent_token: '[redacted]', n: 1 } })
     expect(redactTokens(JSON.stringify({ agent_token: 'abc' }, null, 2))).not.toContain('abc')
     expect(redactTokens(JSON.stringify(JSON.stringify({ token: 'abc' })))).not.toContain('abc')
+    expect(redactTokens('work_item_id: wi_1\nagent_token: Zx9_secret-1\n')).toBe('work_item_id: wi_1\nagent_token: [redacted]\n')
   })
 
   it('redacts well-known secret formats', () => {

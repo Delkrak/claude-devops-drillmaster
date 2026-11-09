@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { testPorts } from '../helpers.js'
+import { testPorts, workToolCall } from '../helpers.js'
 
 let app: Drillmaster
 let server: RunningServer
@@ -15,8 +15,8 @@ const post = async (route: string, body: unknown) => {
   return (await res.json()) as any
 }
 const tool = async (name: string, args: unknown) => {
-  const body = await post('/tools/call', { project: PROJECT, name, arguments: args })
-  return { isError: body.isError === true, value: body.isError ? body.content[0].text : JSON.parse(body.content[0].text) }
+  const body = await post('/tools/call', { project: PROJECT, ...workToolCall(name, args as Record<string, unknown>) })
+  return { isError: body.isError === true, value: body.isError ? body.content[0].text : body.structuredContent, text: body.content[0].text as string }
 }
 const hook = (event: string, payload: Record<string, unknown>) => post(`/hooks/${event}`, { project: PROJECT, payload: { session_id: SESSION, ...payload } })
 const state = async () => (await (await fetch(`${server.url}/state?project=${encodeURIComponent(PROJECT)}`)).json()) as any
@@ -35,7 +35,13 @@ beforeAll(async () => {
             change: 'add a build stage whose first step runs the tests',
             purpose: 'Owner corrected missing test runs',
             measure: 'owner_corrections_per_item',
-            ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', steps: [{ name: 'run the tests', gate: 'self', rules: ['test 1.1'], report: ['test result'] }] }],
+            hypothesis: 'A test step means Owner stops asking for tests',
+            target: 0,
+            judge_after: 2,
+            ops: [
+              { op: 'add_policy', name: 'test', rules: [testRule] },
+              { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [{ name: 'run the tests', instruction: 'Run npm test and fix what is red.', gate: 'self', rules: ['test 1.1'], report: ['test result'] }] },
+            ],
           },
           { id: 2, change: 'measure time too', purpose: 'see speed', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['owner_corrections_per_item', 'minutes_per_item'] }] },
           { id: 3, change: 'broken', purpose: 'x', measure: 'minutes_per_item', ops: [{ op: 'remove_stage', stage: 9 }] },
@@ -54,7 +60,7 @@ describe('the improvement loop', () => {
 
   it("sets workflow_0 from Owner's objective, once", async () => {
     const setup = await tool('workflow_retrospective', { action: 'setup', objective: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] })
-    expect(setup.value.workflow).toMatchObject({ version: 0, stages: [] })
+    expect(setup.value.workflow).toMatchObject({ version: '0.0.0', stages: [] })
     expect((await tool('workflow_retrospective', { action: 'setup', objective: 'again', measures: ['minutes_per_item'] })).isError).toBe(true)
   })
 
@@ -63,7 +69,7 @@ describe('the improvement loop', () => {
     await hook('UserPromptSubmit', { prompt: 'add CSV export (issue #1)' })
     const started = await tool('work_report', { action: 'start', issue: '#1' })
     token = started.value.agent_token
-    await hook('PostToolUse', { tool_name: 'mcp__x__work_report', tool_input: { action: 'start' }, tool_response: { work_item_id: started.value.work_item_id } })
+    await hook('PostToolUse', { tool_name: 'mcp__x__work_start', tool_input: { issue: '#1' }, tool_response: { work_item_id: started.value.work_item_id } })
     await hook('UserPromptSubmit', { prompt: 'you never ran the tests' })
     await hook('PostToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
     expect((await tool('work_report', { token, action: 'deliver', pr: '#2' })).value).toMatchObject({ pr: '#2' })
@@ -99,17 +105,27 @@ describe('the improvement loop', () => {
   it('applies the approved proposal as a workflow experiment with its baseline', async () => {
     const applied = await tool('workflow_retrospective', { action: 'apply', proposal: 1 })
     expect(applied.value).toMatchObject({
-      workflow_version: 1,
-      experiment: { id: 1, measure: 'owner_corrections_per_item', baseline: 1, purpose: 'Owner corrected missing test runs' },
+      workflow_version: '1.0.0',
+      applied: [
+        {
+          proposal: 1,
+          level: 'major',
+          experiment: { id: 1, measure: 'owner_corrections_per_item', baseline: 1, purpose: 'Owner corrected missing test runs', target: 0, judge_after: 2, version: '1.0.0' },
+        },
+      ],
     })
     expect((await tool('workflow_retrospective', { action: 'apply', proposal: 1 })).value).toMatch(/already applied/)
     const stage = await tool('workflow_get', { stage: 1 })
-    expect(stage.value.steps[0]).toMatchObject({ n: '1.1', name: 'run the tests', gate: 'self' })
+    expect(stage.value.steps[0]).toMatchObject({ n: '1.1', name: 'run the tests', instruction: 'Run npm test and fix what is red.', gate: 'self' })
+    expect((await tool('workflow_get', { version: '0.0.0', full: true })).value.workflow.stages).toEqual([])
     expect((await tool('workflow_get', { version: 0, full: true })).value.workflow.stages).toEqual([])
   })
 
   it('starts the next work item on the new workflow', async () => {
     const next = await tool('work_report', { action: 'start', issue: '#3' })
-    expect(next.value).toMatchObject({ stage: 1, step: 1 })
+    expect(next.value).toMatchObject({ stage: 1, step: 1, workflow_version: '1.0.0' })
+    expect(next.text).toContain('## Work step 1.1: run the tests')
+    expect(next.text).toContain('Run npm test and fix what is red.')
+    expect(next.text).toContain('`test 1.1`: the tests run green before a PR. Verified by: the test output.')
   })
 })

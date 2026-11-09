@@ -1,12 +1,12 @@
 import type { DrillmasterEvent } from './events.js'
 import { averageMeasure, BASELINE_WINDOW, measureDeliveredItems, type ItemMeasures } from './measures.js'
-import { foldState, type ProjectState } from './state.js'
+import { findVersion, foldState, type ProjectState } from './state.js'
 
 export interface ProjectSummary {
   id: string
   dir: string
   objective: string
-  workflow_version: number
+  workflow_version: string
   work_items: number
   active: number
   last_activity: string | null
@@ -122,7 +122,7 @@ export function workItemView(events: readonly DrillmasterEvent[], workItemId: st
   const timeline = events.filter((event) => 'work_item_id' in event && event.work_item_id === workItemId).map(withoutSecrets)
   return {
     item: itemWithoutHash,
-    workflow: state.versions[item.workflow_version],
+    workflow: findVersion(state, item.workflow_version),
     measures: measureDeliveredItems(events).find((measured) => measured.work_item_id === workItemId)?.values ?? null,
     timeline,
     post_mortems: timeline.filter((event) => event.type === 'post_mortem_written'),

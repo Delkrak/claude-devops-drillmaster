@@ -9,9 +9,9 @@ const at = '2026-11-09T10:00:00Z'
 const w0 = workflowZero(OBJECTIVE as never)
 const seed = (workflow = WORKFLOW_3): DrillmasterEvent[] => [
   { id: 'e0', at, type: 'project_initialized', dir: '/p', workflow: w0 },
-  ...(workflow.version > 0 ? [{ id: 'e1', at, type: 'workflow_changed' as const, workflow, reason: 'r' }] : []),
+  ...(workflow.version !== '0.0.0' ? [{ id: 'e1', at, type: 'workflow_changed' as const, workflow, reason: 'r' }] : []),
 ]
-const started = (version: number, stage: number | null, step: number | null): DrillmasterEvent => ({
+const started = (version: string, stage: number | null, step: number | null): DrillmasterEvent => ({
   id: 's',
   at,
   type: 'work_item_started',
@@ -22,9 +22,18 @@ const started = (version: number, stage: number | null, step: number | null): Dr
   stage,
   step,
 })
-// WORKFLOW_3 is version 3, but seed() only appends versions 0 and 3: give it index 1.
-const W = { ...WORKFLOW_3, version: 1 }
-const run = (extra: DrillmasterEvent[] = []) => foldState([...seed(W), started(1, 1, 1), ...extra])
+const SIZE = {
+  name: 'size',
+  categories: [
+    { value: 'small', description: 'one file' },
+    { value: 'large', description: 'several files' },
+  ],
+  at: { stage: 1, step: 1 },
+  by: 'agent' as const,
+  instruction: 'How big is the change?',
+}
+const W = WORKFLOW_3
+const run = (extra: DrillmasterEvent[] = [], workflow = W) => foldState([...seed(workflow), started(workflow.version, 1, 1), ...extra])
 const check = (rule: string, accepted = true) => ({ rule, accepted, evidence: `checked ${rule}` })
 const asEvents = (events: unknown[]) => events.map((e, i) => ({ id: `x${i}`, at, ...(e as object) })) as DrillmasterEvent[]
 
@@ -48,7 +57,7 @@ describe('work gates', () => {
     const state = run()
     const decision = handInGate(state, state.workItems.wi_1!, { stage: 1, step: 1, self_check: [check('test 1.1', false)], text: 'red' })
     expect(decision.answer).toMatchObject({ verdict: 'rejected', rule: 'test 1.1', next: { stage: 1, step: 1 } })
-    const after = foldState([...seed(W), started(1, 1, 1), ...asEvents(decision.events)])
+    const after = foldState([...seed(W), started(W.version, 1, 1), ...asEvents(decision.events)])
     expect(after.workItems.wi_1).toMatchObject({ stage: 1, step: 1, rejections: 1 })
   })
 
@@ -73,9 +82,25 @@ describe('work gates', () => {
     const pending = run([...toReview, ...asEvents(decision.events)])
     expect(pending.workItems.wi_1!.pending_gate).toEqual({ stage: 2, step: 1, gate: 'owner' })
     expect(() => handInGate(pending, pending.workItems.wi_1!, { stage: 2, step: 1, self_check: [check('pr 1.1')], text: 'again' })).toThrow(/pending/)
-    expect(() => deliverWorkItem(pending.workItems.wi_1!, { pr: '#40' })).toThrow(/pending/)
+    expect(() => deliverWorkItem(pending.workItems.wi_1!, DELIVERY)).toThrow(/pending/)
+  })
+
+  it("refuses the gate without Agent's metrics, and records them with it", () => {
+    const withSize = { ...W, metrics: [SIZE] }
+    const state = run([], withSize)
+    const item = state.workItems.wi_1!
+    const gate = { stage: 1, step: 1, self_check: [check('test 1.1')], text: 'green' }
+    expect(() => handInGate(state, item, gate)).toThrow(/Take metric "size"/)
+    expect(() => handInGate(state, item, { ...gate, metrics: [{ name: 'size', value: 'huge' }] })).toThrow(/small, large/)
+    expect(() => handInGate(state, item, { ...gate, metrics: [{ name: 'mood', value: 'x' }] })).toThrow(/No metric mood/)
+    const decision = handInGate(state, item, { ...gate, metrics: [{ name: 'size', value: 'small', explanation: 'one file' }] })
+    expect(decision.events.map((e) => e.type)).toEqual(['gate_submitted', 'metric_recorded', 'gate_verdict'])
+    const after = run(asEvents(decision.events), withSize)
+    expect(after.workItems.wi_1!.metrics).toEqual({ size: { value: 'small', by: 'agent', explanation: 'one file' } })
   })
 })
+
+const DELIVERY = { pr: '#40', summary: 'adds the export', artifacts: [] }
 
 describe('reports, delivery and the post mortem', () => {
   it('requires the extra fields of decisions and questions', () => {
@@ -86,17 +111,17 @@ describe('reports, delivery and the post mortem', () => {
   })
 
   it('delivers right away on workflow_0, and only after every gate otherwise', () => {
-    const zero = foldState([...seed(w0), started(0, null, null)])
+    const zero = foldState([...seed(w0), started('0.0.0', null, null)])
     expect(zero.workItems.wi_1!.gates_done).toBe(true)
-    expect(deliverWorkItem(zero.workItems.wi_1!, { pr: '#2' }).events[0]).toMatchObject({ type: 'work_item_delivered', pr: '#2' })
+    expect(deliverWorkItem(zero.workItems.wi_1!, { ...DELIVERY, pr: '#2' }).events[0]).toMatchObject({ type: 'work_item_delivered', pr: '#2', summary: 'adds the export' })
     expect(() => handInGate(zero, zero.workItems.wi_1!, { stage: 1, step: 1, self_check: [], text: 't' })).toThrow(/no work stages/)
-    expect(() => deliverWorkItem(run().workItems.wi_1!, { pr: '#2' })).toThrow(/Every work gate must pass/)
+    expect(() => deliverWorkItem(run().workItems.wi_1!, DELIVERY)).toThrow(/Every work gate must pass/)
   })
 
   it('takes added steps only after delivery, with the correction that asked for them', () => {
-    const active = foldState([...seed(w0), started(0, null, null)])
+    const active = foldState([...seed(w0), started('0.0.0', null, null)])
     expect(() => recordReport(active.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md', why: 'Owner: add CHANGES.md' })).toThrow(/fix to delivered work/)
-    const delivered = foldState([...seed(w0), started(0, null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])
+    const delivered = foldState([...seed(w0), started('0.0.0', null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])
     expect(() => recordReport(delivered.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md' })).toThrow(/needs `why`/)
     expect(recordReport(delivered.workItems.wi_1!, { kind: 'added_step', text: 'added CHANGES.md', why: 'Owner: add CHANGES.md' }).events[0]).toMatchObject({
       type: 'work_reported',
@@ -107,12 +132,12 @@ describe('reports, delivery and the post mortem', () => {
 
   it('takes one post mortem from Agent, after delivery only', () => {
     const pm = { keep: 'k', change: 'c', experiment_reflections: 'none running', free_text: 'f' }
-    const active = foldState([...seed(w0), started(0, null, null)])
+    const active = foldState([...seed(w0), started('0.0.0', null, null)])
     expect(() => recordPostMortem(active.workItems.wi_1!, pm)).toThrow(/once the work item is delivered/)
-    const delivered = foldState([...seed(w0), started(0, null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])
+    const delivered = foldState([...seed(w0), started('0.0.0', null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])
     expect(() => recordReport(delivered.workItems.wi_1!, { kind: 'impediment', text: 'late' })).toThrow(/delivered/)
     const written = recordPostMortem(delivered.workItems.wi_1!, pm)
-    const after = foldState([...seed(w0), started(0, null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }, ...written.events])])
+    const after = foldState([...seed(w0), started('0.0.0', null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }, ...written.events])])
     expect(() => recordPostMortem(after.workItems.wi_1!, pm)).toThrow(/already/)
   })
 })

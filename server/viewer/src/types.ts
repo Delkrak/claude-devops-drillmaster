@@ -4,7 +4,7 @@ export interface ProjectSummary {
   id: string
   dir: string
   objective: string
-  workflow_version: number
+  workflow_version: string
   work_items: number
   active: number
   last_activity: string | null
@@ -40,7 +40,7 @@ export interface Experiment {
 }
 
 export interface Workflow {
-  version: number
+  version: string
   objective: { text: string; measures: string[] }
   stages: WorkStage[]
   policies: { name: string; rules: PolicyRule[] }[]
@@ -61,7 +61,7 @@ export interface WorkItemRow {
   stage: number | null
   step: number | null
   pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner'; review_failed?: string } | null
-  workflow_version: number
+  workflow_version: string
   started_at: string
   pr: string | null
   reports: number
@@ -94,7 +94,7 @@ export interface Retrospective {
 export interface ProjectView {
   summary: ProjectSummary
   workflow: Workflow
-  versions: { version: number; at: string; reason: string; workflow: Workflow }[]
+  versions: { version: string; at: string; reason: string; workflow: Workflow }[]
   measures: Measure[]
   work_items: WorkItemRow[]
   retrospectives: Retrospective[]

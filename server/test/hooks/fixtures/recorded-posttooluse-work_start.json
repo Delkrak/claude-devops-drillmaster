@@ -10,10 +10,10 @@
       "level": "medium"
     },
     "hook_event_name": "PostToolUse",
-    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_report",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_start",
     "tool_input": {
-      "action": "start",
-      "issue": "#1"
+      "issue": "#1",
+      "description": "recorded before the tool split; renamed from work_report(start)"
     },
     "tool_response": [
       {

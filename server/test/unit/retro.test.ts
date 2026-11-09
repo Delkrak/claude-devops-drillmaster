@@ -2,29 +2,29 @@ import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { averageMeasure, measureBaseline, measureDeliveredItems } from '../../src/core/measures.js'
 import { decideProposals } from '../../src/core/owner.js'
-import { applyWorkflowOps, applyProposal, InvalidChange, readPostMortemAnswer, readRetroAnswer } from '../../src/core/retro.js'
+import { applyWorkflowOps, applyProposal, InvalidChange, levelOfOps, readPostMortemAnswer, readRetroAnswer } from '../../src/core/retro.js'
 import { workflowZero } from '../../src/core/workflow.js'
-import { OBJECTIVE, WORKFLOW_3 } from '../helpers.js'
+import { EXPERIMENT_1, OBJECTIVE, WORKFLOW_3 } from '../helpers.js'
 
 const w0 = workflowZero(OBJECTIVE as never)
-const testStep = { name: 'run the tests', gate: 'self' as const, rules: ['test 1.1'], report: ['test result'] }
+const testStep = { name: 'run the tests', instruction: 'Run npm test.', gate: 'self' as const, rules: ['test 1.1'], report: ['test result'] }
 const testRule = { id: '1.1', rule: 'the tests run green before a PR', verified_by: 'the test output' }
 
 describe('workflow operations', () => {
   it('grows workflow_0 into a first work stage with its work policy', () => {
     const next = applyWorkflowOps(w0, [
       { op: 'add_policy', name: 'test', rules: [testRule] },
-      { op: 'add_stage', name: 'build', steps: [testStep] },
+      { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] },
     ])
-    expect(next.version).toBe(1)
-    expect(next.stages).toEqual([{ n: 1, name: 'build', steps: [{ n: 1, ...testStep }] }])
+    expect(next.version).toBe('1.0.0')
+    expect(next.stages).toEqual([{ n: 1, name: 'build', purpose: 'the change works', steps: [{ n: 1, ...testStep }] }])
   })
 
   it('renumbers after inserting and removing', () => {
     const next = applyWorkflowOps(WORKFLOW_3, [
-      { op: 'add_step', stage: 1, after: 0, step: { name: 'read the issue', gate: 'self', rules: [], report: [] } },
+      { op: 'add_step', stage: 1, after: 0, step: { name: 'read the issue', instruction: 'Read it.', gate: 'self', rules: [], report: [] } },
       { op: 'remove_step', stage: 1, step: 3 },
-      { op: 'add_stage', name: 'refine', after: 0, steps: [{ name: 'write criteria', gate: 'owner', rules: [], report: [] }] },
+      { op: 'add_stage', name: 'refine', purpose: 'Owner and Agent agree', after: 0, steps: [{ name: 'write criteria', instruction: 'Write them.', gate: 'owner', rules: [], report: [] }] },
     ])
     expect(next.stages.map((s) => [s.n, s.name, s.steps.map((x) => `${x.n}:${x.name}`)])).toEqual([
       [1, 'refine', ['1:write criteria']],
@@ -47,7 +47,7 @@ describe('workflow operations', () => {
   it('refuses changes that leave the workflow invalid', () => {
     expect(() => applyWorkflowOps(WORKFLOW_3, [{ op: 'remove_rule', ref: 'pr 1.1' }])).toThrow(/unknown rule/)
     expect(() => applyWorkflowOps(w0, [{ op: 'remove_stage', stage: 1 }])).toThrow(InvalidChange)
-    expect(() => applyWorkflowOps(w0, [{ op: 'add_stage', name: 'b', steps: [{ ...testStep }] }])).toThrow(/unknown rule/)
+    expect(() => applyWorkflowOps(w0, [{ op: 'add_stage', name: 'b', purpose: 'p', steps: [{ ...testStep }] }])).toThrow(/unknown rule/)
   })
 })
 
@@ -55,19 +55,38 @@ describe('applying a proposal', () => {
   const items = [1, 2, 3].map((n) => ({
     work_item_id: `wi_${n}`,
     issue: `#${n}`,
+    workflow_version: '0.0.0',
     delivered_at: `2026-11-0${n}T10:00:00Z`,
+    metrics: {},
     values: { owner_corrections_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
   }))
 
   it("opens a workflow experiment with the measure's baseline", () => {
-    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_corrections_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', steps: [testStep] }] }, items, '2026-11-09')
-    expect(next.experiments).toEqual([{ id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_corrections_per_item', baseline: 2, started: '2026-11-09' }])
+    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_corrections_per_item', hypothesis: 'a test step stops the asking', target: 1, judge_after: 2, ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] }, items, '2026-11-09')
+    expect(next.level).toBe('major')
+    expect(next.workflow.experiments).toEqual([
+      {
+        id: 1,
+        change: 'add a test step',
+        purpose: 'Owner had to ask for tests',
+        hypothesis: 'a test step stops the asking',
+        null_hypothesis: '"add a test step" makes no difference to owner_corrections_per_item.',
+        measure: 'owner_corrections_per_item',
+        baseline: 2,
+        baseline_sd: 0.82,
+        target: 1,
+        judge_after: 2,
+        version: '1.0.0',
+        started: '2026-11-09',
+      },
+    ])
   })
 
   it('judging an experiment ends it without opening a new one', () => {
-    const withExperiment = { ...WORKFLOW_3, experiments: [{ id: 4, change: 'x', purpose: 'y', measure: 'owner_corrections_per_item' as const, baseline: 2, started: '2026-11-01' }] }
+    const withExperiment = { ...WORKFLOW_3, experiments: [{ ...EXPERIMENT_1, id: 4 }] }
     const next = applyProposal(withExperiment, { id: 1, change: 'keep experiment 4', purpose: 'it worked', measure: 'owner_corrections_per_item', ops: [{ op: 'end_experiment', id: 4, outcome: 'kept' }] }, items, '2026-11-09')
-    expect(next.experiments).toEqual([])
+    expect(next.workflow.experiments).toEqual([])
+    expect(next).toMatchObject({ level: 'patch', workflow: { version: '3.0.1' } })
   })
 })
 
@@ -91,12 +110,29 @@ describe("reading Drillmaster's answers", () => {
       findings,
       proposals: [
         { change: 'policy', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }] },
-        { change: 'stage', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_stage', name: 'build', steps: [testStep] }] },
+        { change: 'stage', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] },
         { change: 'objective', purpose: 'p', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['minutes_per_item'] }] },
       ],
     })
     expect(read.proposals.map((p) => [p.id, p.depends_on])).toEqual([[1, undefined], [2, [1]], [3, undefined]])
     expect(read.dropped).toEqual([])
+  })
+
+  it('keeps at most four proposals, with their hypotheses', () => {
+    const proposal = (n: number) => ({ change: `objective ${n}`, purpose: 'p', measure: 'minutes_per_item', hypothesis: 'faster', target: 5, judge_after: 2, ops: [{ op: 'set_objective', text: `objective ${n}` }] })
+    const read = readRetroAnswer(w0, { findings, proposals: [1, 2, 3, 4, 5].map(proposal) })
+    expect(read.proposals).toHaveLength(4)
+    expect(read.proposals[0]).toMatchObject({ hypothesis: 'faster', target: 5, judge_after: 2 })
+    expect(read.dropped).toEqual([{ change: 'objective 5', error: 'A retrospective makes at most 4 proposals.' }])
+  })
+
+  it('sets the version level from what changes', () => {
+    expect(levelOfOps([{ op: 'add_step', stage: 1, step: { ...testStep } }])).toBe('major')
+    expect(levelOfOps([{ op: 'change_step', stage: 1, step: 1, rules: [] }])).toBe('major')
+    expect(levelOfOps([{ op: 'change_step', stage: 1, step: 1, instruction: 'Run it twice.' }])).toBe('minor')
+    expect(levelOfOps([{ op: 'change_rule', ref: 'pr 1.1', rule: 'reworded' }])).toBe('minor')
+    expect(levelOfOps([{ op: 'end_experiment', id: 1, outcome: 'kept' }])).toBe('patch')
+    expect(applyWorkflowOps(WORKFLOW_3, [{ op: 'change_stage', stage: 1, purpose: 'it works' }]).version).toBe('3.1.0')
   })
 
   it('refuses a retrospective without findings, and reads post mortems from text', () => {
@@ -131,7 +167,7 @@ describe("Owner's words on proposals", () => {
 describe('measures', () => {
   const at = (m: number) => `2026-11-09T10:${String(m).padStart(2, '0')}:00.000Z`
   const events: DrillmasterEvent[] = [
-    { id: 'a', at: at(0), type: 'work_item_started', work_item_id: 'wi_1', issue: '#1', workflow_version: 0, token_hash: 'h', stage: null, step: null },
+    { id: 'a', at: at(0), type: 'work_item_started', work_item_id: 'wi_1', issue: '#1', workflow_version: '0.0.0', token_hash: 'h', stage: null, step: null },
     { id: 'b', at: at(1), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'you forgot the tests' },
     { id: 'c', at: at(2), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'Bash' },
     { id: 'd', at: at(3), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'looks good' },
@@ -144,7 +180,7 @@ describe('measures', () => {
     // ...while the next instruction, followed only by Drillmaster's tools, does not.
     { id: 'g4', at: at(12), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'now do issue #2' },
     { id: 'g5', at: at(12), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'mcp__plugin_devops-drillmaster_drillmaster__work_report' },
-    { id: 'h', at: at(12), type: 'work_item_started', work_item_id: 'wi_2', issue: '#2', workflow_version: 0, token_hash: 'h2', stage: null, step: null },
+    { id: 'h', at: at(12), type: 'work_item_started', work_item_id: 'wi_2', issue: '#2', workflow_version: '0.0.0', token_hash: 'h2', stage: null, step: null },
   ]
 
   it('counts per delivered work item: Owner approvals are not corrections, changes after delivery are', () => {
@@ -152,7 +188,9 @@ describe('measures', () => {
       {
         work_item_id: 'wi_1',
         issue: '#1',
+        workflow_version: '0.0.0',
         delivered_at: at(10),
+        metrics: {},
         values: { owner_corrections_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
       },
     ])

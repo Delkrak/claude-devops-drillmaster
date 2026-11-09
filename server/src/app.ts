@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type NewEvent } from './core/events.js'
+import { InvalidArtifact, readArtifactFromWorkFolder } from './adapters/artifacts.js'
+import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type MetricAnswer, type NewEvent } from './core/events.js'
+import { judgeExperiments } from './core/experiments.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { averageMeasure, BASELINE_WINDOW, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
 import {
@@ -10,25 +12,47 @@ import {
   buildRetroPrompt,
   deliveredSinceLastRetro,
   InvalidChange,
+  MAX_PROPOSALS,
   POST_MORTEM_REVIEW_KIND,
   readPostMortemAnswer,
   readRetroAnswer,
   RETRO_REVIEW_KIND,
   toRetroView,
 } from './core/retro.js'
-import { buildGatePrompt, GATE_REVIEW_KIND, InvalidAnswer, readGateAnswer } from './core/review.js'
-import { findWorkItemByTokenHash, foldState, viewWorkflow, WorkflowQueryError, workReportsOf, workTracesOf, type ProjectState } from './core/state.js'
+import * as render from './core/render.js'
+import {
+  buildGatePrompt,
+  buildMetricPrompt,
+  dueDrillmasterMetrics,
+  GATE_REVIEW_KIND,
+  InvalidAnswer,
+  METRIC_REVIEW_KIND,
+  readGateAnswer,
+  readMetricAnswers,
+} from './core/review.js'
+import {
+  findVersion,
+  findWorkItemByTokenHash,
+  foldState,
+  viewWorkflow,
+  WorkflowQueryError,
+  workReportsOf,
+  workTracesOf,
+  type ProjectState,
+  type RetroState,
+} from './core/state.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
-import { Objective, workflowZero } from './core/workflow.js'
+import { Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
 import { projectId as projectIdOf } from './env.js'
 import type { Ports } from './ports.js'
 
 const POST_MORTEM_TIMEOUT_MS = 180_000
 const RETROSPECTIVE_TIMEOUT_MS = 300_000
 const MAX_LAST_REPORTS = 200
+const MAX_ARTIFACTS = 10
 const NO_WORKFLOW_YET = 'This project has no workflow yet. Owner sets the objective first (setup).'
-const UNKNOWN_TOKEN = 'Unknown token. Use the agent_token that work_report start returned.'
+const UNKNOWN_TOKEN = 'Unknown token. Use the agent_token that work_start returned.'
 
 export class UserError extends Error {
   constructor(
@@ -47,6 +71,7 @@ export interface ToolDefinition {
 
 export interface ToolResult {
   content: { type: 'text'; text: string }[]
+  structuredContent?: Record<string, unknown>
   isError?: boolean
 }
 
@@ -60,49 +85,46 @@ const WorkflowGetArgs = z
   .object({
     stage: z.number().int().positive().optional(),
     full: z.boolean().optional(),
-    version: z.number().int().nonnegative().optional(),
+    version: z.union([z.string(), z.number().int().nonnegative()]).optional(),
   })
   .strict()
 
 const tokenField = z.string().min(1)
 const textField = z.string().min(1)
-const WorkReportArgs = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('start'), issue: textField }).strict(),
-  z
-    .object({
-      action: z.literal('report'),
-      token: tokenField,
-      kind: z.enum(REPORT_KINDS),
-      text: textField,
-      stage: z.number().int().positive().optional(),
-      step: z.number().int().positive().optional(),
-      chosen: z.string().optional(),
-      by: z.string().optional(),
-      why: z.string().optional(),
-      asked: z.string().optional(),
-      answer: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal('gate'),
-      token: tokenField,
-      stage: z.number().int().positive(),
-      step: z.number().int().positive(),
-      self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()),
-      text: textField,
-    })
-    .strict(),
-  z.object({ action: z.literal('deliver'), token: tokenField, pr: textField }).strict(),
-  z
-    .object({ action: z.literal('post_mortem'), token: tokenField, keep: textField, change: textField, experiment_reflections: textField, free_text: z.string() })
-    .strict(),
-])
+const MetricAnswerArgs = z.object({ name: textField, value: textField, explanation: z.string().optional() }).strict()
+
+const WorkStartArgs = z.object({ issue: textField, description: textField }).strict()
+const WorkReportArgs = z
+  .object({
+    token: tokenField,
+    kind: z.enum(REPORT_KINDS),
+    text: textField,
+    stage: z.number().int().positive().optional(),
+    step: z.number().int().positive().optional(),
+    chosen: z.string().optional(),
+    by: z.string().optional(),
+    why: z.string().optional(),
+    asked: z.string().optional(),
+    answer: z.string().optional(),
+  })
+  .strict()
+const WorkGateArgs = z
+  .object({
+    token: tokenField,
+    stage: z.number().int().positive(),
+    step: z.number().int().positive(),
+    self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()),
+    text: textField,
+    metrics: z.array(MetricAnswerArgs).optional(),
+  })
+  .strict()
+const WorkDeliverArgs = z.object({ token: tokenField, pr: textField, summary: textField, artifacts: z.array(textField).max(MAX_ARTIFACTS).optional() }).strict()
+const WorkPostMortemArgs = z.object({ token: tokenField, keep: textField, change: textField, experiment_reflections: textField, free_text: z.string() }).strict()
 
 const RetroArgs = z.discriminatedUnion('action', [
   z.object({ action: z.literal('setup'), objective: z.string().min(1), measures: z.array(z.string()).min(1) }).strict(),
   z.object({ action: z.literal('run') }).strict(),
-  z.object({ action: z.literal('apply'), proposal: z.number().int().positive() }).strict(),
+  z.object({ action: z.literal('apply'), proposal: z.number().int().positive().optional() }).strict(),
 ])
 
 const WorkStatusArgs = z
@@ -114,37 +136,56 @@ const WorkStatusArgs = z
   })
   .strict()
 
+const tokenProperty = { token: { type: 'string', description: 'Your agent_token from work_start.' } }
+const selfCheckProperty = {
+  type: 'array',
+  description: 'Exactly one entry per rule the gate checks.',
+  items: {
+    type: 'object',
+    properties: { rule: { type: 'string', description: 'The rule reference, e.g. "test 1.1".' }, accepted: { type: 'boolean' }, evidence: { type: 'string' } },
+    required: ['rule', 'accepted', 'evidence'],
+  },
+}
+
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'workflow_get',
     description:
-      "Describes the workflow, which is the same for everyone in the project. With no arguments: Owner's objective and measures, the work stages, and the running workflow experiments. With `stage`: that work stage's work steps, each with its work gate, the full text of the work policy rules it references, and what Agent must report. With `full`: the whole workflow. With `version`: an earlier workflow version.",
+      "Describes the workflow, which is the same for everyone in the project. With no arguments: Owner's objective and measures, the work stages with their purpose, the metrics, and the running workflow experiments. With `stage`: that work stage's work steps, each with its instruction, its work gate, the full text of the rules it checks, and what to report. With `full`: the whole workflow. With `version`: an earlier workflow version, e.g. \"1.0.0\".",
     inputSchema: {
       type: 'object',
       properties: {
         stage: { type: 'integer', minimum: 1, description: 'The work stage number.' },
         full: { type: 'boolean', description: 'Return the whole workflow.' },
-        version: { type: 'integer', minimum: 0, description: 'An earlier workflow version; 0 is the first.' },
+        version: { type: 'string', description: 'An earlier workflow version (major.minor.patch); 0.0.0 is the first.' },
       },
+    },
+  },
+  {
+    name: 'work_start',
+    description:
+      'Starts a work item. Returns its id, your agent_token for every later work tool, and the first work step in full: what to do, the gate, its rules, and what to report.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        issue: { type: 'string', description: 'The issue the work item delivers, e.g. "#12".' },
+        description: { type: 'string', description: 'What the work item is about, in a few sentences: the problem and the expected result.' },
+      },
+      required: ['issue', 'description'],
     },
   },
   {
     name: 'work_report',
     description: [
-      'The only way Agent reports to Drillmaster. The action decides the fields.',
-      '- start {issue}: starts a work item. Returns its id, your token for every later call, and the first work stage and work step (null while the workflow has no work stages).',
-      '- report {token, kind, text}: report in real time. kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required | added_step (+ why). stage/step default to where the work item is.',
-      "  added_step is the only report after delivery: a fix Owner asked for and chose to have done right away. text: what you did; why: Owner's correction.",
-      '- gate {token, stage, step, self_check, text}: hand in a work gate. self_check holds exactly one {rule, accepted, evidence} per rule the gate references; text is what the work step requires reporting. Returns the verdict and where to go next.',
-      '- deliver {token, pr}: once every work gate has passed (or the workflow has none).',
-      '- post_mortem {token, keep, change, experiment_reflections, free_text}: your workflow post mortem, after delivery.',
+      'Report to Drillmaster in real time, while you work.',
+      'kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required | added_step (+ why).',
+      'stage/step default to where the work item is.',
+      "added_step is the only report after delivery: a fix Owner asked for and chose to have done right away. text: what you did; why: Owner's correction.",
     ].join('\n'),
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['start', 'report', 'gate', 'deliver', 'post_mortem'] },
-        token: { type: 'string', description: 'Your token from start. Every action but start needs it.' },
-        issue: { type: 'string', description: 'start: the issue the work item delivers, e.g. "#12".' },
+        ...tokenProperty,
         kind: { type: 'string', enum: [...REPORT_KINDS] },
         text: { type: 'string' },
         stage: { type: 'integer', minimum: 1 },
@@ -154,30 +195,61 @@ export const TOOLS: ToolDefinition[] = [
         why: { type: 'string' },
         asked: { type: 'string' },
         answer: { type: 'string' },
-        self_check: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: { rule: { type: 'string' }, accepted: { type: 'boolean' }, evidence: { type: 'string' } },
-            required: ['rule', 'accepted', 'evidence'],
-          },
-        },
-        pr: { type: 'string' },
-        keep: { type: 'string' },
-        change: { type: 'string' },
-        experiment_reflections: { type: 'string' },
-        free_text: { type: 'string' },
       },
-      required: ['action'],
+      required: ['token', 'kind', 'text'],
+    },
+  },
+  {
+    name: 'work_gate',
+    description:
+      "Hands in the work gate of the current work step, once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; metrics answers the metrics that are yours to take at this step. Returns the verdict and the next work step in full.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tokenProperty,
+        stage: { type: 'integer', minimum: 1 },
+        step: { type: 'integer', minimum: 1 },
+        self_check: selfCheckProperty,
+        text: { type: 'string' },
+        metrics: {
+          type: 'array',
+          items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' }, explanation: { type: 'string' } }, required: ['name', 'value'] },
+        },
+      },
+      required: ['token', 'stage', 'step', 'self_check', 'text'],
+    },
+  },
+  {
+    name: 'work_deliver',
+    description:
+      'Delivers the work item, once every work gate has passed (or the workflow has none). summary: what was delivered and how it was verified. artifacts: paths of files in the work folder that show the result, such as screenshots (images or text, at most 5 MB each, not ignored by git).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tokenProperty,
+        pr: { type: 'string', description: 'The pull request or branch that holds the work.' },
+        summary: { type: 'string' },
+        artifacts: { type: 'array', items: { type: 'string' }, maxItems: MAX_ARTIFACTS },
+      },
+      required: ['token', 'pr', 'summary'],
+    },
+  },
+  {
+    name: 'work_post_mortem',
+    description: 'Your workflow post mortem, after delivery: what in the workflow helped, what got in the way, how the experiments did, and anything else.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tokenProperty, keep: { type: 'string' }, change: { type: 'string' }, experiment_reflections: { type: 'string' }, free_text: { type: 'string' } },
+      required: ['token', 'keep', 'change', 'experiment_reflections', 'free_text'],
     },
   },
   {
     name: 'workflow_retrospective',
     description: [
       'The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.',
-      `- setup {objective, measures}: once per project, when Owner sets the objective. Creates workflow_0, which holds only the objective. measures: ${MEASURE_NAMES.join(', ')}.`,
-      "- run: Drillmaster's findings (should, did, why, keep, improve) and numbered proposals, from the post mortems, work reports, Owner's corrections and the measures since the last retrospective. Show them to Owner as they are.",
-      "- apply {proposal}: applies one proposal Owner approved in their own words. Refused otherwise. Makes the next workflow version, and opens a workflow experiment with its measure's baseline.",
+      `- setup {objective, measures}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective. measures: ${MEASURE_NAMES.join(', ')}.`,
+      `- run: Drillmaster's findings (should, did, why, keep, improve) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's corrections, the measures and the experiments' verdicts. Show them to Owner as they are.`,
+      "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline.",
     ].join('\n'),
     inputSchema: {
       type: 'object',
@@ -185,7 +257,7 @@ export const TOOLS: ToolDefinition[] = [
         action: { type: 'string', enum: ['setup', 'run', 'apply'] },
         objective: { type: 'string', description: 'setup: what Owner wants Drillmaster to achieve with the workflow.' },
         measures: { type: 'array', items: { type: 'string', enum: [...MEASURE_NAMES] }, description: 'setup: the measures of the objective.' },
-        proposal: { type: 'integer', minimum: 1, description: 'apply: the proposal number from the latest run.' },
+        proposal: { type: 'integer', minimum: 1, description: 'apply: only this proposal from the latest run.' },
       },
       required: ['action'],
     },
@@ -197,7 +269,7 @@ export const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        token: { type: 'string', description: "Agent's token from work_report start." },
+        ...tokenProperty,
         last: { type: 'integer', minimum: 1, maximum: MAX_LAST_REPORTS },
         stage: { type: 'integer', minimum: 1 },
         step: { type: 'integer', minimum: 1 },
@@ -299,21 +371,23 @@ export class Drillmaster {
     try {
       switch (toolName) {
         case 'workflow_get':
-          return toolResult(await this.describeWorkflow(projectDir, parseToolArgs(WorkflowGetArgs, toolArgs)))
-        case 'work_report': {
-          const { answer, gateSubmissionToJudge } = await this.handleWorkReport(projectDir, parseToolArgs(WorkReportArgs, toolArgs))
-          // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
-          return toolResult(gateSubmissionToJudge ? await this.judgeDrillmasterGate(projectDir, gateSubmissionToJudge) : answer)
-        }
+          return jsonResult(await this.describeWorkflow(projectDir, parseToolArgs(WorkflowGetArgs, toolArgs)))
+        case 'work_start':
+          return this.startWorkItem(projectDir, parseToolArgs(WorkStartArgs, toolArgs))
+        case 'work_report':
+        case 'work_gate':
+        case 'work_deliver':
+        case 'work_post_mortem':
+          return await this.handleWorkTool(projectDir, toolName, toolArgs)
         case 'work_status':
-          return toolResult(await this.buildWorkStatus(projectDir, parseToolArgs(WorkStatusArgs, toolArgs)))
+          return jsonResult(await this.buildWorkStatus(projectDir, parseToolArgs(WorkStatusArgs, toolArgs)))
         case 'workflow_retrospective': {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs)
           if (retroArgs.action === 'setup') {
             const workflow = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures })
-            return toolResult({ workflow, note: 'workflow_0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections.' })
+            return jsonResult({ workflow, note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections.' })
           }
-          return toolResult(retroArgs.action === 'run' ? await this.runRetrospective(projectDir) : await this.applyApprovedProposal(projectDir, retroArgs.proposal))
+          return jsonResult(retroArgs.action === 'run' ? await this.runRetrospective(projectDir) : await this.applyApprovedProposals(projectDir, retroArgs.proposal))
         }
         default:
           throw new UserError(`Unknown tool: ${toolName}`, 404)
@@ -324,7 +398,8 @@ export class Drillmaster {
         error instanceof WorkflowQueryError ||
         error instanceof work.Refused ||
         error instanceof InvalidChange ||
-        error instanceof InvalidAnswer
+        error instanceof InvalidAnswer ||
+        error instanceof InvalidArtifact
       if (isCallersMistake) return { content: [{ type: 'text', text: error.message }], isError: true }
       throw error
     }
@@ -332,7 +407,8 @@ export class Drillmaster {
 
   private async describeWorkflow(projectDir: string, query: z.infer<typeof WorkflowGetArgs>) {
     const events = await this.events(projectDir)
-    const view = viewWorkflow(foldState(events), query)
+    const state = foldState(events)
+    const view = viewWorkflow(state, { ...query, version: query.version === undefined ? undefined : toSemver(query.version) })
     if (view.kind !== 'overview') return view
     const deliveredItems = measureDeliveredItems(events)
     const measures = Object.fromEntries(
@@ -341,51 +417,115 @@ export class Drillmaster {
         { last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure), all: averageMeasure(deliveredItems, measure), delivered: deliveredItems.length },
       ]),
     )
-    return { ...view, measures }
+    const workflow = findVersion(state, view.version)!
+    return { ...view, measures, experiment_verdicts: judgeExperiments(workflow, deliveredItems) }
   }
 
-  private handleWorkReport(projectDir: string, args: z.infer<typeof WorkReportArgs>): Promise<{ answer: unknown; gateSubmissionToJudge?: string }> {
+  private startWorkItem(projectDir: string, args: z.infer<typeof WorkStartArgs>) {
     return this.withProjectLock(projectDir, async (projectId) => {
-      const state = foldState(await this.ports.store.read(projectId))
-      const workflow = state.workflow
+      const workflow = foldState(await this.ports.store.read(projectId)).workflow
       if (!workflow) throw new UserError(NO_WORKFLOW_YET)
-      if (args.action === 'start') {
-        const agentToken = this.ports.ids.secret()
-        const firstStage = workflow.stages[0]
-        const position = firstStage && firstStage.steps.length > 0 ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
-        const workItemId = this.ports.ids.next('wi')
-        await this.appendEvent(projectId, {
-          type: 'work_item_started',
-          work_item_id: workItemId,
-          issue: args.issue,
-          workflow_version: workflow.version,
-          token_hash: hashToken(agentToken),
-          ...position,
-        })
-        const note =
-          position.stage === null
-            ? 'The workflow has no work stages yet: do your best, and Owner will correct you.'
-            : `Read work stage ${position.stage} with workflow_get before you begin.`
-        return { answer: { work_item_id: workItemId, agent_token: agentToken, ...position, note } }
+      const agentToken = this.ports.ids.secret()
+      const firstStage = workflow.stages[0]
+      const position = firstStage && firstStage.steps.length > 0 ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
+      const workItemId = this.ports.ids.next('wi')
+      await this.appendEvent(projectId, {
+        type: 'work_item_started',
+        work_item_id: workItemId,
+        issue: args.issue,
+        description: args.description,
+        workflow_version: workflow.version,
+        token_hash: hashToken(agentToken),
+        ...position,
+      })
+      const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...position }
+      return workResult(render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, position }), answer)
+    })
+  }
+
+  private async handleWorkTool(projectDir: string, toolName: string, toolArgs: unknown): Promise<ToolResult> {
+    const artifactsToRead = toolName === 'work_deliver' ? parseToolArgs(WorkDeliverArgs, toolArgs).artifacts ?? [] : []
+    const readArtifacts = await Promise.all(artifactsToRead.map((artifactPath) => readArtifactFromWorkFolder(projectDir, artifactPath)))
+
+    const outcome = await this.withProjectLock(projectDir, async (projectId) => {
+      const state = foldState(await this.ports.store.read(projectId))
+      if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
+      const { token, ...actionArgs } = toolArgs as { token?: unknown }
+      const item = typeof token === 'string' ? findWorkItemByTokenHash(state, hashToken(token)) : undefined
+      let decision: work.Decision
+      switch (toolName) {
+        case 'work_report':
+          parseToolArgs(WorkReportArgs, toolArgs)
+          if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+          decision = work.recordReport(item, actionArgs as work.ReportArgs)
+          break
+        case 'work_gate':
+          parseToolArgs(WorkGateArgs, toolArgs)
+          if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+          decision = work.handInGate(state, item, actionArgs as work.GateArgs)
+          break
+        case 'work_deliver': {
+          const { pr, summary } = parseToolArgs(WorkDeliverArgs, toolArgs)
+          if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+          work.deliverWorkItem(item, { pr, summary, artifacts: [] })
+          const artifacts = await Promise.all(readArtifacts.map((artifact) => this.ports.artifacts.save(projectId, item.work_item_id, artifact)))
+          decision = work.deliverWorkItem(item, { pr, summary, artifacts })
+          break
+        }
+        default:
+          parseToolArgs(WorkPostMortemArgs, toolArgs)
+          if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+          decision = work.recordPostMortem(item, actionArgs as work.PostMortemArgs)
       }
-      const item = findWorkItemByTokenHash(state, hashToken(args.token))
-      if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-      const { token: _token, action: _action, ...actionArgs } = args
-      const decision =
-        args.action === 'report'
-          ? work.recordReport(item, actionArgs as work.ReportArgs)
-          : args.action === 'gate'
-            ? work.handInGate(state, item, actionArgs as work.GateArgs)
-            : args.action === 'deliver'
-              ? work.deliverWorkItem(item, actionArgs as work.DeliverArgs)
-              : work.recordPostMortem(item, actionArgs as work.PostMortemArgs)
       let gateSubmissionToJudge: string | undefined
       for (const newEvent of decision.events) {
         const storedEvent = await this.appendEvent(projectId, newEvent)
         if (storedEvent.type === 'gate_submitted' && storedEvent.gate === 'drillmaster') gateSubmissionToJudge = storedEvent.id
+        if (storedEvent.type === 'gate_verdict' && storedEvent.accepted) this.takeDrillmasterMetricsInBackground(projectDir, storedEvent.work_item_id, storedEvent.stage, storedEvent.step)
         if (storedEvent.type === 'work_item_delivered') this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
       }
-      return { answer: decision.answer, gateSubmissionToJudge }
+      return { answer: decision.answer, gateSubmissionToJudge, workflow: work.workflowOfWorkItem(state, item!), workItemId: item!.work_item_id }
+    })
+
+    // A Drillmaster gate is judged outside the project lock, so hooks keep flowing meanwhile.
+    const answer = outcome.gateSubmissionToJudge ? await this.judgeDrillmasterGate(projectDir, outcome.gateSubmissionToJudge) : outcome.answer
+    return workResult(this.renderWorkAnswer(toolName, outcome.workflow, outcome.workItemId, answer as Record<string, unknown>), answer)
+  }
+
+  private renderWorkAnswer(toolName: string, workflow: WorkflowDocument, workItemId: string, answer: Record<string, unknown>) {
+    switch (toolName) {
+      case 'work_report':
+        return render.renderReported(String(answer.recorded), { stage: answer.stage as number | null, step: answer.step as number | null })
+      case 'work_gate':
+        return render.renderGateOutcome(workflow, answer as unknown as render.GateOutcome)
+      case 'work_deliver':
+        return render.renderDelivered(workItemId, String(answer.pr), answer.artifacts as string[])
+      default:
+        return render.renderPostMortemRecorded(workItemId)
+    }
+  }
+
+  private takeDrillmasterMetricsInBackground(projectDir: string, workItemId: string, stage: number, step: number) {
+    this.runInBackground(
+      (async () => {
+        const events = await this.events(projectDir)
+        const state = foldState(events)
+        const item = state.workItems[workItemId]!
+        const workflow = work.workflowOfWorkItem(state, item)
+        const passedStep = workflow.stages[stage - 1]?.steps[step - 1]
+        const metrics = dueDrillmasterMetrics(workflow, stage, step)
+        if (metrics.length === 0 || passedStep?.gate === 'drillmaster') return
+        const { answer } = await this.ports.reviewer.review({ kind: METRIC_REVIEW_KIND, prompt: buildMetricPrompt(workflow, item, stage, step, events) })
+        await this.recordMetricAnswers(projectDir, workItemId, stage, step, readMetricAnswers(metrics, answer))
+      })(),
+    )
+  }
+
+  private recordMetricAnswers(projectDir: string, workItemId: string, stage: number, step: number, answers: readonly MetricAnswer[]) {
+    return this.withProjectLock(projectDir, async (projectId) => {
+      for (const metricAnswer of answers) {
+        await this.appendEvent(projectId, { type: 'metric_recorded', work_item_id: workItemId, stage, step, ...metricAnswer, by: 'drillmaster' })
+      }
     })
   }
 
@@ -435,41 +575,39 @@ export class Drillmaster {
       return {
         ...toRetroView(storedEvent as Extract<DrillmasterEvent, { type: 'retrospective_ran' }>, retroResult.dropped),
         note: retroResult.proposals.length
-          ? "Show Owner the findings and every proposal as they are, numbered. Only Owner's own words approve a proposal; then apply each approved one."
+          ? "Show Owner the findings and every proposal as they are, numbered. Only Owner's own words approve a proposal; then apply the approved ones (workflow_retrospective apply)."
           : 'No workflow changes proposed. Show Owner the findings.',
       }
     })
   }
 
-  private applyApprovedProposal(projectDir: string, proposalId: number) {
+  private applyApprovedProposals(projectDir: string, onlyProposalId: number | undefined) {
     return this.withProjectLock(projectDir, async (projectId) => {
       const events = await this.ports.store.read(projectId)
       const state = foldState(events)
       const retro = state.latestRetroId ? state.retros[state.latestRetroId] : undefined
       if (!retro) throw new UserError('There is no workflow retrospective yet. Run one first.')
-      const proposal = retro.proposals.find((candidate) => candidate.id === proposalId)
-      if (!proposal) throw new UserError(`The latest retrospective has no proposal ${proposalId}.`)
-      if (retro.applied.includes(proposalId)) throw new UserError(`Proposal ${proposalId} is already applied.`)
-      if (!retro.approved.includes(proposalId)) {
-        throw new UserError(
-          retro.declined.includes(proposalId)
-            ? `Owner declined proposal ${proposalId}.`
-            : `Owner has not approved proposal ${proposalId}. Only Owner's own words approve it: ask Owner.`,
-          403,
-        )
+      if (onlyProposalId !== undefined) refuseUnapprovedProposal(retro, onlyProposalId)
+      const toApply = onlyProposalId !== undefined ? [onlyProposalId] : retro.approved.filter((proposalId) => !retro.applied.includes(proposalId))
+      if (toApply.length === 0) throw new UserError('Owner has approved no proposal that is still to apply. Ask Owner.', 403)
+
+      let workflow = state.workflow!
+      const applied: { proposal: number; workflow_version: string; level: string; change: string; experiment: unknown }[] = []
+      const appliedIds = [...retro.applied]
+      for (const proposalId of [...toApply].sort((a, b) => a - b)) {
+        const proposal = retro.proposals.find((candidate) => candidate.id === proposalId)!
+        const unappliedDependencies = (proposal.depends_on ?? []).filter((dependencyId) => !appliedIds.includes(dependencyId))
+        if (unappliedDependencies.length) {
+          throw new UserError(`Proposal ${proposalId} builds on proposal ${unappliedDependencies.join(', ')}, which is not applied. Owner must approve ${unappliedDependencies.length > 1 ? 'those' : 'it'} too.`, 409)
+        }
+        const changed = applyProposal(workflow, proposal, measureDeliveredItems(events), this.ports.clock.now().slice(0, 10))
+        await this.appendEvent(projectId, { type: 'workflow_changed', workflow: changed.workflow, reason: proposal.change, level: changed.level, retro_id: retro.retro_id, proposal: proposalId })
+        const openedExperiment = changed.workflow.experiments.find((experiment) => !workflow.experiments.some((earlier) => earlier.id === experiment.id))
+        applied.push({ proposal: proposalId, workflow_version: changed.workflow.version, level: changed.level, change: proposal.change, experiment: openedExperiment ?? null })
+        appliedIds.push(proposalId)
+        workflow = changed.workflow
       }
-      const unappliedDependencies = (proposal.depends_on ?? []).filter((dependencyId) => !retro.applied.includes(dependencyId))
-      if (unappliedDependencies.length) {
-        const several = unappliedDependencies.length > 1
-        throw new UserError(
-          `Proposal ${proposalId} builds on proposal ${unappliedDependencies.join(', ')}, which is not applied. Apply ${several ? 'those' : 'it'} first, if Owner approved ${several ? 'them' : 'it'}.`,
-          409,
-        )
-      }
-      const nextWorkflow = applyProposal(state.workflow!, proposal, measureDeliveredItems(events), this.ports.clock.now().slice(0, 10))
-      await this.appendEvent(projectId, { type: 'workflow_changed', workflow: nextWorkflow, reason: proposal.change, retro_id: retro.retro_id, proposal: proposalId })
-      const openedExperiment = nextWorkflow.experiments.find((experiment) => !state.workflow!.experiments.some((earlier) => earlier.id === experiment.id))
-      return { workflow_version: nextWorkflow.version, change: proposal.change, experiment: openedExperiment ?? null }
+      return { applied, workflow_version: workflow.version }
     })
   }
 
@@ -503,20 +641,12 @@ export class Drillmaster {
           note: `Drillmaster could not judge this gate (${judgement.error}). Hand the gate in again, or report the impediment.`,
         }
       }
-      await this.appendEvent(projectId, { type: 'gate_verdict', ...gatePosition, by: 'drillmaster', ...judgement })
-      return {
-        verdict: judgement.accepted ? 'accepted' : 'rejected',
-        by: 'drillmaster',
-        rule: judgement.rule,
-        why: judgement.why,
-        next: judgement.next,
-        done: judgement.done,
-        note: judgement.accepted
-          ? judgement.done
-            ? 'Every work gate has passed. Deliver the work item.'
-            : `Next: work step ${judgement.next.stage}.${judgement.next.step}.`
-          : `Go back to work step ${judgement.next.stage}.${judgement.next.step}. A rejection is an impediment: report what got in the way.`,
+      for (const metricAnswer of judgement.metrics) {
+        await this.appendEvent(projectId, { type: 'metric_recorded', ...gatePosition, ...metricAnswer, by: 'drillmaster' })
       }
+      const { verdict } = judgement
+      await this.appendEvent(projectId, { type: 'gate_verdict', ...gatePosition, by: 'drillmaster', ...verdict })
+      return { verdict: verdict.accepted ? 'accepted' : 'rejected', by: 'drillmaster', rule: verdict.rule, why: verdict.why, stage: submission.stage, step: submission.step, next: verdict.next, done: verdict.done }
     })
   }
 
@@ -561,4 +691,20 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolArgs: unknown): T {
   return parsed.data
 }
 
-const toolResult = (value: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] })
+const jsonResult = (value: unknown): ToolResult => ({
+  content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+  structuredContent: value as Record<string, unknown>,
+})
+
+const workResult = (markdown: string, answer: unknown): ToolResult => ({ content: [{ type: 'text', text: markdown }], structuredContent: answer as Record<string, unknown> })
+
+function refuseUnapprovedProposal(retro: RetroState, proposalId: number) {
+  if (!retro.proposals.some((candidate) => candidate.id === proposalId)) throw new UserError(`The latest retrospective has no proposal ${proposalId}.`)
+  if (retro.applied.includes(proposalId)) throw new UserError(`Proposal ${proposalId} is already applied.`)
+  if (!retro.approved.includes(proposalId)) {
+    throw new UserError(
+      retro.declined.includes(proposalId) ? `Owner declined proposal ${proposalId}.` : `Owner has not approved proposal ${proposalId}. Only Owner's own words approve it: ask Owner.`,
+      403,
+    )
+  }
+}

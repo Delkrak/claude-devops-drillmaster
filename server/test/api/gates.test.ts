@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
-import { seedWorkflow, testPorts, WORKFLOW_DM } from '../helpers.js'
+import { seedWorkflow, testPorts, WORKFLOW_DM, workToolCall } from '../helpers.js'
 
 let server: RunningServer
 let reviewer: ScriptedReviewer
@@ -14,8 +14,8 @@ const post = async (route: string, body: unknown) => {
   return (await res.json()) as any
 }
 const tool = async (name: string, args: unknown) => {
-  const body = await post('/tools/call', { project: PROJECT, name, arguments: args })
-  return body.isError ? body.content[0].text : JSON.parse(body.content[0].text)
+  const body = await post('/tools/call', { project: PROJECT, ...workToolCall(name, args as Record<string, unknown>) })
+  return body.isError ? body.content[0].text : body.structuredContent
 }
 const hook = (event: string, payload: Record<string, unknown>) => post(`/hooks/${event}`, { project: PROJECT, payload: { session_id: SESSION, ...payload } })
 
@@ -45,7 +45,7 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
     await hook('SessionStart', { source: 'startup' })
     const started = await tool('work_report', { action: 'start', issue: '#7' })
     token = started.agent_token
-    await hook('PostToolUse', { tool_name: 'mcp__x__work_report', tool_input: { action: 'start' }, tool_response: { work_item_id: started.work_item_id } })
+    await hook('PostToolUse', { tool_name: 'mcp__x__work_start', tool_input: { issue: '#1' }, tool_response: { work_item_id: started.work_item_id } })
     await hook('PostToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
     expect(await gate11()).toMatchObject({ verdict: 'accepted', next: { stage: 1, step: 2 } })
   })

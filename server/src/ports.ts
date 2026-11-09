@@ -1,9 +1,14 @@
-import type { DrillmasterEvent } from './core/events.js'
+import type { Artifact, DrillmasterEvent } from './core/events.js'
 
 export interface EventStore {
   append(projectId: string, event: DrillmasterEvent): Promise<void>
   read(projectId: string): Promise<DrillmasterEvent[]>
   projectIds(): Promise<string[]>
+}
+
+export interface ArtifactStore {
+  save(projectId: string, workItemId: string, artifact: { relativePath: string; mediaType: string; bytes: Buffer }): Promise<Artifact>
+  read(projectId: string, workItemId: string, name: string): Promise<Buffer | undefined>
 }
 
 export interface Clock {
@@ -31,6 +36,7 @@ export interface Reviewer {
 
 export interface Ports {
   store: EventStore
+  artifacts: ArtifactStore
   clock: Clock
   ids: Ids
   reviewer: Reviewer

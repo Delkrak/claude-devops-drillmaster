@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { checkRun } from '../sim/assertions.js'
-import { OBJECTIVE } from '../helpers.js'
+import { EXPERIMENT_1, OBJECTIVE } from '../helpers.js'
 
 const at = (m: number) => `2026-11-09T10:${String(m).padStart(2, '0')}:00.000Z`
 const item = (n: number, m: number, corrections: number): DrillmasterEvent[] => [
-  { id: `s${n}`, at: at(m), type: 'work_item_started', work_item_id: `wi_${n}`, issue: `#${n}`, workflow_version: 0, token_hash: `h${n}`, stage: null, step: null },
+  { id: `s${n}`, at: at(m), type: 'work_item_started', work_item_id: `wi_${n}`, issue: `#${n}`, workflow_version: '0.0.0', token_hash: `h${n}`, stage: null, step: null },
   { id: `b${n}`, at: at(m), type: 'session_bound', session_id: 'S', work_item_id: `wi_${n}` },
   ...Array.from({ length: corrections }, (_, i): DrillmasterEvent => ({ id: `p${n}${i}`, at: at(m + 1), type: 'work_trace', session_id: 'S', work_item_id: `wi_${n}`, stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'fix it' })),
   { id: `t${n}`, at: at(m + 1), type: 'work_trace', session_id: 'S', work_item_id: `wi_${n}`, stage: null, step: null, hook: 'PostToolUse', tool: 'Bash', input: '{"token":"[redacted]"}' },
@@ -15,7 +15,7 @@ const item = (n: number, m: number, corrections: number): DrillmasterEvent[] => 
   { id: `md${n}`, at: at(m + 2), type: 'post_mortem_written', work_item_id: `wi_${n}`, author: 'drillmaster', keep: 'k', change: 'c', experiment_reflections: 'e', free_text: '' },
 ]
 const w0 = workflowZero(OBJECTIVE as never)
-const w1 = { ...w0, version: 1, experiments: [{ id: 1, change: 'c', purpose: 'p', measure: 'owner_corrections_per_item' as const, baseline: 2, started: '2026-11-09' }] }
+const w1 = { ...w0, version: '1.0.0', experiments: [{ ...EXPERIMENT_1, version: '1.0.0' }] }
 const events: DrillmasterEvent[] = [
   { id: 'i', at: at(0), type: 'project_initialized', dir: '/p', workflow: w0 },
   ...item(1, 1, 2),
@@ -28,7 +28,7 @@ describe('simulation run checks', () => {
   it('passes a run that shows the whole loop', () => {
     const { checks, metrics } = checkRun(events, { ownerMessages: 2, issues: 2, retros: 1 })
     expect(checks.filter((c) => !c.ok)).toEqual([])
-    expect(metrics).toMatchObject({ corrections_before: 2, corrections_after: 0, workflow_version: 1 })
+    expect(metrics).toMatchObject({ corrections_before: 2, corrections_after: 0, workflow_version: '1.0.0' })
   })
 
   it('fails a run with a leaked token or a missing post mortem', () => {

@@ -1,6 +1,6 @@
-import type { NewEvent, Position, ReportKind, SelfCheck } from './events.js'
-import type { ProjectState, WorkItemState } from './state.js'
-import type { WorkflowDocument, WorkStep } from './workflow.js'
+import type { Artifact, MetricAnswer, NewEvent, Position, ReportKind, SelfCheck } from './events.js'
+import { findVersion, type ProjectState, type WorkItemState } from './state.js'
+import type { WorkflowDocument, WorkflowMetric, WorkStep } from './workflow.js'
 
 export class Refused extends Error {}
 
@@ -20,11 +20,11 @@ export type ReportArgs = {
   asked?: string
   answer?: string
 }
-export type GateArgs = { stage: number; step: number; self_check: SelfCheck[]; text: string }
-export type DeliverArgs = { pr: string }
+export type GateArgs = { stage: number; step: number; self_check: SelfCheck[]; text: string; metrics?: MetricAnswer[] }
+export type DeliverArgs = { pr: string; summary: string; artifacts: Artifact[] }
 export type PostMortemArgs = { keep: string; change: string; experiment_reflections: string; free_text: string }
 export function workflowOfWorkItem(state: ProjectState, item: WorkItemState): WorkflowDocument {
-  const workflow = state.versions[item.workflow_version]
+  const workflow = findVersion(state, item.workflow_version)
   if (!workflow) throw new Error(`Work item ${item.work_item_id} runs on unknown workflow version ${item.workflow_version}`)
   return workflow
 }
@@ -41,6 +41,33 @@ export function nextPosition(workflow: WorkflowDocument, stage: number, step: nu
 }
 
 const describePosition = (position: Position) => (position.stage === null ? 'past the last work stage' : `work step ${position.stage}.${position.step}`)
+
+export const dueMetrics = (workflow: WorkflowDocument, stage: number, step: number, by?: WorkflowMetric['by']) =>
+  workflow.metrics.filter((metric) => metric.at.stage === stage && metric.at.step === step && (by === undefined || metric.by === by))
+
+function recordAgentMetrics(workflow: WorkflowDocument, item: WorkItemState, args: GateArgs): NewEvent[] {
+  const due = dueMetrics(workflow, args.stage, args.step, 'agent')
+  const answers = args.metrics ?? []
+  const unknown = answers.filter((answer) => !due.some((metric) => metric.name === answer.name))
+  if (unknown.length) throw new Refused(`No metric ${unknown.map((answer) => answer.name).join(', ')} is yours to take at work step ${args.stage}.${args.step}.`)
+  return due.map((metric) => {
+    const answer = answers.find((candidate) => candidate.name === metric.name)
+    const values = metric.categories.map((category) => category.value)
+    if (!answer || !values.includes(answer.value)) {
+      throw new Refused(`Take metric "${metric.name}" with this gate: ${metric.instruction} Pick one of: ${values.join(', ')}.`)
+    }
+    return {
+      type: 'metric_recorded',
+      work_item_id: item.work_item_id,
+      stage: args.stage,
+      step: args.step,
+      name: metric.name,
+      value: answer.value,
+      ...(answer.explanation ? { explanation: answer.explanation } : {}),
+      by: 'agent',
+    } satisfies NewEvent
+  })
+}
 
 function refuseIfDelivered(item: WorkItemState) {
   if (item.status === 'delivered') throw new Refused(`Work item ${item.work_item_id} is delivered. Only its post mortem remains.`)
@@ -103,6 +130,8 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
     )
   }
 
+  const metricEvents = recordAgentMetrics(workflow, item, args)
+
   const submitted: NewEvent = {
     type: 'gate_submitted',
     work_item_id: item.work_item_id,
@@ -114,7 +143,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   }
   if (step.gate !== 'self') {
     return {
-      events: [submitted],
+      events: [submitted, ...metricEvents],
       answer: {
         verdict: 'pending',
         gate: step.gate,
@@ -138,7 +167,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
     ...position,
   }
   return {
-    events: [submitted, verdict],
+    events: [submitted, ...metricEvents, verdict],
     answer: {
       verdict: failedCheck ? 'rejected' : 'accepted',
       by: 'agent',
@@ -160,8 +189,8 @@ export function deliverWorkItem(item: WorkItemState, args: DeliverArgs): Decisio
   if (item.pending_gate) throw new Refused(`The ${item.pending_gate.gate} gate of ${describePosition(item)} is still pending.`)
   if (!item.gates_done) throw new Refused(`The work item is at ${describePosition(item)}. Every work gate must pass before delivery.`)
   return {
-    events: [{ type: 'work_item_delivered', work_item_id: item.work_item_id, pr: args.pr }],
-    answer: { delivered: item.work_item_id, pr: args.pr, note: 'Now write your workflow post mortem (work_report action "post_mortem").' },
+    events: [{ type: 'work_item_delivered', work_item_id: item.work_item_id, pr: args.pr, summary: args.summary, artifacts: args.artifacts }],
+    answer: { delivered: item.work_item_id, pr: args.pr, artifacts: args.artifacts.map((artifact) => artifact.name), note: 'Now write your workflow post mortem (work_post_mortem).' },
   }
 }
 

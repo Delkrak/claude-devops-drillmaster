@@ -13,7 +13,7 @@ const event = (n: number): DrillmasterEvent => ({
   id: `ev_${n}`,
   at: '2026-11-09T10:00:00Z',
   type: 'workflow_changed',
-  workflow: { ...workflowZero(OBJECTIVE as never), version: n },
+  workflow: { ...workflowZero(OBJECTIVE as never), version: `${n}.0.0` },
   reason: `change ${n}`,
 })
 

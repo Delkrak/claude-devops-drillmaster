@@ -30,6 +30,7 @@ const SECRET_KEY_NAME = /token/i
 const SECRET_IN_JSON_TEXT = /(\\?"(?:agent_)?token\\?"\s*:\s*\\?")[^"\\]+/g
 // Built in for now; these may become configurable regex rules per project.
 const WELL_KNOWN_SECRETS: [RegExp, string][] = [
+  [/(agent_token:\s*)[A-Za-z0-9_-]+/g, '$1[redacted]'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted private key]'],
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, '[redacted]'],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[redacted]'],
@@ -92,13 +93,11 @@ export function exitCodeOf(toolResponse: unknown): number | undefined {
   return found as number | undefined
 }
 
-const isWorkReportTool = (toolName?: string) => toolName === 'work_report' || (toolName?.endsWith('__work_report') ?? false)
+export const isDrillmasterTool = (toolName: string | undefined, name: string) => toolName === name || (toolName?.endsWith(`__${name}`) ?? false)
 
 export function startedWorkItemId(payload: HookPayload): string | undefined {
-  if (payload.hook_event_name !== 'PostToolUse' || !isWorkReportTool(payload.tool_name)) return undefined
-  const input = payload.tool_input as { action?: string } | undefined
-  if (input?.action !== 'start') return undefined
-  const match = /\\?"work_item_id\\?"\s*:\s*\\?"([^"\\]+)\\?"/.exec(JSON.stringify(payload.tool_response ?? ''))
+  if (payload.hook_event_name !== 'PostToolUse' || !isDrillmasterTool(payload.tool_name, 'work_start')) return undefined
+  const match = /work_item_id\\?"?\s*:\s*\\?"?([A-Za-z0-9_-]+)/.exec(JSON.stringify(payload.tool_response ?? ''))
   return match?.[1]
 }
 
@@ -210,7 +209,7 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined) {
     'Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.',
     item
       ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
-      : 'Start every work item with the work_report tool (action "start"), and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
+      : 'Start every work item with the work_start tool, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
   ]
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)
