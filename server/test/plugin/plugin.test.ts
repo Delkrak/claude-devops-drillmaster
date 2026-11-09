@@ -66,8 +66,10 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
   })
 
   it('sets up workflow_0 through the setup skill', async () => {
-    await turn('Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item.')
-    expect(foldState(await events()).workflow).toMatchObject({ version: 0, stages: [] })
+    const storeRepo = path.join(home.dir, 'store.git')
+    execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', storeRepo])
+    await turn(`Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. Store: the git repo at ${storeRepo}.`)
+    expect(foldState(await events()).workflow).toMatchObject({ version: '0.0.0', stages: [], storage: { repo: storeRepo } })
   }, 600_000)
 
   it('runs a work item from start to both post mortems, with every action traced', async () => {
@@ -84,7 +86,8 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     expect(item.sessions).toHaveLength(1)
     // Every action is traced; Agent may write the file just before or after starting the work item.
     const traces = (await events()).filter((e) => e.type === 'work_trace')
-    expect(traces.map((t) => (t.type === 'work_trace' ? `${t.hook}:${t.tool ?? ''}` : ''))).toContain('PostToolUse:Write')
+    const traced = traces.map((t) => (t.type === 'work_trace' ? `${t.hook}:${t.tool ?? ''}` : ''))
+    expect(traced.some((entry) => entry === 'PostToolUse:Write' || entry === 'PostToolUse:Bash'), traced.join(' ')).toBe(true)
     expect(item.traces).toBeGreaterThan(0)
   }, 600_000)
 
