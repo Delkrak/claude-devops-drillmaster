@@ -1,4 +1,5 @@
 import type { Position } from './events.js'
+import { FEEDBACK_REFS_HELP } from './feedback.js'
 import { stepName } from './refs.js'
 import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
 
@@ -118,7 +119,17 @@ export function renderDelivered(workItemId: string, pr: string, artifacts: strin
     '',
     'Drillmaster writes its post mortem now. Write yours with `work_post_mortem`:',
     '```json',
-    JSON.stringify({ token: '<your agent_token>', keep: '<what in the workflow helped>', change: '<what got in the way, and how to change it>', experiment_reflections: '<how the running experiments did, or none>', free_text: '<anything else>' }, null, 2),
+    JSON.stringify(
+      {
+        token: '<your agent_token>',
+        keep: [{ refs: ['step 1.1'], text: '<what in the workflow helped>' }],
+        change: [{ refs: ['rule pr 1.1'], text: '<what got in the way, and how to change it>' }],
+        experiment_reflections: [{ experiment: 1, text: '<how this running experiment did>' }],
+      },
+      null,
+      2,
+    ),
+    `In each keep and change entry, ${FEEDBACK_REFS_HELP} Leave experiment_reflections empty when no experiment runs.`,
     '```',
   ].join('\n')
 }

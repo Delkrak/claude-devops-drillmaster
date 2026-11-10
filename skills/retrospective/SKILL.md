@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's corrections and the measures; Owner decides each proposal in their own words, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
+description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's corrections and the measures; Owner decides each proposal in AskUserQuestion, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
 ---
 
 # Workflow retrospective
@@ -15,7 +15,8 @@ Drillmaster's findings, and you don't decide for Owner.
 2. **Show Owner the result as it is:**
    - the opening: how the last retrospective's actions did;
    - the findings: what should have happened, what happened, why, what to keep, and what to
-     improve;
+     improve, each with what it names (`step 1.2`, `rule pr 1.1`, ...); an entry naming a
+     `tool` is feedback on Drillmaster itself;
    - every proposal (at most four), numbered, with its change, its purpose, its hypothesis, the
      measure and its target, its version level (major, minor or patch), and in a line or two what it
      does to the workflow;

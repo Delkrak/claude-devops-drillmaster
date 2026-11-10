@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { workToolCall } from '../helpers.js'
+import { ownerAnswers, workToolCall } from '../helpers.js'
 import { VIEWER_PORT } from './port.js'
 
 const dist = (file: string) => import(pathToFileURL(path.resolve(import.meta.dirname, '../../dist', file)).href)
@@ -111,9 +111,9 @@ export default async function setup() {
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'The PR says what it changes.' })
   await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export, with a What section' })
   await call({ token: one.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/csv.js' })
-  await app.hook(DEMO_DIR, 'UserPromptSubmit', { session_id: 'demo', prompt: 'looks good, ship it' })
+  await ownerAnswers(app, DEMO_DIR, () => 'Approve', 'demo')
   await call({ token: one.agent_token, action: 'deliver', pr: '#40', summary: 'CSV export with a header line; the test checks the header.', artifacts: ['after.png'] })
-  await call({ token: one.agent_token, action: 'post_mortem', keep: 'the gates', change: 'nothing', experiment_reflections: 'experiment 1 helped', free_text: '' })
+  await call({ token: one.agent_token, action: 'post_mortem', keep: [{ refs: ['step 1.1'], text: 'the gates' }], change: [{ refs: ['tool work_deliver'], text: 'take more file types' }], experiment_reflections: [{ experiment: 1, text: 'experiment 1 helped' }] })
   await app.hook(DEMO_DIR, 'UserPromptSubmit', { session_id: 'demo', prompt: 'you forgot CHANGES.md' })
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'Edit', tool_input: { file_path: 'CHANGES.md' }, tool_response: {} })
   await call({ token: one.agent_token, action: 'report', kind: 'added_step', text: 'added a CHANGES.md line', why: 'Owner: you forgot CHANGES.md' })

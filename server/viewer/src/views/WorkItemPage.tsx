@@ -14,6 +14,7 @@ import { Chip, SearchField } from '../ui/Select'
 import { Stat } from '../ui/Stat'
 import { Heading, Link, Muted } from '../ui/Text'
 import { Timeline, TimelineEntry } from '../ui/Timeline'
+import { FeedbackList } from './FeedbackList'
 import { describeTimelineEvent, GROUPS, type Group } from './describe'
 import { StatusBadge } from './WorkItemsView'
 
@@ -131,16 +132,23 @@ function PostMortems({ events }: { events: TimelineEvent[] }) {
             [
               ['What to keep', postMortem.keep],
               ['What to change', postMortem.change],
-              ['Workflow experiment reflections', postMortem.experiment_reflections],
-              ['Free text', postMortem.free_text],
             ] as const
-          ).map(([label, text]) =>
-            text ? (
-              <Stack key={label} tight>
-                <Muted>{label}</Muted>
-                <span>{String(text)}</span>
-              </Stack>
-            ) : null,
+          ).map(([label, entries]) => (
+            <Stack key={label} tight>
+              <Muted>{label}</Muted>
+              <FeedbackList entries={entries} />
+            </Stack>
+          ))}
+          {Array.isArray(postMortem.experiment_reflections) && postMortem.experiment_reflections.length > 0 && (
+            <Stack tight>
+              <Muted>Workflow experiment reflections</Muted>
+              {(postMortem.experiment_reflections as { experiment: number | null; text: string }[]).map((reflection, index) => (
+                <span key={index}>
+                  {reflection.experiment !== null ? `#${reflection.experiment}: ` : ''}
+                  {reflection.text}
+                </span>
+              ))}
+            </Stack>
           )}
         </Card>
       ))}

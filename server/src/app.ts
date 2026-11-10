@@ -8,6 +8,7 @@ import { StorePublisher } from './adapters/storePublisher.js'
 import { DEFAULT_BRANCH_PATTERN, isPublishMoment, type Storage } from './core/storeLayout.js'
 import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type MetricAnswer, type NewEvent } from './core/events.js'
 import { judgeExperiments } from './core/experiments.js'
+import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resolveFeedback } from './core/feedback.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { averageMeasure, BASELINE_WINDOW, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
 import {
@@ -146,7 +147,7 @@ const WorkGateArgs = z
   })
   .strict()
 const WorkDeliverArgs = z.object({ token: tokenField, pr: textField, summary: textField, artifacts: z.array(textField).max(MAX_ARTIFACTS).optional() }).strict()
-const WorkPostMortemArgs = z.object({ token: tokenField, keep: textField, change: textField, experiment_reflections: textField, free_text: z.string() }).strict()
+const WorkPostMortemArgs = z.object({ token: tokenField, keep: z.array(FeedbackInput), change: z.array(FeedbackInput), experiment_reflections: z.array(ReflectionInput) }).strict()
 
 const RetroArgs = z.discriminatedUnion('action', [
   z
@@ -180,6 +181,11 @@ const lateStartProperties = {
   },
   justification: { type: 'string', description: 'Why the skipped work steps are already done.' },
   evidence: { type: 'string', description: 'What shows it: commits, test output, files, earlier work items.' },
+}
+const feedbackItemSchema = {
+  type: 'object',
+  properties: { refs: { type: 'array', items: { type: 'string' }, description: 'What it is about, e.g. "step 1.2", "rule pr 1.1", "tool work_deliver".' }, text: { type: 'string' } },
+  required: ['refs', 'text'],
 }
 const selfCheckProperty = {
   type: 'array',
@@ -289,11 +295,19 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'work_post_mortem',
-    description: 'Your workflow post mortem, after delivery: what in the workflow helped, what got in the way, how the experiments did, and anything else.',
+    description: `Your workflow post mortem, after delivery: lists of what in the workflow helped (keep), what got in the way and how to change it (change), and how each running experiment did (experiment_reflections). In each keep and change entry, ${FEEDBACK_REFS_HELP}`,
     inputSchema: {
       type: 'object',
-      properties: { ...tokenProperty, keep: { type: 'string' }, change: { type: 'string' }, experiment_reflections: { type: 'string' }, free_text: { type: 'string' } },
-      required: ['token', 'keep', 'change', 'experiment_reflections', 'free_text'],
+      properties: {
+        ...tokenProperty,
+        keep: { type: 'array', items: feedbackItemSchema },
+        change: { type: 'array', items: feedbackItemSchema },
+        experiment_reflections: {
+          type: 'array',
+          items: { type: 'object', properties: { experiment: { type: 'integer', minimum: 1 }, text: { type: 'string' } }, required: ['experiment', 'text'] },
+        },
+      },
+      required: ['token', 'keep', 'change', 'experiment_reflections'],
     },
   },
   {
@@ -301,7 +315,7 @@ export const TOOLS: ToolDefinition[] = [
     description: [
       'The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.',
       `- setup {objective, measures}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective. measures: ${MEASURE_NAMES.join(', ')}.`,
-      `- run: Drillmaster's findings (should, did, why, keep, improve) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's corrections, the measures and the experiments' verdicts. Show them to Owner as they are.`,
+      `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's corrections, the measures and the experiments' verdicts. Show them to Owner as they are.`,
       "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline.",
     ].join('\n'),
     inputSchema: {
@@ -338,6 +352,8 @@ export const TOOLS: ToolDefinition[] = [
   },
 ]
 
+const TOOL_NAMES = TOOLS.map((tool) => tool.name)
+
 export class Drillmaster {
   private readonly lockByProject = new Map<string, Promise<unknown>>()
   private readonly knownVersionsByProject = new Map<string, KnownVersions>()
@@ -348,10 +364,14 @@ export class Drillmaster {
   private readonly linkProblemByProject = new Map<string, string>()
   private readonly backgroundWork = new Set<Promise<unknown>>()
 
+  private readonly ports: Ports
+
   constructor(
-    private readonly ports: Ports,
+    ports: Ports,
     private readonly options: DrillmasterOptions = {},
   ) {
+    // Every event is read as the current version of Drillmaster writes it.
+    this.ports = { ...ports, store: { ...ports.store, read: async (projectId) => (await ports.store.read(projectId)).map(migrateEvent), append: (projectId, event) => ports.store.append(projectId, event), projectIds: () => ports.store.projectIds() } }
     this.projectByLinkedFolder = new Map(Object.entries(readLinks(options.linksFile)))
   }
 
@@ -728,7 +748,7 @@ export class Drillmaster {
     const outcome = await this.withProjectLock(projectDir, async (projectId) => {
       const state = foldState(await this.ports.store.read(projectId))
       if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
-      const { token, ...postMortemArgs } = toolArgs as { token?: unknown }
+      const { token } = toolArgs as { token?: unknown }
       const item = typeof token === 'string' ? findWorkItemByTokenHash(state, hashToken(token)) : undefined
       const restartNotice = item ? this.restartNotice(state, item) : undefined
       if (restartNotice && toolName === 'work_gate') throw new work.Refused(restartNotice)
@@ -755,10 +775,12 @@ export class Drillmaster {
           decision = work.deliverWorkItem(item, { pr, summary, artifacts })
           break
         }
-        default:
-          parseToolArgs(WorkPostMortemArgs, toolArgs)
+        default: {
+          const { token: _token, ...postMortem } = parseToolArgs(WorkPostMortemArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          decision = work.recordPostMortem(item, postMortemArgs as work.PostMortemArgs)
+          const workflow = work.workflowOfWorkItem(state, item)
+          decision = work.recordPostMortem(item, { ...postMortem, keep: resolveFeedback(workflow, postMortem.keep, TOOL_NAMES, 'refuse'), change: resolveFeedback(workflow, postMortem.change, TOOL_NAMES, 'refuse') })
+        }
       }
       let gateSubmissionToJudge: string | undefined
       for (const newEvent of decision.events) {
@@ -828,18 +850,20 @@ export class Drillmaster {
 
   private async writeDrillmasterPostMortem(projectDir: string, workItemId: string) {
     const events = await this.events(projectDir)
-    const item = foldState(events).workItems[workItemId]!
-    let postMortem: ReturnType<typeof readPostMortemAnswer>
+    const state = foldState(events)
+    const item = state.workItems[workItemId]!
+    const workflow = work.workflowOfWorkItem(state, item)
+    let postMortem: work.PostMortemArgs
     try {
       const { answer } = await this.ports.reviewer.review({
         kind: POST_MORTEM_REVIEW_KIND,
-        prompt: buildPostMortemPrompt(item, events),
+        prompt: buildPostMortemPrompt(item, workflow, events),
         minTimeoutMs: POST_MORTEM_TIMEOUT_MS,
       })
-      postMortem = readPostMortemAnswer(answer)
+      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      postMortem = { keep: '', change: '', experiment_reflections: '', free_text: `Drillmaster could not write its post mortem: ${reason}` }
+      postMortem = { keep: [], change: [{ refs: [], text: `Drillmaster could not write its post mortem: ${reason}` }], experiment_reflections: [] }
     }
     await this.withProjectLock(projectDir, async (projectId) => {
       const currentItem = foldState(await this.ports.store.read(projectId)).workItems[workItemId]
@@ -856,11 +880,11 @@ export class Drillmaster {
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
     const reviewedItems = deliveredSinceLastRetro(state, events)
     const { answer } = await this.ports.reviewer
-      .review({ kind: RETRO_REVIEW_KIND, prompt: buildRetroPrompt(state, events), minTimeoutMs: RETROSPECTIVE_TIMEOUT_MS })
+      .review({ kind: RETRO_REVIEW_KIND, prompt: buildRetroPrompt(state, events, TOOLS), minTimeoutMs: RETROSPECTIVE_TIMEOUT_MS })
       .catch((error: unknown) => {
         throw new UserError(`Drillmaster could not carry out the retrospective: ${error instanceof Error ? error.message : String(error)}`)
       })
-    const retroResult = readRetroAnswer(state.workflow, answer)
+    const retroResult = readRetroAnswer(state.workflow, answer, TOOL_NAMES)
     return this.withProjectLock(projectDir, async (projectId) => {
       const storedEvent = await this.appendEvent(projectId, {
         type: 'retrospective_ran',

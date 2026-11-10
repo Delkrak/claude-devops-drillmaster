@@ -5,6 +5,7 @@ import { Row, Stack } from '../ui/Box'
 import { Card } from '../ui/Card'
 import { Empty } from '../ui/Empty'
 import { Heading, Muted, Pre, Strong } from '../ui/Text'
+import { FeedbackList } from './FeedbackList'
 
 export const proposalTone: Record<Proposal['status'], Tone> = { applied: 'ok', approved: 'info', declined: 'bad', open: 'neutral' }
 
@@ -13,6 +14,9 @@ const FINDINGS = [
   ['should', 'What should have happened'],
   ['did', 'What happened'],
   ['why', 'Why'],
+] as const
+
+const FEEDBACK_FINDINGS = [
   ['keep', 'What to keep'],
   ['improve', 'What to improve'],
 ] as const
@@ -37,6 +41,12 @@ function RetrospectiveCard({ retro }: { retro: Retrospective }) {
           <span>{retro.findings[key]}</span>
         </Stack>
       ))}
+      {FEEDBACK_FINDINGS.map(([key, label]) => (
+        <Stack key={key} tight>
+          <Muted>{label}</Muted>
+          <FeedbackList entries={retro.findings[key]} testId={`findings-${key}`} />
+        </Stack>
+      ))}
       <Heading level={3}>Proposals</Heading>
       {retro.proposals.length === 0 ? (
         <Empty>No workflow changes proposed.</Empty>
@@ -47,6 +57,11 @@ function RetrospectiveCard({ retro }: { retro: Retrospective }) {
               <Strong>{proposal.id}.</Strong> {proposal.change}
               <Badge tone={proposalTone[proposal.status]}>{proposal.status}</Badge>
               {proposal.depends_on && <Badge>builds on {proposal.depends_on.join(', ')}</Badge>}
+              {proposal.relies_on?.map((ref) => (
+                <Badge key={ref} tone="info">
+                  relies on {ref}
+                </Badge>
+              ))}
             </Row>
             <Muted>
               Purpose: {proposal.purpose}. Measure: {measureLabel(proposal.measure)}.

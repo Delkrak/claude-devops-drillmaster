@@ -1,3 +1,4 @@
+import type { ExperimentReflection, Feedback } from './feedback.js'
 import type { VersionLevel, WorkflowDocument } from './workflow.js'
 
 export interface EventEnvelope {
@@ -35,14 +36,25 @@ export interface Proposal {
   target?: number | null
   judge_after?: number
   ops: unknown[]
+  /** References to what the proposal builds on; one that an earlier proposal adds makes it depend on that one. */
+  relies_on?: string[]
   depends_on?: number[]
+}
+
+export interface RetroFindings {
+  opening?: string
+  should: string
+  did: string
+  why: string
+  keep: Feedback[]
+  improve: Feedback[]
 }
 
 export interface RetrospectiveRan extends EventEnvelope {
   type: 'retrospective_ran'
   retro_id: string
   work_items: string[]
-  findings: { opening?: string; should: string; did: string; why: string; keep: string; improve: string }
+  findings: RetroFindings
   proposals: Proposal[]
 }
 
@@ -241,10 +253,9 @@ export interface PostMortemWritten extends EventEnvelope {
   type: 'post_mortem_written'
   work_item_id: string
   author: 'agent' | 'drillmaster'
-  keep: string
-  change: string
-  experiment_reflections: string
-  free_text: string
+  keep: Feedback[]
+  change: Feedback[]
+  experiment_reflections: ExperimentReflection[]
 }
 
 export type DrillmasterEvent =

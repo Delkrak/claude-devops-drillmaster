@@ -11,15 +11,15 @@ const item = (n: number, m: number, corrections: number): DrillmasterEvent[] => 
   ...Array.from({ length: corrections }, (_, i): DrillmasterEvent => ({ id: `p${n}${i}`, at: at(m + 1), type: 'work_trace', session_id: 'S', work_item_id: `wi_${n}`, stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'fix it' })),
   { id: `t${n}`, at: at(m + 1), type: 'work_trace', session_id: 'S', work_item_id: `wi_${n}`, stage: null, step: null, hook: 'PostToolUse', tool: 'Bash', input: '{"token":"[redacted]"}' },
   { id: `d${n}`, at: at(m + 2), type: 'work_item_delivered', work_item_id: `wi_${n}`, pr: 'local' },
-  { id: `ma${n}`, at: at(m + 2), type: 'post_mortem_written', work_item_id: `wi_${n}`, author: 'agent', keep: 'k', change: 'c', experiment_reflections: 'e', free_text: '' },
-  { id: `md${n}`, at: at(m + 2), type: 'post_mortem_written', work_item_id: `wi_${n}`, author: 'drillmaster', keep: 'k', change: 'c', experiment_reflections: 'e', free_text: '' },
+  { id: `ma${n}`, at: at(m + 2), type: 'post_mortem_written', work_item_id: `wi_${n}`, author: 'agent', keep: [{ refs: [], text: 'k' }], change: [{ refs: [], text: 'c' }], experiment_reflections: [] },
+  { id: `md${n}`, at: at(m + 2), type: 'post_mortem_written', work_item_id: `wi_${n}`, author: 'drillmaster', keep: [{ refs: [], text: 'k' }], change: [{ refs: [], text: 'c' }], experiment_reflections: [] },
 ]
 const w0 = workflowZero(OBJECTIVE as never)
 const w1 = { ...w0, version: '1.0.0', experiments: [{ ...EXPERIMENT_1, version: '1.0.0' }] }
 const events: DrillmasterEvent[] = [
   { id: 'i', at: at(0), type: 'project_initialized', dir: '/p', workflow: w0 },
   ...item(1, 1, 2),
-  { id: 'r', at: at(10), type: 'retrospective_ran', retro_id: 'retro_1', work_items: ['wi_1'], findings: { should: '', did: '', why: '', keep: '', improve: '' }, proposals: [] },
+  { id: 'r', at: at(10), type: 'retrospective_ran', retro_id: 'retro_1', work_items: ['wi_1'], findings: { should: '', did: '', why: '', keep: [], improve: [] }, proposals: [] },
   { id: 'o', at: at(10), type: 'owner_decided', retro_id: 'retro_1', approved: [1], declined: [], prompt: 'Approve', via: 'question' },
   { id: 'c', at: at(11), type: 'workflow_changed', workflow: w1, reason: 'c' },
   ...item(2, 20, 0),

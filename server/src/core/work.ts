@@ -1,4 +1,5 @@
 import type { Artifact, MetricAnswer, NewEvent, Position, ReportKind, SelfCheck } from './events.js'
+import type { ExperimentReflection, Feedback } from './feedback.js'
 import { stepGuidAt, stepName } from './refs.js'
 import { findVersion, type ProjectState, type WorkItemState } from './state.js'
 import { compareVersions, isMajorChange, type WorkflowDocument, type WorkflowMetric, type WorkStep } from './workflow.js'
@@ -23,7 +24,7 @@ export type ReportArgs = {
 }
 export type GateArgs = { stage: number; step: number; self_check: SelfCheck[]; text: string; metrics?: MetricAnswer[] }
 export type DeliverArgs = { pr: string; summary: string; artifacts: Artifact[] }
-export type PostMortemArgs = { keep: string; change: string; experiment_reflections: string; free_text: string }
+export type PostMortemArgs = { keep: Feedback[]; change: Feedback[]; experiment_reflections: ExperimentReflection[] }
 /**
  * A work item runs on the latest version with the major version it started or restarted on: a
  * minor change applies to it right away, and only a major one restarts it.

@@ -107,15 +107,29 @@ export interface Proposal {
   purpose: string
   measure: string
   ops: unknown[]
+  relies_on?: string[]
   depends_on?: number[]
   status: 'applied' | 'approved' | 'declined' | 'open'
+}
+
+export interface Feedback {
+  refs: { ref: string; guid: string | null }[]
+  text: string
+}
+
+export interface DrillmasterFeedback {
+  at: string
+  tool: string
+  text: string
+  from: string
+  work_item_id: string | null
 }
 
 export interface Retrospective {
   retro_id: string
   at: string
   work_items: string[]
-  findings: { opening?: string; should: string; did: string; why: string; keep: string; improve: string }
+  findings: { opening?: string; should: string; did: string; why: string; keep: Feedback[]; improve: Feedback[] }
   proposals: Proposal[]
   decisions: { at: string; prompt: string }[]
 }

@@ -19,7 +19,7 @@ const retro: DrillmasterEvent = {
   type: 'retrospective_ran',
   retro_id: 'retro_1',
   work_items: [],
-  findings: { should: '', did: '', why: '', keep: '', improve: '' },
+  findings: { should: '', did: '', why: '', keep: [], improve: [] },
   proposals: [
     { id: 1, change: 'add pr 1.1', purpose: 'Owner corrected PR descriptions', hypothesis: 'A PR rule stops the corrections', measure: 'owner_corrections_per_item', ops: [] },
     { id: 2, change: 'time it', purpose: 'see speed', measure: 'minutes_per_item', ops: [] },
@@ -52,7 +52,8 @@ describe('when a retrospective is due', () => {
 describe("a retrospective's opening", () => {
   it("gives Drillmaster the last retrospective's actions to judge first", () => {
     const events = [init, retro, decided, grown, ...delivered(1)]
-    const prompt = buildRetroPrompt(foldState(events), events)
+    const prompt = buildRetroPrompt(foldState(events), events, [{ name: 'work_deliver', description: 'Delivers. artifacts: images or text, at most 5 MB each.' }])
+    expect(prompt).toContain('- work_deliver: Delivers. artifacts: images or text, at most 5 MB each.')
     expect(prompt).toContain("Open by judging the last retrospective's actions")
     expect(prompt).toContain('- proposal 1 "add pr 1.1" (purpose: Owner corrected PR descriptions; hypothesis: A PR rule stops the corrections): applied as workflow 2.0.0')
     expect(prompt).toContain('- proposal 2 "time it" (purpose: see speed): declined by Owner')

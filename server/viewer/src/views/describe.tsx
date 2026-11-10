@@ -4,6 +4,7 @@ import type { TimelineEvent } from '../types'
 import { Badge, type Tone } from '../ui/Badge'
 import { Row } from '../ui/Box'
 import { Code, Muted, Pre, Strong } from '../ui/Text'
+import { feedbackText } from './FeedbackList'
 
 export const GROUPS = ['reports', 'gates', 'owner', 'actions', 'post mortems'] as const
 export type Group = (typeof GROUPS)[number]
@@ -88,7 +89,7 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
     case 'work_item_delivered':
       return { group: 'reports', tone: 'ok', text: `delivered ${asText(event.pr)}`, body: <Strong>Delivered as {asText(event.pr)}</Strong> }
     case 'post_mortem_written':
-      return { group: 'post mortems', tone: 'accent', text: `post mortem ${asText(event.author)} ${asText(event.keep)} ${asText(event.change)}`, body: <Muted>{asText(event.author)} wrote a workflow post mortem</Muted> }
+      return { group: 'post mortems', tone: 'accent', text: `post mortem ${asText(event.author)} ${feedbackText(event.keep)} ${feedbackText(event.change)}`, body: <Muted>{asText(event.author)} wrote a workflow post mortem</Muted> }
     case 'metric_recorded':
       return {
         group: 'reports',

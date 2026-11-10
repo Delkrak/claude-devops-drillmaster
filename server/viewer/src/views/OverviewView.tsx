@@ -7,6 +7,7 @@ import { Card } from '../ui/Card'
 import { Stat } from '../ui/Stat'
 import { Link, Muted } from '../ui/Text'
 import { proposalTone } from './RetrospectivesView'
+import { FeedbackList } from './FeedbackList'
 import { StatusBadge } from './WorkItemsView'
 
 export function OverviewView({ project }: { project: ProjectView }) {
@@ -50,7 +51,7 @@ export function OverviewView({ project }: { project: ProjectView }) {
         {lastRetro ? (
           <Stack tight>
             <Muted>{formatDateTime(lastRetro.at)}</Muted>
-            <span>{lastRetro.findings.improve}</span>
+            <FeedbackList entries={lastRetro.findings.improve} />
             <Row>
               {lastRetro.proposals.map((proposal) => (
                 <Badge key={proposal.id} tone={proposalTone[proposal.status]}>

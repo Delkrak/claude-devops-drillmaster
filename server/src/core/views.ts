@@ -1,5 +1,6 @@
 import type { DrillmasterEvent } from './events.js'
 import { judgeExperiments } from './experiments.js'
+import { feedbackOnDrillmaster } from './feedback.js'
 import { averageMeasure, BASELINE_WINDOW, measureDeliveredItems, splitMeasureByMetric, type ItemMeasures } from './measures.js'
 import { findVersion, foldState, type ProjectState } from './state.js'
 
@@ -102,6 +103,7 @@ export function projectView(projectId: string, events: readonly DrillmasterEvent
     retrospectives: retrospectiveViewsNewestFirst(state, events),
     sessions: Object.values(state.sessions),
     experiment_verdicts: judgeExperiments(state.workflow!, measureDeliveredItems(events)),
+    drillmaster_feedback: feedbackOnDrillmaster(events),
   }
 }
 

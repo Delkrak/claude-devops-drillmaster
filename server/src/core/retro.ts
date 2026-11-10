@@ -1,10 +1,12 @@
 import { z } from 'zod'
-import type { DrillmasterEvent, Proposal, RetrospectiveRan } from './events.js'
+import type { DrillmasterEvent, Proposal, RetroFindings, RetrospectiveRan } from './events.js'
+import { FEEDBACK_REFS_HELP, FeedbackInput, ReflectionInput, resolveFeedback } from './feedback.js'
 import { judgeExperiments } from './experiments.js'
 import { averageMeasure, BASELINE_WINDOW, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, type ItemMeasures, type MeasureName } from './measures.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
+import type { PostMortemArgs } from './work.js'
 import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
 
 export const RETRO_REVIEW_KIND = 'retrospective'
@@ -378,7 +380,13 @@ function lastRetrospectiveLines(state: ProjectState, events: readonly Drillmaste
   })
 }
 
-export function buildRetroPrompt(state: ProjectState, events: readonly DrillmasterEvent[]) {
+/** A Drillmaster tool as the retrospective is told about it: the contract the workflow works within. */
+export interface ToolContract {
+  name: string
+  description: string
+}
+
+export function buildRetroPrompt(state: ProjectState, events: readonly DrillmasterEvent[], tools: readonly ToolContract[]) {
   const workflow = state.workflow!
   const allDelivered = measureDeliveredItems(events)
   const recentDelivered = deliveredSinceLastRetro(state, events)
@@ -411,6 +419,11 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
     `Propose at most ${MAX_PROPOSALS} changes: few, small and high-value, so each can be measured. A rule must say how it is verified. A work gate references specific rules. Metrics are categories taken at a work step (for example the size of a work item), so measures can be split by them.`,
+    `Write keep and improve as lists. In each entry, ${FEEDBACK_REFS_HELP} An entry about a tool is feedback on Drillmaster itself, which the workflow can't change; say so rather than propose a workflow change around it.`,
+    'Each proposal lists in relies_on the references of what it builds on. A proposal that relies on something another proposal adds must come after it.',
+    '',
+    "Drillmaster's tools, and what each accepts (the workflow works within these; it can't change them):",
+    ...tools.map((tool) => `- ${tool.name}: ${tool.description.replace(/\n/g, ' ')}`),
     '',
     `Current workflow (version ${workflow.version}):`,
     workflowForReading(workflow),
@@ -436,17 +449,58 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     "Proposals are applied in order: each proposal's operations see the workflow as the proposals before it leave it. Prefer proposals that stand on their own, so Owner can approve any of them.",
     '',
     'Answer with JSON only:',
-    '{"findings":{"opening":"<how the last retrospective\'s actions did>","should":"...","did":"...","why":"...","keep":"...","improve":"..."},"proposals":[{"id":1,"change":"<one line>","purpose":"<the impediment it removes or the better way it delivers>","measure":"<one of the objective measures>","hypothesis":"<what will improve, and why>","null_hypothesis":"<the change makes no difference to the measure>","target":<the measure value that counts as success, lower is better>,"judge_after":<delivered items to judge it after, e.g. 3>,"ops":[...]}]}',
+    '{"findings":{"opening":"<how the last retrospective\'s actions did>","should":"...","did":"...","why":"...","keep":[{"refs":["step 1.2"],"text":"..."}],"improve":[{"refs":["rule pr 1.1"],"text":"..."}]},"proposals":[{"id":1,"change":"<one line>","purpose":"<the impediment it removes or the better way it delivers>","measure":"<one of the objective measures>","hypothesis":"<what will improve, and why>","null_hypothesis":"<the change makes no difference to the measure>","target":<the measure value that counts as success, lower is better>,"judge_after":<delivered items to judge it after, e.g. 3>,"relies_on":["step 1.2"],"ops":[...]}]}',
   ].join('\n')
 }
 
-const Findings = z.object({ opening: z.string().default(''), should: z.string(), did: z.string(), why: z.string(), keep: z.string(), improve: z.string() })
+/** Feedback as Drillmaster wrote it: a list of entries, or plain text, which becomes one entry about nothing in particular. */
+const FeedbackAnswer = z.preprocess(
+  (value) => (typeof value === 'string' ? (value.trim() ? [{ refs: [], text: value }] : []) : value),
+  z.array(z.preprocess((entry) => (typeof entry === 'string' ? { refs: [], text: entry } : entry), FeedbackInput.extend({ refs: z.array(z.string()).default([]) }).loose())),
+)
+const Findings = z.object({ opening: z.string().default(''), should: z.string(), did: z.string(), why: z.string(), keep: FeedbackAnswer, improve: FeedbackAnswer })
 
-export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown) {
+const resolvesIn = (workflow: WorkflowDocument, ref: string, toolNames: readonly string[]) => {
+  try {
+    return resolveRef(workflow, ref, { toolNames })
+  } catch (error) {
+    if (error instanceof InvalidReference) return undefined
+    throw error
+  }
+}
+
+/**
+ * The proposals a proposal depends on: for each reference it relies on that the current workflow
+ * doesn't have, the earlier proposal that adds it. References read as the earlier proposals leave
+ * the workflow, like operations do.
+ */
+function proposalsReliedOn(relies: readonly string[], current: WorkflowDocument, earlier: readonly { id: number; after: WorkflowDocument }[], afterOwnOps: WorkflowDocument, toolNames: readonly string[]) {
+  const beforeOwnOps = earlier.at(-1)?.after ?? current
+  const dependsOn = new Set<number>()
+  for (const ref of relies) {
+    const target = resolvesIn(beforeOwnOps, ref, toolNames)
+    if (!target) {
+      if (resolvesIn(afterOwnOps, ref, toolNames)) continue
+      throw new InvalidChange(`It relies on ${ref}, which workflow ${current.version} doesn't have and no earlier proposal adds.`)
+    }
+    if (target.guid === null || refOfGuid(current, target.guid)) continue
+    const adder = earlier.find((proposal) => refOfGuid(proposal.after, target.guid!))
+    if (adder) dependsOn.add(adder.id)
+  }
+  return [...dependsOn]
+}
+
+export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, toolNames: readonly string[] = []) {
   const retroAnswer = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { findings?: unknown; proposals?: unknown } | undefined
-  const findings = Findings.safeParse(retroAnswer?.findings)
-  if (!findings.success) throw new InvalidAnswer(`The retrospective has no findings: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
+  const parsedFindings = Findings.safeParse(retroAnswer?.findings)
+  if (!parsedFindings.success) throw new InvalidAnswer(`The retrospective has no findings: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
+  const findings: RetroFindings = {
+    ...parsedFindings.data,
+    keep: resolveFeedback(workflow, parsedFindings.data.keep, toolNames, 'drop'),
+    improve: resolveFeedback(workflow, parsedFindings.data.improve, toolNames, 'drop'),
+  }
   const proposals: Proposal[] = []
+  const workflowAfterProposal: { id: number; after: WorkflowDocument }[] = []
   const dropped: { change: string; error: string }[] = []
   let workflowAfterEarlierProposals = workflow
   const rawProposals = Array.isArray(retroAnswer!.proposals) ? retroAnswer!.proposals : []
@@ -459,13 +513,18 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown) {
     }
     try {
       const ops = z.array(WorkflowOp).min(1).parse(candidate.ops)
-      let dependsOn: number[] | undefined
-      try {
-        applyWorkflowOps(workflow, ops)
-      } catch {
-        dependsOn = proposals.map((earlier) => earlier.id)
+      const reliesOn = Array.isArray(candidate.relies_on) ? candidate.relies_on.filter((ref): ref is string => typeof ref === 'string') : []
+      const afterOwnOps = { ...applyWorkflowOps(workflowAfterEarlierProposals, ops), version: workflowAfterEarlierProposals.version }
+      let dependsOn = proposalsReliedOn(reliesOn, workflow, workflowAfterProposal, afterOwnOps, toolNames)
+      if (dependsOn.length === 0) {
+        try {
+          applyWorkflowOps(workflow, ops)
+        } catch {
+          dependsOn = proposals.map((earlier) => earlier.id)
+        }
       }
-      workflowAfterEarlierProposals = { ...applyWorkflowOps(workflowAfterEarlierProposals, ops), version: workflowAfterEarlierProposals.version }
+      workflowAfterEarlierProposals = afterOwnOps
+      workflowAfterProposal.push({ id: proposals.length + 1, after: afterOwnOps })
       proposals.push({
         id: proposals.length + 1,
         change,
@@ -475,17 +534,18 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown) {
         ...(typeof candidate.null_hypothesis === 'string' ? { null_hypothesis: candidate.null_hypothesis } : {}),
         ...(typeof candidate.target === 'number' ? { target: candidate.target } : {}),
         ...(Number.isInteger(candidate.judge_after) && candidate.judge_after! > 0 ? { judge_after: candidate.judge_after } : {}),
+        ...(reliesOn.length ? { relies_on: reliesOn } : {}),
         ops,
-        ...(dependsOn?.length ? { depends_on: dependsOn } : {}),
+        ...(dependsOn.length ? { depends_on: dependsOn } : {}),
       })
     } catch (error) {
       dropped.push({ change, error: error instanceof z.ZodError ? z.prettifyError(error) : String((error as Error).message) })
     }
   }
-  return { findings: findings.data, proposals, dropped }
+  return { findings, proposals, dropped }
 }
 
-export function buildPostMortemPrompt(item: WorkItemState, events: readonly DrillmasterEvent[]) {
+export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDocument, events: readonly DrillmasterEvent[]) {
   const itemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)
   const eventLines = itemEvents.map((event) =>
     event.type === 'work_trace'
@@ -499,17 +559,29 @@ export function buildPostMortemPrompt(item: WorkItemState, events: readonly Dril
     'Everything recorded for the work item, oldest first:',
     ...eventLines.slice(-MAX_EVENTS_IN_POST_MORTEM_PROMPT),
     '',
+    `The workflow it ran on (version ${workflow.version}):`,
+    workflowForReading(workflow),
+    '',
+    `Write keep and change as lists. In each entry, ${FEEDBACK_REFS_HELP}`,
     'Answer with JSON only:',
-    '{"keep":"what in the workflow helped","change":"what got in the way, and how to change it","experiment_reflections":"how the running workflow experiments did, or none","free_text":"anything else"}',
+    '{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}]}',
   ].join('\n')
 }
 
-const PostMortem = z.object({ keep: z.string(), change: z.string(), experiment_reflections: z.string(), free_text: z.string() })
+const PostMortem = z.object({
+  keep: FeedbackAnswer,
+  change: FeedbackAnswer,
+  experiment_reflections: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(ReflectionInput.loose()).catch([])),
+})
 
-export function readPostMortemAnswer(answer: unknown) {
+export function readPostMortemAnswer(answer: unknown, workflow: WorkflowDocument, toolNames: readonly string[]): PostMortemArgs {
   const parsed = PostMortem.safeParse(typeof answer === 'string' ? extractFirstJsonObject(answer) : answer)
   if (!parsed.success) throw new InvalidAnswer(`Drillmaster's post mortem is unreadable: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
-  return parsed.data
+  return {
+    keep: resolveFeedback(workflow, parsed.data.keep, toolNames, 'drop'),
+    change: resolveFeedback(workflow, parsed.data.change, toolNames, 'drop'),
+    experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text })),
+  }
 }
 
 export const toRetroView = (event: RetrospectiveRan, dropped: { change: string; error: string }[] = []) => ({

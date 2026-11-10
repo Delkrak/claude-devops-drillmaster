@@ -73,7 +73,9 @@ describe('the improvement loop', () => {
     await hook('UserPromptSubmit', { prompt: 'you never ran the tests' })
     await hook('PostToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
     expect((await tool('work_report', { token, action: 'deliver', pr: '#2' })).value).toMatchObject({ pr: '#2' })
-    const pm = await tool('work_report', { token, action: 'post_mortem', keep: 'small PR', change: 'a step for tests', experiment_reflections: 'none', free_text: '' })
+    const unknownRef = await tool('work_report', { token, action: 'post_mortem', keep: [{ refs: ['step 1.1'], text: 'x' }], change: [], experiment_reflections: [] })
+    expect(unknownRef.value).toBe('There is no step 1.1 in workflow 0.0.0.')
+    const pm = await tool('work_report', { token, action: 'post_mortem', keep: [{ refs: [], text: 'small PR' }], change: [{ refs: ['tool work_report'], text: 'a step for tests' }], experiment_reflections: [] })
     expect(pm.value).toMatchObject({ recorded: 'post_mortem' })
     await app.idle()
     const pms = (await state()).events.filter((e: any) => e.type === 'post_mortem_written').map((e: any) => e.author)
@@ -87,7 +89,7 @@ describe('the improvement loop', () => {
 
   it("runs the retrospective from the post mortems and Owner's corrections, dropping proposals that would not apply", async () => {
     const retro = await tool('workflow_retrospective', { action: 'run' })
-    expect(retro.value.findings.improve).toBe('add a test step')
+    expect(retro.value.findings.improve).toEqual([{ refs: [], text: 'add a test step' }])
     expect(retro.value.proposals.map((p: any) => p.id)).toEqual([1, 2])
     expect(retro.value.dropped).toEqual([{ change: 'broken', error: 'There is no stage 9 in workflow 0.0.0.' }])
     const prompt = reviewer.requests.find((r) => r.kind === 'retrospective')!.prompt

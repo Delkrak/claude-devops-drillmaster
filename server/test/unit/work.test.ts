@@ -132,7 +132,7 @@ describe('reports, delivery and the post mortem', () => {
   })
 
   it('takes one post mortem from Agent, after delivery only', () => {
-    const pm = { keep: 'k', change: 'c', experiment_reflections: 'none running', free_text: 'f' }
+    const pm = { keep: [{ refs: [], text: 'k' }], change: [{ refs: [], text: 'c' }], experiment_reflections: [] }
     const active = foldState([...seed(w0), started('0.0.0', null, null)])
     expect(() => recordPostMortem(active.workItems.wi_1!, pm)).toThrow(/once the work item is delivered/)
     const delivered = foldState([...seed(w0), started('0.0.0', null, null), ...asEvents([{ type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' }])])

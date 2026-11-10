@@ -32,7 +32,7 @@ const retrospective = {
     },
   ],
 }
-const postMortem = { keep: 'k', change: 'c', experiment_reflections: 'e', free_text: '' }
+const postMortem = { keep: [{ refs: [], text: 'k' }], change: [{ refs: [], text: 'c' }], experiment_reflections: [] }
 
 const tokenByIssue: Record<string, string> = {}
 

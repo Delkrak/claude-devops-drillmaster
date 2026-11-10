@@ -166,7 +166,33 @@ describe("reading Drillmaster's answers", () => {
 
   it('refuses a retrospective without findings, and reads post mortems from text', () => {
     expect(() => readRetroAnswer(w0, 'nothing to say')).toThrow(/no findings/)
-    expect(readPostMortemAnswer('Here: {"keep":"k","change":"c","experiment_reflections":"none","free_text":"f"}')).toMatchObject({ keep: 'k' })
+    expect(readPostMortemAnswer('Here: {"keep":"k","change":[{"refs":["step 1.2","step 9.9"],"text":"c"}],"experiment_reflections":"none"}', WORKFLOW_3, [])).toEqual({
+      keep: [{ refs: [], text: 'k' }],
+      change: [{ refs: [{ ref: 'step 1.2', guid: WORKFLOW_3.stages[0]!.steps[1]!.guid }], text: 'c' }],
+      experiment_reflections: [],
+    })
+  })
+
+  it('resolves the references in the findings, and keeps feedback on a tool', () => {
+    const read = readRetroAnswer(WORKFLOW_3, { findings: { ...findings, keep: [{ refs: ['step 1.1'], text: 'tests first' }], improve: [{ refs: ['tool work_deliver', 'policy nowhere'], text: 'take .js files' }] }, proposals: [] }, ['work_deliver'])
+    expect(read.findings.keep).toEqual([{ refs: [{ ref: 'step 1.1', guid: WORKFLOW_3.stages[0]!.steps[0]!.guid }], text: 'tests first' }])
+    expect(read.findings.improve).toEqual([{ refs: [{ ref: 'tool work_deliver', guid: null }], text: 'take .js files' }])
+  })
+
+  it('makes a proposal depend on the earlier one that adds what it relies on', () => {
+    const lintRule = { op: 'add_policy', name: 'lint', rules: [{ id: '1.1', rule: 'no lint errors', verified_by: 'npm run lint' }] }
+    const read = readRetroAnswer(WORKFLOW_3, {
+      findings,
+      proposals: [
+        { change: 'time it', purpose: 'p', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['minutes_per_item'] }] },
+        { change: 'lint rule', purpose: 'p', measure: 'owner_corrections_per_item', ops: [lintRule] },
+        { change: 'lint step', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['rule lint 1.1', 'step 1.1'], ops: [{ op: 'change_step', step: '1.1', rules: ['test 1.1', 'lint 1.1'] }] },
+        { change: 'own rule', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['rule own 1.1'], ops: [{ op: 'add_policy', name: 'own', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] },
+      ],
+    })
+    expect(read.proposals.map((p) => [p.change, p.depends_on])).toEqual([['time it', undefined], ['lint rule', undefined], ['lint step', [2]], ['own rule', undefined]])
+    const nothing = { change: 'nothing there', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['step 7.1'], ops: [{ op: 'set_objective', text: 'x' }] }
+    expect(readRetroAnswer(WORKFLOW_3, { findings, proposals: [nothing] }).dropped).toEqual([{ change: 'nothing there', error: "It relies on step 7.1, which workflow 3.0.0 doesn't have and no earlier proposal adds." }])
   })
 })
 

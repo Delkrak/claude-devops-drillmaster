@@ -81,9 +81,11 @@ in is refused. Ask from the main conversation, because subagents can't use AskUs
    - `artifacts`: files in the work folder that show the result, such as screenshots. They must be
      images or text, at most 5 MB each, and not ignored by git.
 2. Then write your workflow post mortem on the work item as a whole with
-   `work_post_mortem({token, keep, change, experiment_reflections, free_text})`. It's about the
-   workflow, not the code: what to keep, what to change, how the running workflow experiments did,
-   and anything else.
+   `work_post_mortem({token, keep, change, experiment_reflections})`. It's about the workflow, not
+   the code: lists of what to keep, what to change, and how each running workflow experiment did.
+   Each keep and change entry names what it is about in `refs`: `step 1.2`, `stage 1`,
+   `rule pr 1.1`, `policy pr`, `metric size`, or `tool work_deliver` when it is about
+   Drillmaster itself. Leave `refs` empty for the workflow as a whole.
 3. If the result says a workflow retrospective is due, tell Owner and suggest
    `/devops-drillmaster:retrospective`. Owner decides when.
 

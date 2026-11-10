@@ -175,7 +175,7 @@ OK.
    - IDs in the workflow schema, and `core/refs.ts`;
    - tool arguments, events, metrics' `at_step`, operations and rendering all use references;
    - migration on read.
-2. **Owner decides approve or not:**
+2. **Owner decides approve or not:** (done: 4b98ef3)
    - one question per decision, and typed means reject;
    - remove the chat decision path;
    - the measure.
