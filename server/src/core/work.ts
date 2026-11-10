@@ -131,6 +131,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   if (args.stage !== item.stage || args.step !== item.step) {
     throw new Refused(`The work item is at ${describePosition(item)}, not ${args.stage}.${args.step}. Work steps are carried out in order.`)
   }
+  refuseOutsideSessionStages(workflow, item, args)
   const step = stepAt(workflow, args.stage, args.step)!
   const checkedRules = args.self_check.map((check) => check.rule)
   const missingRules = step.rules.filter((ruleRef) => !checkedRules.includes(ruleRef))
@@ -170,6 +171,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   const passed = failedCheck ? { next: { stage: args.stage, step: args.step }, done: false } : nextPosition(workflow, args.stage, args.step)
   const update = failedCheck ? undefined : updateOnReaching(state, item, workflow, passed.next, [step.guid])
   const position = update ? { next: update.next, done: update.done } : passed
+  const sessionDone = !failedCheck && outsideSessionStages(update?.to ?? workflow, item, position.next)
   const verdict: NewEvent = {
     type: 'gate_verdict',
     work_item_id: item.work_item_id,
@@ -189,6 +191,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
       why: verdict.why,
       next: position.next,
       done: position.done,
+      session_done: sessionDone,
       ...(update ? { update: describeUpdate(update) } : {}),
       note: failedCheck
         ? `Fix it and submit the gate of ${args.stage}.${args.step} again. A rejection is an impediment: report what got in the way.`
@@ -210,6 +213,7 @@ export function requestSkip(state: ProjectState, item: WorkItemState, args: Skip
     throw new Refused(`The work item is at ${describePosition(item)}. Only the step you are at can be skipped, not ${args.stage}.${args.step}.`)
   }
   const workflow = workflowOfWorkItem(state, item)
+  refuseOutsideSessionStages(workflow, item, args)
   const step = stepAt(workflow, args.stage, args.step)!
   if (!step.skippable) throw new Refused(`Step ${args.stage}.${args.step} "${step.name}" is not skippable in workflow ${workflow.version}. Do its work and hand in its gate.`)
   const requested: NewEvent = { type: 'step_skip_requested', work_item_id: item.work_item_id, ...atStep(workflow, args.stage, args.step), decided_by: step.skippable, why: args.why }
@@ -231,6 +235,7 @@ export function decideSkip(state: ProjectState, item: WorkItemState, verdict: { 
   const skipped = verdict.accepted ? nextPosition(workflow, stage, stepNumber) : { next: { stage, step: stepNumber }, done: false }
   const update = verdict.accepted ? updateOnReaching(state, item, workflow, skipped.next, [stepGuidAt(workflow, stage, stepNumber)!]) : undefined
   const position = update ? { next: update.next, done: update.done } : skipped
+  const sessionDone = verdict.accepted && outsideSessionStages(update?.to ?? workflow, item, position.next)
   return {
     events: [{ type: 'step_skip_decided', work_item_id: item.work_item_id, ...atStep(workflow, stage, stepNumber), ...verdict, ...skipped }, ...(update ? [update.event] : [])],
     answer: {
@@ -241,9 +246,28 @@ export function decideSkip(state: ProjectState, item: WorkItemState, verdict: { 
       step: stepNumber,
       next: position.next,
       done: position.done,
+      session_done: sessionDone,
       ...(update ? { update: describeUpdate(update) } : {}),
     },
   }
+}
+
+/** True when `position` lies in a stage this session doesn't work on, so the session stops before it. */
+export function outsideSessionStages(workflow: WorkflowDocument, item: WorkItemState, position: Position) {
+  if (item.stage_guids === null || position.stage === null) return false
+  const stage = workflow.stages.find((candidate) => candidate.n === position.stage)
+  return stage !== undefined && !item.stage_guids.includes(stage.guid)
+}
+
+/** The stages this session works on, as Agent and Owner name them. */
+export const sessionStagesOf = (workflow: WorkflowDocument, item: WorkItemState) =>
+  item.stage_guids === null ? 'every stage' : workflow.stages.filter((stage) => item.stage_guids!.includes(stage.guid)).map((stage) => `stage ${stage.n} "${stage.name}"`).join(', ') || 'no stage'
+
+function refuseOutsideSessionStages(workflow: WorkflowDocument, item: WorkItemState, position: Position) {
+  if (!outsideSessionStages(workflow, item, position)) return
+  throw new Refused(
+    `Step ${position.stage}.${position.step} is in a stage this session doesn't work on; it works on ${sessionStagesOf(workflow, item)}. Stop here and tell Owner where the work item is. A later session takes it up with work_resume.`,
+  )
 }
 
 export function refuseUndeliverable(item: WorkItemState) {

@@ -2,7 +2,7 @@ import type { NewEvent } from './events.js'
 import { resolveRef, stepGuidAt, stepPosition } from './refs.js'
 import { updateOnReaching } from './updates.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { atStep, decideSkip, describeUpdate, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
+import { atStep, decideSkip, describeUpdate, nextPosition, outsideSessionStages, stepAt, workflowOfWorkItem } from './work.js'
 import type { WorkflowMetric } from './workflow.js'
 
 /** AskUserQuestion takes at most this many questions per call. */
@@ -158,6 +158,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
       const update = accepted ? updateOnReaching(state, item, workflow, passed.next, [stepGuidAt(workflow, question.stage, question.step)!]) : undefined
       const position = update ? { next: update.next, done: update.done } : passed
+      const sessionDone = accepted && outsideSessionStages(update?.to ?? workflow, item, position.next)
       const rules = stepAt(workflow, question.stage, question.step)?.rules ?? []
       const stepLabel = `step ${question.stage}.${question.step}`
       return {
@@ -177,7 +178,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
         ],
         lines: [
           accepted
-            ? `Owner approved the Owner gate of ${stepLabel}. ${update ? `${updateLine(describeUpdate(update))} ` : ''}${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`}`
+            ? `Owner approved the Owner gate of ${stepLabel}. ${update ? `${updateLine(describeUpdate(update))} ` : ''}${nextLine(position, sessionDone)}`
             : `Owner rejected the Owner gate of ${stepLabel}${reason ? `: "${quote(reason)}"` : ''}. Do what Owner asks, report the impediment, and hand the gate in again.`,
         ],
       }
@@ -203,12 +204,12 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       const { approved: accepted, reason } = approvedOnly(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const decided = decideSkip(state, item, { accepted, by: 'owner', via: 'question', why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}` })
-      const { next, done, update } = decided.answer as { next: { stage: number | null; step: number | null }; done: boolean; update?: Parameters<typeof updateLine>[0] }
+      const { next, done, update, session_done: sessionDone } = decided.answer as { next: { stage: number | null; step: number | null }; done: boolean; session_done: boolean; update?: Parameters<typeof updateLine>[0] }
       return {
         events: decided.events,
         lines: [
           accepted
-            ? `Owner approved skipping step ${question.stage}.${question.step}. ${update ? `${updateLine(update)} ` : ''}${done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${next.stage}.${next.step} (work_status shows it).`}`
+            ? `Owner approved skipping step ${question.stage}.${question.step}. ${update ? `${updateLine(update)} ` : ''}${nextLine({ next, done }, sessionDone)}`
             : `Owner rejected skipping step ${question.stage}.${question.step}${reason ? `: "${quote(reason)}"` : ''}. Do the step.`,
         ],
       }
@@ -236,6 +237,13 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
     }
   }
 }
+
+const nextLine = (position: { next: { stage: number | null; step: number | null }; done: boolean }, sessionDone: boolean) =>
+  position.done
+    ? 'Every work gate has passed: deliver the work item.'
+    : sessionDone
+      ? `This session's stages are done: the work item waits at step ${position.next.stage}.${position.next.step}. Stop, and tell Owner; a later session takes it up with work_resume.`
+      : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`
 
 const updateLine = (update: { from_version: string; to_version: string; kept: string[] }) =>
   `The work item updated from workflow ${update.from_version} to ${update.to_version}, keeping ${update.kept.length ? `step ${update.kept.join(', ')}` : 'no step'} as done.`

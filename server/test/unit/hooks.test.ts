@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
-import { exitCodeOf, handleHook, outputTailForTrace, redactTokens, startedWorkItemId, truncateForTrace } from '../../src/core/hooks.js'
+import { exitCodeOf, handleHook, outputTailForTrace, redactTokens, takenUpWorkItemId, truncateForTrace } from '../../src/core/hooks.js'
 import { foldState } from '../../src/core/state.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE } from '../helpers.js'
@@ -93,7 +93,7 @@ describe('recorded payloads from a real Claude Code session', () => {
     const fixture = JSON.parse(
       await readFile(new URL('../hooks/fixtures/recorded-posttooluse-work_start.json', import.meta.url), 'utf8'),
     ) as { payload: Record<string, unknown> }
-    const id = startedWorkItemId({ ...fixture.payload, hook_event_name: 'PostToolUse' })
+    const id = takenUpWorkItemId({ ...fixture.payload, hook_event_name: 'PostToolUse' })
     expect(id).toMatch(/^wi_/)
     const state = foldState([INIT, { ...STARTED, work_item_id: id! }])
     const outcome = handleHook(state, 'PostToolUse', fixture.payload, false)
@@ -102,13 +102,14 @@ describe('recorded payloads from a real Claude Code session', () => {
 })
 
 describe('hook helpers', () => {
-  it('finds the work item only in a work_start response', () => {
+  it('finds the work item only in a work_start or work_resume response', () => {
     const base = { hook_event_name: 'PostToolUse', tool_name: 'work_start', tool_input: { issue: '#1' } }
-    expect(startedWorkItemId({ ...base, tool_response: startResponse })).toBe('wi_1')
-    expect(startedWorkItemId({ ...base, tool_response: markdownStartResponse })).toBe('wi_1')
-    expect(startedWorkItemId({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
-    expect(startedWorkItemId({ ...base, tool_name: 'work_report', tool_response: startResponse })).toBeUndefined()
-    expect(startedWorkItemId({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
+    expect(takenUpWorkItemId({ ...base, tool_response: startResponse })).toBe('wi_1')
+    expect(takenUpWorkItemId({ ...base, tool_response: markdownStartResponse })).toBe('wi_1')
+    expect(takenUpWorkItemId({ ...base, tool_response: { work_item_id: 'wi_7' } })).toBe('wi_7')
+    expect(takenUpWorkItemId({ ...base, tool_name: 'work_report', tool_response: startResponse })).toBeUndefined()
+    expect(takenUpWorkItemId({ ...base, tool_name: 'Bash', tool_response: startResponse })).toBeUndefined()
+    expect(takenUpWorkItemId({ ...base, tool_name: 'mcp__plugin_devops-drillmaster_drillmaster__work_resume', tool_response: { work_item_id: 'wi_3' } })).toBe('wi_3')
   })
 
   it('redacts tokens in objects and in JSON text', () => {

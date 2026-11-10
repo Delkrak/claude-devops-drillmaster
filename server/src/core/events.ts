@@ -93,6 +93,16 @@ export interface WorkItemStarted extends EventEnvelope {
   token_hash: string
   stage: number | null
   step: number | null
+  /** GUIDs of the stages this session works on; absent for every stage. */
+  stage_guids?: string[]
+}
+
+/** A later session takes the work item up, with a new token that voids the old one. */
+export interface WorkItemResumed extends EventEnvelope {
+  type: 'work_item_resumed'
+  work_item_id: string
+  token_hash: string
+  stage_guids?: string[]
 }
 
 /** A work item moved to a newer workflow version at an update step, keeping the steps it had done that are unchanged. */
@@ -274,6 +284,7 @@ export type DrillmasterEvent =
   | WorkflowChanged
   | SessionRegistered
   | WorkItemStarted
+  | WorkItemResumed
   | WorkItemUpdated
   | StepSkipRequested
   | StepSkipDecided

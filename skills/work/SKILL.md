@@ -17,10 +17,18 @@ the rules the gate checks and how each is verified, what to report, the metrics 
 
 ## 1. Start
 
-Call `work_start({issue, description})` before you touch anything.
+Call `work_start({issue, description, stages})` before you touch anything.
 
 - `description` says what the work item is about: the problem, and the result Owner expects.
-- Keep the `agent_token` it returns. Every later work tool needs it, for the whole work item.
+- `stages` are the work stages Owner asked this session to do, by number (`["1"]`). Owner names
+  them in their own words ("capture it", "build and test it"); `workflow_get` lists the stages by
+  name. Leave `stages` out only when Owner asks for the whole work item at once.
+- Keep the `agent_token` it returns. Every later work tool needs it, for this session.
+- **A later session** goes on with an open work item through
+  `work_resume({issue, stages})`. It gives a new token (the earlier one stops working) and the step
+  to do. If that step allows an update and the workflow changed, the work item updates first.
+- When the stages of this session are done, the result says so: stop, and tell Owner where the work
+  item is. Don't go on into the next stage.
 - If the workflow has no work stages yet, do your best, deliver, and expect Owner to correct you.
   That is how the workflow grows.
 - Every work item starts at the first work step. There is no starting later: the process is the

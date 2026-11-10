@@ -121,7 +121,8 @@ const tokenField = z.string().min(1)
 const textField = z.string().min(1)
 const MetricAnswerArgs = z.object({ name: textField, value: textField, explanation: z.string().optional() }).strict()
 
-const WorkStartArgs = z.object({ issue: textField, description: textField }).strict()
+const WorkStartArgs = z.object({ issue: textField, description: textField, stages: z.array(StageRefArg).optional() }).strict()
+const WorkResumeArgs = z.object({ issue: textField, stages: z.array(StageRefArg).optional() }).strict()
 const WorkSkipArgs = z.object({ token: tokenField, step: StepRefArg, why: textField }).strict()
 const WorkReportArgs = z
   .object({
@@ -171,6 +172,11 @@ const WorkStatusArgs = z
   .strict()
 
 const tokenProperty = { token: { type: 'string', description: 'Your agent_token from work_start.' } }
+const sessionStagesProperty = {
+  type: 'array',
+  items: { type: 'string' },
+  description: 'The work stages this session works on, by number (workflow_get lists them by name).',
+}
 const feedbackItemSchema = {
   type: 'object',
   properties: { refs: { type: 'array', items: { type: 'string' }, description: 'What it is about, e.g. "step 1.2", "rule pr 1.1", "tool work_deliver".' }, text: { type: 'string' } },
@@ -203,14 +209,28 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_start',
     description:
-      'Starts a work item. Returns its id, your agent_token for every later work tool, and the first work step in full: what to do, the gate, its rules, and what to report.',
+      'Starts a work item at the first work step. Returns its id, your agent_token for every later work tool, and the first work step in full: what to do, the gate, its rules, and what to report. stages: the work stages this session works on, as Owner asked (e.g. ["1"]); the session stops when the last of them is done. Leave it out to work every stage.',
     inputSchema: {
       type: 'object',
       properties: {
         issue: { type: 'string', description: 'The issue the work item delivers, e.g. "#12".' },
         description: { type: 'string', description: 'What the work item is about, in a few sentences: the problem and the expected result.' },
+        stages: sessionStagesProperty,
       },
       required: ['issue', 'description'],
+    },
+  },
+  {
+    name: 'work_resume',
+    description:
+      "Takes up an open work item in a later session, where it was left: the work stages Owner asked this session to do (e.g. [\"2\", \"3\"]). Returns a new agent_token, which voids the earlier one, and the step to do in full. If the step allows an update and the workflow changed since, the work item moves to the latest version first.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        issue: { type: 'string', description: 'The issue of the work item, as it was started, e.g. "#12".' },
+        stages: sessionStagesProperty,
+      },
+      required: ['issue'],
     },
   },
   {
@@ -613,6 +633,8 @@ export class Drillmaster {
           return jsonResult(await this.describeWorkflow(projectDir, parseToolArgs(WorkflowGetArgs, toolArgs)))
         case 'work_start':
           return await this.startWorkItem(projectDir, parseToolArgs(WorkStartArgs, toolArgs))
+        case 'work_resume':
+          return await this.resumeWorkItem(projectDir, parseToolArgs(WorkResumeArgs, toolArgs))
         case 'work_skip':
           return await this.skipStep(projectDir, parseToolArgs(WorkSkipArgs, toolArgs))
         case 'work_report':
@@ -670,6 +692,10 @@ export class Drillmaster {
       const agentToken = this.ports.ids.secret()
       const firstStage = workflow.stages[0]
       const position = firstStage && firstStage.steps.length > 0 ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
+      const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
+      if (stageGuids && firstStage && !stageGuids.includes(firstStage.guid)) {
+        throw new UserError(`A work item starts at step 1.1, in stage 1 "${firstStage.name}", which isn't among the stages you named. To go on with an open work item, use work_resume.`)
+      }
       const workItemId = this.ports.ids.next('wi')
       await this.appendEvent(projectId, {
         type: 'work_item_started',
@@ -679,11 +705,48 @@ export class Drillmaster {
         workflow_version: workflow.version,
         token_hash: hashToken(agentToken),
         ...position,
+        ...(stageGuids ? { stage_guids: stageGuids } : {}),
       })
       const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...position }
-      return workResult(render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, position }), answer)
+      const sessionStages = stageGuids ? namesOfStages(workflow, stageGuids) : undefined
+      return workResult(render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, position, sessionStages }), answer)
     })
     return started
+  }
+
+  private async resumeWorkItem(projectDir: string, args: z.infer<typeof WorkResumeArgs>): Promise<ToolResult> {
+    const resumed = await this.withProjectLock(projectDir, async (projectId) => {
+      const state = foldState(await this.ports.store.read(projectId))
+      const item = Object.values(state.workItems)
+        .filter((candidate) => candidate.issue === args.issue && (candidate.status === 'active' || !candidate.post_mortems.includes('agent')))
+        .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+      if (!item) throw new UserError(`No open work item has issue "${args.issue}". Start one with work_start.`)
+      const workflow = work.workflowOfWorkItem(state, item)
+      const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
+      const agentToken = this.ports.ids.secret()
+      await this.appendEvent(projectId, { type: 'work_item_resumed', work_item_id: item.work_item_id, token_hash: hashToken(agentToken), ...(stageGuids ? { stage_guids: stageGuids } : {}) })
+      const resumedItem = foldState(await this.ports.store.read(projectId)).workItems[item.work_item_id]!
+      const canUpdate = resumedItem.status === 'active' && !resumedItem.pending_gate && !resumedItem.pending_skip
+      const update = canUpdate ? updateOnReaching(state, resumedItem, workflow, { stage: item.stage, step: item.step }) : undefined
+      if (update) await this.appendEvent(projectId, update.event)
+      const after = foldState(await this.ports.store.read(projectId))
+      const current = after.workItems[item.work_item_id]!
+      const currentWorkflow = work.workflowOfWorkItem(after, current)
+      const answer = { work_item_id: current.work_item_id, agent_token: agentToken, workflow_version: current.workflow_version, stage: current.stage, step: current.step, ...(update ? { update: work.describeUpdate(update) } : {}) }
+      const markdown = render.renderResumed({
+        workItemId: current.work_item_id,
+        agentToken,
+        issue: current.issue,
+        workflow: currentWorkflow,
+        item: current,
+        sessionStages: work.sessionStagesOf(currentWorkflow, current),
+        outsideSession: work.outsideSessionStages(currentWorkflow, current, current),
+        update: update && work.describeUpdate(update),
+      })
+      return { markdown, answer, workItemId: current.work_item_id }
+    })
+    const askOwner = await this.ownerQuestionsFor(projectDir, resumed.workItemId)
+    return askOwner ? workResult(`${resumed.markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...resumed.answer, ask_owner: askOwner }) : workResult(resumed.markdown, resumed.answer)
   }
 
   private async skipStep(projectDir: string, args: z.infer<typeof WorkSkipArgs>): Promise<ToolResult> {
@@ -973,6 +1036,7 @@ export class Drillmaster {
         step: submission.step,
         next: update?.next ?? verdict.next,
         done: update?.done ?? verdict.done,
+        session_done: verdict.accepted && work.outsideSessionStages(update?.to ?? workflow, currentItem, update?.next ?? verdict.next),
         ...(update ? { update: work.describeUpdate(update) } : {}),
       }
     })
@@ -1004,6 +1068,7 @@ export class Drillmaster {
       skipped_steps: stepNamesOf(work.workflowOfWorkItem(state, item), item.skipped_step_guids),
       pending_skip: item.pending_skip,
       last_update: item.last_update,
+      session_stages: work.sessionStagesOf(work.workflowOfWorkItem(state, item), item),
     }
     const verdicts = events.filter((event) => event.type === 'gate_verdict' && event.work_item_id === item.work_item_id)
     status.last_verdict = verdicts.at(-1) ?? null
@@ -1020,6 +1085,10 @@ export class Drillmaster {
     return status
   }
 }
+
+const stageGuidsOf = (workflow: WorkflowDocument, stageRefs: readonly string[]) => stageRefs.map((stageRef) => resolveRef(workflow, stageRef, { impliedKind: 'stage' }).guid!)
+const namesOfStages = (workflow: WorkflowDocument, guids: readonly string[]) =>
+  workflow.stages.filter((stage) => guids.includes(stage.guid)).map((stage) => `stage ${stage.n} "${stage.name}"`).join(', ')
 
 const stepNamesOf = (workflow: WorkflowDocument, guids: readonly string[]) => guids.map((guid) => refOfGuid(workflow, guid)?.name ?? guid)
 

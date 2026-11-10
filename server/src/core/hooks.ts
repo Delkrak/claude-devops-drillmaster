@@ -94,8 +94,10 @@ export function exitCodeOf(toolResponse: unknown): number | undefined {
 
 export const isDrillmasterTool = (toolName: string | undefined, name: string) => toolName === name || (toolName?.endsWith(`__${name}`) ?? false)
 
-export function startedWorkItemId(payload: HookPayload): string | undefined {
-  if (payload.hook_event_name !== 'PostToolUse' || !isDrillmasterTool(payload.tool_name, 'work_start')) return undefined
+/** The work item a work_start or work_resume call took up, which binds the session to it. */
+export function takenUpWorkItemId(payload: HookPayload): string | undefined {
+  const takesUp = isDrillmasterTool(payload.tool_name, 'work_start') || isDrillmasterTool(payload.tool_name, 'work_resume')
+  if (payload.hook_event_name !== 'PostToolUse' || !takesUp) return undefined
   const match = /work_item_id\\?"?\s*:\s*\\?"?([A-Za-z0-9_-]+)/.exec(JSON.stringify(payload.tool_response ?? ''))
   return match?.[1]
 }
@@ -128,10 +130,10 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
 
   // Binding comes first, so this PostToolUse trace already belongs to the new work item.
   let workItemId = knownSession?.work_item_id ?? null
-  const startedId = startedWorkItemId({ ...payload, hook_event_name: hookEvent })
-  if (startedId && state.workItems[startedId]) {
-    events.push({ type: 'session_bound', session_id: sessionId, work_item_id: startedId })
-    workItemId = startedId
+  const takenUpId = takenUpWorkItemId({ ...payload, hook_event_name: hookEvent })
+  if (takenUpId && state.workItems[takenUpId]) {
+    events.push({ type: 'session_bound', session_id: sessionId, work_item_id: takenUpId })
+    workItemId = takenUpId
   }
   const item = workItemId ? state.workItems[workItemId] : undefined
 
@@ -215,7 +217,7 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
     'Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.',
     item
       ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
-      : 'Start every work item with the work_start tool, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
+      : 'Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
   ]
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)

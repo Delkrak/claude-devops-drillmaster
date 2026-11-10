@@ -26,6 +26,9 @@ export interface WorkItemState {
   passed_step_guids: string[]
   skipped_step_guids: string[]
   pending_skip: { stage: number; step: number; decided_by: 'drillmaster' | 'owner'; why: string } | null
+  /** The stages the current session works on, by GUID; null for every stage. */
+  stage_guids: string[] | null
+  resumed: number
   last_update: { from_version: string; to_version: string } | null
   post_mortems: ('agent' | 'drillmaster')[]
 }
@@ -128,6 +131,8 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           passed_step_guids: [],
           skipped_step_guids: [],
           pending_skip: null,
+          stage_guids: event.stage_guids ?? null,
+          resumed: 0,
           last_update: null,
           post_mortems: [],
         }
@@ -171,6 +176,11 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           item.summary = event.summary ?? null
           item.artifacts = event.artifacts ?? []
         }
+        break
+      }
+      case 'work_item_resumed': {
+        const item = state.workItems[event.work_item_id]
+        if (item) Object.assign(item, { token_hash: event.token_hash, stage_guids: event.stage_guids ?? null, resumed: item.resumed + 1 })
         break
       }
       case 'work_item_updated': {

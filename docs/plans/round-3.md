@@ -181,7 +181,7 @@ OK.
    - the measure.
 3. **Feedback with references:** (done: 3a7d31a) post mortems and findings as lists, `relies_on` and `depends_on`,
    tool contracts in the prompt, `tool` feedback.
-4. **Update steps and skippable steps:**
+4. **Update steps and skippable steps:** (done: 01ca49e)
    - fast-forward, and `work_item_updated`;
    - the new `work_skip`;
    - remove the late start and the restart.
