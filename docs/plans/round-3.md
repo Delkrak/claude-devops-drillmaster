@@ -171,7 +171,7 @@ OK.
      phase is done, and the README's status follows.
    - Only plans are stored. Discussion notes and corrections are not.
 
-1. **References and GUIDs:**
+1. **References and GUIDs:** (done: 9d1b224)
    - IDs in the workflow schema, and `core/refs.ts`;
    - tool arguments, events, metrics' `at_step`, operations and rendering all use references;
    - migration on read.

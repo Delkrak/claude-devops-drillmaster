@@ -65,10 +65,12 @@ in is refused. Ask from the main conversation, because subagents can't use AskUs
 
 - Before asking at an Owner gate, show Owner what they need to judge: the PR, what changed, and how
   it was verified.
-- Drillmaster records Owner's choice, and any note or typed answer, and tells you the outcome and
-  what comes next.
-- If Owner's answer doesn't decide the question, Drillmaster says so: answer Owner, then ask the
-  same question again.
+- Owner either approves or not. Approve with nothing added approves; a note, or an answer Owner
+  typed, rejects, with Owner's words as the reason. Drillmaster records it and tells you the outcome
+  and what comes next.
+- A metric needs one of its categories. If Owner types something else, it stays open: ask again.
+- Owner's chat messages are instructions, never decisions. If one sounds like a decision ("looks
+  good", "approve 1"), ask Owner the pending question in AskUserQuestion. When in doubt, ask.
 - `work_status` shows any question still waiting for Owner (`ask_owner`).
 
 ## 4. Deliver and look back

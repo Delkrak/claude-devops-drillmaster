@@ -5,6 +5,8 @@ import { steppingClock, sequentialIds } from '../src/adapters/clocks.js'
 import { ScriptedReviewer } from '../src/adapters/reviewers.js'
 import { MemoryArtifactStore } from '../src/adapters/artifacts.js'
 import { MemoryStore } from '../src/adapters/stores.js'
+import { askUserQuestionInput, pendingOwnerQuestions } from '../src/core/questions.js'
+import type { ProjectState } from '../src/core/state.js'
 import { migrateWorkflow, type WorkflowDocument } from '../src/core/workflow.js'
 import type { Ports } from '../src/ports.js'
 
@@ -122,3 +124,30 @@ export const WORKFLOW_2: WorkflowDocument = migrateWorkflow({
   metrics: [],
   experiments: [EXPERIMENT_1],
 })
+
+let askedOwnerCalls = 0
+
+/**
+ * Owner answers in AskUserQuestion, as Claude Code reports it to the hooks. `answerFor` gives the
+ * answer to each pending question it wants to answer: an option's label, or text Owner typed.
+ */
+export async function ownerAnswers(
+  app: { state(dir: string): Promise<ProjectState>; hook(dir: string, hookEvent: string, payload: unknown): Promise<{ output?: unknown }> },
+  dir: string,
+  answerFor: (question: string) => string | { answer: string; notes: string } | undefined,
+  sessionId = 's1',
+) {
+  const asked = pendingOwnerQuestions(await app.state(dir)).filter((question) => answerFor(question.question) !== undefined)
+  const toolUseId = `ask_${++askedOwnerCalls}`
+  const input = askUserQuestionInput(asked)
+  await app.hook(dir, 'PreToolUse', { session_id: sessionId, tool_name: 'AskUserQuestion', tool_use_id: toolUseId, tool_input: input })
+  const answers: Record<string, string> = {}
+  const annotations: Record<string, { notes: string }> = {}
+  for (const question of asked) {
+    const answer = answerFor(question.question)!
+    answers[question.question] = typeof answer === 'string' ? answer : answer.answer
+    if (typeof answer !== 'string') annotations[question.question] = { notes: answer.notes }
+  }
+  const outcome = await app.hook(dir, 'PostToolUse', { session_id: sessionId, tool_name: 'AskUserQuestion', tool_use_id: toolUseId, tool_input: input, tool_response: { answers, annotations } })
+  return (outcome.output as { hookSpecificOutput?: { additionalContext?: string } } | undefined)?.hookSpecificOutput?.additionalContext ?? ''
+}

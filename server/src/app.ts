@@ -1040,7 +1040,7 @@ function refuseUnapprovedProposal(retro: RetroState, proposalId: number) {
   if (retro.applied.includes(proposalId)) throw new UserError(`Proposal ${proposalId} is already applied.`)
   if (!retro.approved.includes(proposalId)) {
     throw new UserError(
-      retro.declined.includes(proposalId) ? `Owner declined proposal ${proposalId}.` : `Owner has not approved proposal ${proposalId}. Only Owner's own words approve it: ask Owner.`,
+      retro.declined.includes(proposalId) ? `Owner declined proposal ${proposalId}.` : `Owner has not approved proposal ${proposalId}. Owner approves it in AskUserQuestion: ask Owner.`,
       403,
     )
   }

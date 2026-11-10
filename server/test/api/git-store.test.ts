@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { projectId } from '../../src/env.js'
-import { OBJECTIVE, tempDir, testPorts } from '../helpers.js'
+import { OBJECTIVE, ownerAnswers, tempDir, testPorts } from '../helpers.js'
 
 let root: Awaited<ReturnType<typeof tempDir>>
 let storeRepo: string
@@ -74,7 +74,7 @@ describe('a project kept in a git store', () => {
 
   it('updates the workflow copy after a retrospective', async () => {
     await app.callTool(work, 'workflow_retrospective', { action: 'run' })
-    await app.hook(work, 'UserPromptSubmit', { session_id: 's1', prompt: 'approve 1' })
+    await ownerAnswers(app, work, () => 'Approve')
     await app.callTool(work, 'workflow_retrospective', { action: 'apply' })
     expect(JSON.parse(await readFile(path.join(work, '.drillmaster', 'workflow.json'), 'utf8'))).toMatchObject({ version: '1.0.0', stages: [{ name: 'build' }, { name: 'ship' }] })
   })

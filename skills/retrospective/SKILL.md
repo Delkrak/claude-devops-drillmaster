@@ -22,10 +22,10 @@ Drillmaster's findings, and you don't decide for Owner.
    - the experiments the server judged, and its verdict on each;
    - any dropped proposals, and why they were dropped.
 3. **Ask Owner to decide** with AskUserQuestion, passing the result's `ask_owner` exactly as it is:
-   one question per proposal, Approve or Decline, and no `answers` (Owner gives them). Owner can
-   add a note to any choice, or type an answer instead. Owner's own answer is what approves a
-   proposal. Yours can't. Without AskUserQuestion, Owner can also decide in plain words, such as
-   "approve 1, decline 2".
+   one question per proposal, Approve or Decline, and no `answers` (Owner gives them). Only
+   Approve with nothing added approves a proposal; a note or a typed answer declines it, with
+   Owner's words as the reason. Owner's own answer decides. Yours can't, and neither can Owner's
+   chat words: if Owner writes "approve 1", ask the question in AskUserQuestion.
 4. **Apply the approved proposals:** `workflow_retrospective({action: "apply"})` applies every
    one Owner approved, in order.
    - The server refuses anything Owner hasn't approved. When it refuses, tell Owner. Don't try to

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { testPorts, workToolCall } from '../helpers.js'
+import { ownerAnswers, testPorts, workToolCall } from '../helpers.js'
 
 let app: Drillmaster
 let server: RunningServer
@@ -95,10 +95,11 @@ describe('the improvement loop', () => {
     expect(prompt).toContain('Owner had to ask for the tests')
   })
 
-  it("refuses to apply until Owner's own words approve", async () => {
+  it('refuses to apply until Owner approves in AskUserQuestion, and takes a note as a decline', async () => {
     expect((await tool('workflow_retrospective', { action: 'apply', proposal: 1 })).value).toMatch(/has not approved/)
-    const decided = await hook('UserPromptSubmit', { prompt: 'approve 1, not 2' })
-    expect(decided.output.hookSpecificOutput.additionalContext).toMatch(/approved proposal 1.*declined proposal 2/)
+    expect((await hook('UserPromptSubmit', { prompt: 'approve 1' })).output).toBeUndefined()
+    const decided = await ownerAnswers(app, PROJECT, (question) => (question.startsWith('Proposal 1') ? 'Approve' : { answer: 'Approve', notes: 'only if it is cheap' }), SESSION)
+    expect(decided).toMatch(/approved proposal 1.*declined proposal 2 \("only if it is cheap"\)/)
     expect((await tool('workflow_retrospective', { action: 'apply', proposal: 2 })).value).toMatch(/declined/)
   })
 

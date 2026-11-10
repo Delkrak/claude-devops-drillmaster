@@ -2,7 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
-import { seedWorkflow, testPorts, WORKFLOW_DM, workToolCall } from '../helpers.js'
+import { ownerAnswers, seedWorkflow, testPorts, WORKFLOW_DM, workToolCall } from '../helpers.js'
+
+let app: Drillmaster
 
 let server: RunningServer
 let reviewer: ScriptedReviewer
@@ -31,7 +33,8 @@ beforeAll(async () => {
   })
   reviewer = ports.reviewer
   await seedWorkflow(ports, PROJECT, WORKFLOW_DM)
-  server = await listen(new Drillmaster(ports))
+  app = new Drillmaster(ports)
+  server = await listen(app)
 })
 afterAll(() => server.close())
 
@@ -63,18 +66,17 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
     expect(await gate12()).toMatchObject({ verdict: 'accepted', by: 'drillmaster', next: { stage: 2, step: 1 } })
   })
 
-  it("waits at the Owner gate until Owner's own words decide it", async () => {
+  it('waits at the Owner gate until Owner decides it in AskUserQuestion', async () => {
     const owner = await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
     expect(owner).toMatchObject({ verdict: 'pending', gate: 'owner' })
 
-    const unclear = await hook('UserPromptSubmit', { prompt: 'what does it export?' })
-    expect(unclear.output).toBeUndefined()
-    const rejected = await hook('UserPromptSubmit', { prompt: 'no, the header row is missing' })
-    expect(rejected.output.hookSpecificOutput.additionalContext).toMatch(/rejected/)
+    const chat = await hook('UserPromptSubmit', { prompt: 'looks good, ship it' })
+    expect(chat.output).toBeUndefined()
+    expect(await tool('work_status', { token })).toMatchObject({ pending_gate: { gate: 'owner' } })
+    expect(await ownerAnswers(app, PROJECT, () => 'the header row is missing', SESSION)).toMatch(/rejected.*"the header row is missing"/)
 
     expect(await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'header added' }], text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
-    const approved = await hook('UserPromptSubmit', { prompt: 'looks good, ship it' })
-    expect(approved.output.hookSpecificOutput.additionalContext).toMatch(/approved.*deliver/)
+    expect(await ownerAnswers(app, PROJECT, () => 'Approve', SESSION)).toMatch(/approved.*deliver/)
 
     const status = await tool('work_status', { token })
     expect(status).toMatchObject({ pending_gate: null, gates_done: true, rejections: 2, last_verdict: { by: 'owner', accepted: true } })

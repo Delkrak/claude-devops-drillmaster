@@ -46,6 +46,7 @@ export interface RetrospectiveRan extends EventEnvelope {
   proposals: Proposal[]
 }
 
+/** 'prompt' is from Drillmaster before 0.3, when Owner's chat words could decide. */
 export type DecidedVia = 'prompt' | 'question'
 
 export interface OwnerDecided extends EventEnvelope {

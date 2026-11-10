@@ -3,7 +3,7 @@ import { toSemver } from './versions.js'
 
 export const MEASURES = {
   owner_corrections_per_item:
-    "Owner's prompts during a work item that were not Owner-gate approvals, plus prompts after delivery that made Agent change the work",
+    "Owner's chat prompts during a work item, plus Owner gates Owner rejected, plus prompts after delivery that made Agent change the work",
   gate_rejections_per_item: 'Work gate rejections per work item',
   review_rounds_per_item: 'Drillmaster and Owner gate hand-ins per work item',
   minutes_per_item: 'Minutes from start to delivery',
@@ -77,9 +77,7 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
         break
       case 'gate_verdict':
         if (!event.accepted) item.values.gate_rejections_per_item++
-        // A prompt that decided the gate was not a correction; a rejection asked through AskUserQuestion is one.
-        if (event.by === 'owner' && event.via !== 'question' && event.accepted) item.values.owner_corrections_per_item--
-        if (event.by === 'owner' && event.via === 'question' && !event.accepted) item.values.owner_corrections_per_item++
+        if (event.by === 'owner' && !event.accepted) item.values.owner_corrections_per_item++
         break
       case 'work_item_delivered':
         item.deliveredAt = event.at

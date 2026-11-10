@@ -1,5 +1,4 @@
 import type { NewEvent } from './events.js'
-import { classifyOwnerWords, decideProposals } from './owner.js'
 import { stepPosition } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { atStep, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
@@ -46,8 +45,8 @@ function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuest
     question: `Owner gate of ${item.work_item_id} (${item.issue}), work step ${gate.stage}.${gate.step} "${step?.name ?? ''}": does the work meet ${step?.rules.length ? step.rules.join(', ') : 'what you expect'}?`,
     header: 'Owner gate',
     options: [
-      { label: APPROVE, description: 'The work meets the rules: it moves on.' },
-      { label: REJECT, description: 'It goes back. Say what to fix in a note.' },
+      { label: APPROVE, description: 'The work meets the rules: it moves on. A note makes it a rejection.' },
+      { label: REJECT, description: 'It goes back. Say what to fix in a note, or type it.' },
     ],
     multiSelect: false,
   }
@@ -86,7 +85,7 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
       header: header(`Proposal ${proposal.id}`),
       options: [
         { label: APPROVE, description: `${proposal.purpose}${proposal.hypothesis ? ` Hypothesis: ${proposal.hypothesis}` : ''}`.trim() || 'Apply it as a workflow experiment.' },
-        { label: DECLINE, description: 'Leave the workflow as it is.' },
+        { label: DECLINE, description: 'Leave the workflow as it is. A note on Approve declines it too.' },
       ],
       multiSelect: false as const,
     }))
@@ -134,19 +133,27 @@ export interface AnswerOutcome {
   lines: string[]
 }
 
-export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion, ownerAnswer: OwnerAnswer, via: 'question' | 'prompt'): AnswerOutcome {
-  const words = [ownerAnswer.answer, ownerAnswer.notes].filter(Boolean).join(' - ')
-  const unclear = { events: [], lines: [`Owner answered "${quote(words)}" to "${question.question}", which does not decide it. Answer Owner, then ask again with the same question.`] }
+/**
+ * Owner approves only by picking Approve and nothing more. A note, or an answer Owner typed, is a
+ * rejection (a decline for a proposal), with Owner's words as the reason.
+ */
+function approvedOnly(ownerAnswer: OwnerAnswer) {
+  const approved = ownerAnswer.answer === APPROVE && !ownerAnswer.notes
+  const reason = [ownerAnswer.answer === APPROVE || ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE ? '' : ownerAnswer.answer, ownerAnswer.notes]
+    .filter(Boolean)
+    .join(' - ')
+  return { approved, reason }
+}
+
+export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion, ownerAnswer: OwnerAnswer): AnswerOutcome {
   switch (question.kind) {
     case 'owner_gate': {
-      const verdict = ownerAnswer.answer === APPROVE ? 'approve' : ownerAnswer.answer === REJECT ? 'reject' : classifyOwnerWords(ownerAnswer.answer)
-      if (verdict === 'unclear') return unclear
+      const { approved: accepted, reason } = approvedOnly(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const workflow = workflowOfWorkItem(state, item)
-      const accepted = verdict === 'approve'
       const position = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
       const rules = stepAt(workflow, question.stage, question.step)?.rules ?? []
-      const stepLabel = `work step ${question.stage}.${question.step}`
+      const stepLabel = `step ${question.stage}.${question.step}`
       return {
         events: [
           {
@@ -155,43 +162,51 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
             ...atStep(workflow, question.stage, question.step),
             accepted,
             by: 'owner',
-            via,
-            why: `Owner: "${quote(words)}"`,
+            via: 'question',
+            why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}`,
             rule: rules.length ? rules.join(', ') : null,
             ...position,
           },
         ],
         lines: [
           accepted
-            ? `Owner approved the Owner gate of ${stepLabel}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: work step ${position.next.stage}.${position.next.step} (work_status shows it).`}`
-            : `Owner rejected the Owner gate of ${stepLabel}: "${quote(words)}". Do what Owner asks, report the impediment, and hand the gate in again.`,
+            ? `Owner approved the Owner gate of ${stepLabel}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`}`
+            : `Owner rejected the Owner gate of ${stepLabel}${reason ? `: "${quote(reason)}"` : ''}. Do what Owner asks, report the impediment, and hand the gate in again.`,
         ],
       }
     }
     case 'proposal': {
-      const typed = ownerAnswer.answer === APPROVE ? { approved: [question.proposal], declined: [] } : ownerAnswer.answer === DECLINE ? { approved: [], declined: [question.proposal] } : decideProposals(ownerAnswer.answer, [question.proposal])
-      if (!typed || typed.approved.length + typed.declined.length === 0) return unclear
-      const approved = typed.approved.includes(question.proposal)
+      const { approved, reason } = approvedOnly(ownerAnswer)
       return {
-        events: [{ type: 'owner_decided', retro_id: question.retro_id, approved: typed.approved, declined: typed.declined, prompt: words, via, ...(ownerAnswer.notes ? { comment: ownerAnswer.notes } : {}) }],
-        lines: [`Owner ${approved ? 'approved' : 'declined'} proposal ${question.proposal}${ownerAnswer.notes ? ` (note: "${quote(ownerAnswer.notes)}")` : ''}.`],
+        events: [
+          {
+            type: 'owner_decided',
+            retro_id: question.retro_id,
+            approved: approved ? [question.proposal] : [],
+            declined: approved ? [] : [question.proposal],
+            prompt: ownerAnswer.answer,
+            via: 'question',
+            ...(reason ? { comment: reason } : {}),
+          },
+        ],
+        lines: [`Owner ${approved ? 'approved' : 'declined'} proposal ${question.proposal}${reason ? ` ("${quote(reason)}")` : ''}.`],
       }
     }
     case 'gate_skip': {
-      const verdict = ownerAnswer.answer === APPROVE ? 'approve' : ownerAnswer.answer === REJECT ? 'reject' : classifyOwnerWords(ownerAnswer.answer)
-      if (verdict === 'unclear') return unclear
-      const accepted = verdict === 'approve'
+      const { approved: accepted, reason } = approvedOnly(ownerAnswer)
       const lateStart = state.workItems[question.work_item_id]!.late_start!
       const startAt = `${lateStart.start_at.stage}.${lateStart.start_at.step}`
       return {
-        events: [{ type: 'late_start_judged', work_item_id: question.work_item_id, by: 'owner', via, accepted, why: `Owner: "${quote(words)}"`, rule: null }],
-        lines: [accepted ? `Owner approved the late start: the work starts at work step ${startAt} (work_status shows it).` : 'Owner rejected the late start: start at the first work step.'],
+        events: [{ type: 'late_start_judged', work_item_id: question.work_item_id, by: 'owner', via: 'question', accepted, why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}`, rule: null }],
+        lines: [accepted ? `Owner approved the late start: the work starts at step ${startAt} (work_status shows it).` : 'Owner rejected the late start: start at the first work step.'],
       }
     }
     case 'owner_metric': {
+      const category = question.options.find((option) => option.label === ownerAnswer.answer)
+      if (!category) {
+        return { events: [], lines: [`Owner typed "${quote(ownerAnswer.answer)}" for metric "${question.metric}", which is none of its categories, so it stays open. Ask again with the same question.`] }
+      }
       const workflow = workflowOfWorkItem(state, state.workItems[question.work_item_id]!)
-      const category = question.options.find((option) => option.label === ownerAnswer.answer) ?? question.options.find((option) => new RegExp(`\\b${escapeRegExp(option.label)}\\b`, 'i').test(ownerAnswer.answer))
-      if (!category) return unclear
       return {
         events: [
           {
@@ -210,16 +225,14 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
   }
 }
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-export function decideOwnerAnswers(state: ProjectState, answers: Record<string, unknown>, annotations: Record<string, unknown>, via: 'question' | 'prompt'): AnswerOutcome {
+export function decideOwnerAnswers(state: ProjectState, answers: Record<string, unknown>, annotations: Record<string, unknown>): AnswerOutcome {
   const pending = pendingOwnerQuestions(state)
   const outcome: AnswerOutcome = { events: [], lines: [] }
   for (const [questionText, answer] of Object.entries(answers)) {
     const question = pending.find((candidate) => candidate.question === questionText)
     if (!question || typeof answer !== 'string') continue
     const notes = (annotations[questionText] as { notes?: unknown } | undefined)?.notes
-    const decided = decideOwnerQuestion(state, question, { answer, ...(typeof notes === 'string' && notes.trim() ? { notes } : {}) }, via)
+    const decided = decideOwnerQuestion(state, question, { answer, ...(typeof notes === 'string' && notes.trim() ? { notes: notes.trim() } : {}) })
     outcome.events.push(...decided.events)
     outcome.lines.push(...decided.lines)
   }

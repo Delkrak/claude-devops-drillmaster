@@ -1,6 +1,5 @@
 import type { NewEvent } from './events.js'
-import { decideProposals } from './owner.js'
-import { decideOwnerAnswers, decideOwnerQuestion, pendingOwnerQuestions, type AnswerOutcome } from './questions.js'
+import { decideOwnerAnswers, pendingOwnerQuestions } from './questions.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { atStep, workflowOfWorkItem } from './work.js'
 
@@ -164,13 +163,6 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     events.push(...asked.events)
     if (asked.output) return { events, output: asked.output }
   }
-  if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') {
-    const typed = decideTypedPrompt(state, item, payload.prompt)
-    if (typed.events.length) {
-      events.push(...typed.events)
-      return { events, output: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `Drillmaster: ${typed.lines.join(' ')}` } } }
-    }
-  }
   return { events, output: hookEvent === 'SessionStart' ? briefSession(state, item, context) : undefined }
 }
 
@@ -211,35 +203,9 @@ function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId
   if (!askedTexts) return { events: [] }
   const response = (payload.tool_response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, unknown> }
   const answersToAsked = Object.fromEntries(Object.entries(response.answers ?? {}).filter(([text]) => askedTexts.includes(text)))
-  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {}, 'question')
+  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {})
   if (decided.lines.length === 0) return { events: [] }
   return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}` } } }
-}
-
-function decideTypedPrompt(state: ProjectState, item: WorkItemState | undefined, prompt: string): AnswerOutcome {
-  const gateQuestion = pendingOwnerQuestions(state).find((question) => question.kind === 'owner_gate' && question.work_item_id === item?.work_item_id)
-  if (gateQuestion) {
-    const decided = decideOwnerQuestion(state, gateQuestion, { answer: prompt }, 'prompt')
-    return decided.events.length ? decided : { events: [], lines: [] }
-  }
-  return decideRetroProposals(state, prompt)
-}
-
-function decideRetroProposals(state: ProjectState, prompt: string): AnswerOutcome {
-  const none = { events: [], lines: [] }
-  if (!state.latestRetroId) return none
-  const retro = state.retros[state.latestRetroId]!
-  const decidedIds = [...retro.approved, ...retro.declined, ...retro.applied]
-  const openProposalIds = retro.proposals.map((proposal) => proposal.id).filter((id) => !decidedIds.includes(id))
-  const decision = decideProposals(prompt, openProposalIds)
-  if (!decision || (decision.approved.length === 0 && decision.declined.length === 0)) return none
-  return {
-    events: [{ type: 'owner_decided', retro_id: retro.retro_id, ...decision, prompt, via: 'prompt' }],
-    lines: [
-      decision.approved.length ? `Owner approved proposal ${decision.approved.join(', ')}: apply them with workflow_retrospective (action "apply").` : '',
-      decision.declined.length ? `Owner declined proposal ${decision.declined.join(', ')}.` : '',
-    ].filter(Boolean),
-  }
 }
 
 function briefSession(state: ProjectState, item: WorkItemState | undefined, context: HookContext) {
@@ -258,6 +224,7 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
   if (ownerQuestions.length) {
     lines.push(`Owner has ${ownerQuestions.length} question${ownerQuestions.length > 1 ? 's' : ''} to answer. work_status shows the AskUserQuestion input to ask with.`)
   }
+  lines.push("Owner decides gates and proposals only in AskUserQuestion. Owner's chat messages are instructions, never decisions; if one sounds like a decision, ask Owner the question.")
   if (context.storeProblem) {
     lines.push(`The git store could not be updated (${context.storeProblem}). Drillmaster keeps every event and tries again at the next stage end; tell Owner.`)
   }

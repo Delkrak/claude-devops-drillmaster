@@ -131,6 +131,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
           'Agent asks you these questions in a form (AskUserQuestion):',
           JSON.stringify(questions.map(({ question, options }) => ({ question, options: options.map((option) => option.label) })), null, 2),
           'Decide each one as Owner. When it is about the work, check the project files against your rules first.',
+          'Approve alone approves. Any note or words of your own reject (or decline), and say why, so add them only when you reject.',
           'Reply with JSON only: {"answers": {"<question>": "<an option label, or your own words>"}, "notes": {"<question>": "<an optional note>"}}',
         ].join('\n'),
         currentIssue,
@@ -168,9 +169,9 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
       'Each turn you get what Agent just said. Reply with ONLY the message you send Agent: one or two short sentences, no preamble, no quotes.',
       '- Read the project files (Read, Glob, Grep) to check the work against your rules before you approve anything.',
       '- If a rule is broken, correct Agent in one sentence.',
-      "- If Agent asks for your approval and every rule is met, approve in plain words, like 'looks good'.",
+      "- You approve or reject only in the form Agent asks you with, never in chat. If Agent asks for approval in chat, tell Agent to ask you in the form.",
       "- If Agent has delivered and written its post mortem, reply 'thanks'.",
-      "- In a workflow retrospective, approve by number the proposals that would stop you from having to correct Agent (e.g. 'approve 1 and 2'), and decline the rest.",
+      "- In a workflow retrospective, Agent asks you about each proposal in the form: approve the ones that would stop you from having to correct Agent, and decline the rest.",
       `The current issue: ${issueText}`,
     ].join('\n')
 

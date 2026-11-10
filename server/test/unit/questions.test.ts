@@ -79,7 +79,7 @@ describe("Owner's pending questions", () => {
         header: 'Proposal 1',
         options: [
           { label: 'Approve', description: 'Owner fixed lint Hypothesis: no more lint fixes' },
-          { label: 'Decline', description: 'Leave the workflow as it is.' },
+          { label: 'Decline', description: 'Leave the workflow as it is. A note on Approve declines it too.' },
         ],
       }),
     ])
@@ -99,11 +99,16 @@ describe('Owner decides through AskUserQuestion', () => {
     expect(outcome.events.some((event) => event.type === 'owner_asked')).toBe(false)
   })
 
-  it("records Owner's choices, with the note, and tells Agent", () => {
-    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve', [METRIC_QUESTION]: 'high' }, { [GATE_QUESTION]: { notes: 'nice work' } })
-    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: true, by: 'owner', via: 'question', why: 'Owner: "Approve - nice work"', done: true }))
-    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'metric_recorded', name: 'value', value: 'high', by: 'owner' }))
-    expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/Owner approved the Owner gate of work step 2.1\. Every work gate has passed/)
+  it("records Owner's choices, and tells Agent", () => {
+    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve', [METRIC_QUESTION]: 'high' }, { [METRIC_QUESTION]: { notes: 'a customer asked' } })
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: true, by: 'owner', via: 'question', why: 'Owner approved.', done: true }))
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'metric_recorded', name: 'value', value: 'high', explanation: 'a customer asked', by: 'owner' }))
+    expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/Owner approved the Owner gate of step 2.1\. Every work gate has passed/)
+  })
+
+  it('takes a note on Approve as a rejection: Owner either approves or not', () => {
+    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve' }, { [GATE_QUESTION]: { notes: 'but rename the file' } })
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, by: 'owner', why: 'Owner rejected: "but rename the file"', next: { stage: 2, step: 1 } }))
   })
 
   it('ignores answers to a call PreToolUse never saw: Agent cannot answer for Owner', () => {
@@ -111,17 +116,23 @@ describe('Owner decides through AskUserQuestion', () => {
     expect(outcome.events.filter((event) => event.type === 'gate_verdict')).toEqual([])
   })
 
-  it('reads an answer Owner typed, and leaves an unclear one pending with Owner\'s words for Agent', () => {
-    const rejected = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'no, the PR has no description' })
-    expect(rejected.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, via: 'question' }))
-    const unclear = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'what does step 2 cover?' })
-    expect(unclear.events.filter((event) => event.type === 'gate_verdict')).toEqual([])
-    expect((unclear.output as any).hookSpecificOutput.additionalContext).toMatch(/does not decide it\. Answer Owner, then ask again/)
+  it('takes any answer Owner typed as a rejection, with the words as the reason; no word means yes', () => {
+    for (const typed of ['looks good, ship it', 'what does step 2 cover?']) {
+      const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: typed })
+      expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, via: 'question', why: `Owner rejected: "${typed}"` }))
+    }
   })
 
-  it('still takes a typed prompt for the Owner gate', () => {
-    const outcome = hook(base, 'UserPromptSubmit', { prompt: 'looks good' })
-    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: true, via: 'prompt' }))
+  it('leaves a metric open when Owner types something that is none of its categories', () => {
+    const outcome = answered(askedEvents, 'tu_1', { [METRIC_QUESTION]: 'quite high' })
+    expect(outcome.events.filter((event) => event.type === 'metric_recorded')).toEqual([])
+    expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/none of its categories, so it stays open/)
+  })
+
+  it('decides nothing from a chat prompt, however it sounds', () => {
+    const outcome = hook(base, 'UserPromptSubmit', { prompt: 'looks good, approve' })
+    expect(outcome.events.map((event) => event.type)).toEqual(['work_trace'])
+    expect(outcome.output).toBeUndefined()
   })
 })
 
@@ -132,10 +143,10 @@ describe("Owner's corrections, whatever the channel", () => {
   const prompt = asEvents([{ type: 'work_trace', session_id: 's1', work_item_id: 'wi_1', stage: 2, step: 1, hook: 'UserPromptSubmit', prompt: 'p' }])
   const corrections = (events: DrillmasterEvent[]) => measureDeliveredItems([...base, ...events, ...delivered])[0]!.values.owner_corrections_per_item
 
-  it('counts no correction for an approval, and one for a rejection', () => {
+  it('counts every chat prompt, and every rejected Owner gate', () => {
     expect(corrections(verdict(true, 'question'))).toBe(0)
-    expect(corrections([...prompt, ...verdict(true, 'prompt')])).toBe(0)
     expect(corrections(verdict(false, 'question'))).toBe(1)
-    expect(corrections([...prompt, ...verdict(false, 'prompt')])).toBe(1)
+    expect(corrections([...prompt, ...verdict(true, 'question')])).toBe(1)
+    expect(corrections([...prompt, ...verdict(false, 'question')])).toBe(2)
   })
 })

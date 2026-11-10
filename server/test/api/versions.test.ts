@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { projectId } from '../../src/env.js'
 import { VERSION } from '../../src/version.js'
-import { seedWorkflow, testPorts, WORKFLOW_3 } from '../helpers.js'
+import { ownerAnswers, seedWorkflow, testPorts, WORKFLOW_3 } from '../helpers.js'
 
 const check = (rule: string) => [{ rule, accepted: true, evidence: 'checked' }]
 const textOf = (result: { content: { text: string }[] }) => result.content[0]!.text
@@ -80,7 +80,7 @@ describe('a new workflow version', () => {
   })
   const applyApproved = async (app: Drillmaster, dir: string) => {
     await app.callTool(dir, 'workflow_retrospective', { action: 'run' })
-    await app.hook(dir, 'UserPromptSubmit', { session_id: 's1', prompt: 'approve 1' })
+    await ownerAnswers(app, dir, () => 'Approve')
     return (await app.callTool(dir, 'workflow_retrospective', { action: 'apply' })).structuredContent as { workflow_version: string; restarted: string[] }
   }
 

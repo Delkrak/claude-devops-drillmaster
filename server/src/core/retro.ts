@@ -426,7 +426,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     '',
     `Delivered work items since the last retrospective: ${recentDelivered.map((item) => `${item.work_item_id} (${item.issue})`).join(', ') || 'none'}`,
     '',
-    "Owner's words during those work items (corrections, instructions, approvals):",
+    "Owner's chat prompts during those work items (each counts as a correction; Owner decides only in AskUserQuestion):",
     ...(ownerWordLines.length ? ownerWordLines : ['- none']),
     '',
     'Work reports, verdicts and post mortems:',

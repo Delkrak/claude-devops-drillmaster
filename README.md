@@ -50,8 +50,9 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
       - **Drillmaster gate:** the reviewer (`claude -p`) judges it from the rules, the work reports
         and the work traces.
       - **Owner gate:** pending. The result gives the exact AskUserQuestion to ask, and Owner
-        approves or rejects it there (with a note, or in their own words). The hooks record Owner's
-        answer as the verdict. Owner can also just type "looks good".
+        approves or not there: Approve alone approves, and a note or a typed answer rejects, with
+        Owner's words as the reason. The hooks record the answer as the verdict. Owner's chat
+        messages never decide; they count as corrections.
    4. The result shows the next step in full, or where a rejection sends the work back to.
    5. At the end of each work stage, the work item's events are committed and pushed to its own
       branch in the store.
@@ -70,8 +71,8 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
     retrospective's actions, then reads the post mortems, the work reports, Owner's corrections and
     the measures. It returns findings and at most four proposals, each with a hypothesis, a null
     hypothesis and a target. The server's verdicts on the running experiments come with them.
-12. **Owner** decides each proposal in AskUserQuestion (Approve or Decline, with a note), or in plain
-    words ("approve 1, decline 2"). The hooks record the decision.
+12. **Owner** decides each proposal in AskUserQuestion: Approve alone approves, and Decline, a note
+    or a typed answer declines. The hooks record the decision.
 13. **Agent** calls `workflow_retrospective(apply)`. The server applies every proposal Owner
     approved, and refuses the rest. Each change makes a new workflow version (major, minor or patch,
     set by what changed) and opens a workflow experiment with its measure's baseline. A major version

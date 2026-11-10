@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { averageMeasure, measureBaseline, measureDeliveredItems } from '../../src/core/measures.js'
-import { decideProposals } from '../../src/core/owner.js'
 import { applyWorkflowOps, applyProposal, InvalidChange, levelOfOps, readPostMortemAnswer, readRetroAnswer, WorkflowOp } from '../../src/core/retro.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { EXPERIMENT_1, OBJECTIVE, WORKFLOW_3 } from '../helpers.js'
@@ -171,37 +170,13 @@ describe("reading Drillmaster's answers", () => {
   })
 })
 
-describe("Owner's words on proposals", () => {
-  it.each([
-    ['approve 1 and 3', { approved: [1, 3], declined: [] }],
-    ['yes', { approved: [1, 2, 3], declined: [] }],
-    ['approve all but not 2', { approved: [1, 3], declined: [2] }],
-    ['ok 2', { approved: [2], declined: [] }],
-    ['no', { approved: [], declined: [1, 2, 3] }],
-    ['reject 3', { approved: [], declined: [3] }],
-    ['Approve 1, decline 2.', { approved: [1], declined: [2] }],
-    ['decline 2, approve 1 and 3', { approved: [1, 3], declined: [2] }],
-    ['yes, except 3', { approved: [1, 2], declined: [3] }],
-    ['reject all except 2', { approved: [2], declined: [1, 3] }],
-    ['godkend 1, afvis 3', { approved: [1], declined: [3] }],
-  ])('%s', (prompt, expected) => {
-    expect(decideProposals(prompt, [1, 2, 3])).toEqual(expected)
-  })
-
-  it('decides nothing on unclear words, or with nothing open', () => {
-    expect(decideProposals('what does 2 change?', [1, 2])).toBeUndefined()
-    expect(decideProposals('yes', [])).toBeUndefined()
-  })
-})
-
 describe('measures', () => {
   const at = (m: number) => `2026-11-09T10:${String(m).padStart(2, '0')}:00.000Z`
   const events: DrillmasterEvent[] = [
     { id: 'a', at: at(0), type: 'work_item_started', work_item_id: 'wi_1', issue: '#1', workflow_version: '0.0.0', token_hash: 'h', stage: null, step: null },
     { id: 'b', at: at(1), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'you forgot the tests' },
     { id: 'c', at: at(2), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'PostToolUse', tool: 'Bash' },
-    { id: 'd', at: at(3), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'looks good' },
-    { id: 'e', at: at(3), type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 1, accepted: true, by: 'owner', why: 'Owner: "looks good"', rule: null, next: { stage: null, step: null }, done: true },
+    { id: 'e', at: at(3), type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 1, accepted: true, by: 'owner', via: 'question', why: 'Owner approved.', rule: null, next: { stage: null, step: null }, done: true },
     { id: 'f', at: at(10), type: 'work_item_delivered', work_item_id: 'wi_1', pr: '#2' },
     // After delivery: a correction that makes Agent change the work counts once...
     { id: 'g', at: at(11), type: 'work_trace', session_id: 's', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'you forgot CHANGES.md' },
@@ -213,7 +188,7 @@ describe('measures', () => {
     { id: 'h', at: at(12), type: 'work_item_started', work_item_id: 'wi_2', issue: '#2', workflow_version: '0.0.0', token_hash: 'h2', stage: null, step: null },
   ]
 
-  it('counts per delivered work item: Owner approvals are not corrections, changes after delivery are', () => {
+  it('counts per delivered work item: each prompt and no approval, and after delivery only prompts that changed the work', () => {
     expect(measureDeliveredItems(events)).toEqual([
       {
         work_item_id: 'wi_1',
