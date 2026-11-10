@@ -23,10 +23,8 @@ Call `work_start({issue, description})` before you touch anything.
 - Keep the `agent_token` it returns. Every later work tool needs it, for the whole work item.
 - If the workflow has no work stages yet, do your best, deliver, and expect Owner to correct you.
   That is how the workflow grows.
-- **Late start:** if earlier work already meets the first work steps (for example it was done in
-  another session), add `start_at`, a `justification` and the `evidence`. Drillmaster judges the
-  skipped steps from the evidence and the work traces, and Owner decides any skipped Owner gate. If
-  it's rejected, start at the first step.
+- Every work item starts at the first work step. There is no starting later: the process is the
+  path, and every step is recorded.
 
 ## 2. Each work step
 
@@ -42,7 +40,12 @@ Call `work_start({issue, description})` before you touch anything.
    - `added_step`: only after delivery (see below).
 
    If the workflow is missing work you needed to do, that is an `impediment`: say what was missing.
-3. **Hand in the gate** with `work_gate({token, step, self_check, text, metrics})` (step as in "1.2"), filled in
+3. **Or skip the step**, when its result says it is skippable and this work item doesn't need it
+   (for example no production test for a docs change): `work_skip({token, step, why})`. Only the
+   step you are at can be skipped. The step says who decides: you (skipped at once), Drillmaster,
+   or Owner (ask with the AskUserQuestion input the result gives). If the skip is rejected, do the
+   step.
+4. **Hand in the gate** with `work_gate({token, step, self_check, text, metrics})` (step as in "1.2"), filled in
    from the step's answer:
    - `self_check` holds exactly one `{rule, accepted, evidence}` per rule the gate checks. The
      evidence is what you actually checked, such as a command and its output, not a promise.
@@ -105,13 +108,10 @@ Ask Owner first, in one line: **"Fix it now, or create a separate issue?"**
 
 ## When the workflow changes under you
 
-A retrospective can change the workflow while a work item is open.
-
-- A **minor** change (new text, metrics, an experiment) applies from your next step. Carry on.
-- A **major** change (steps, gates or rules added, removed or moved) restarts the work item at the
-  first work step of the new version. The next result says what changed. Your earlier work still
-  counts: call `work_skip({token, start_at, justification, evidence})` to skip the steps it already
-  meets.
+A retrospective can change the workflow while a work item is open. The work item stays on its own
+version until it reaches a step that allows an update. Then it moves to the latest version, keeps
+the steps it did that are unchanged, and resumes at the first step that changed or is still to do,
+which can be an earlier one. The result says what changed and shows that step in full. Do it.
 
 ## When you're lost
 

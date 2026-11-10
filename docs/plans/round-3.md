@@ -179,7 +179,7 @@ OK.
    - one question per decision, and typed means reject;
    - remove the chat decision path;
    - the measure.
-3. **Feedback with references:** post mortems and findings as lists, `relies_on` and `depends_on`,
+3. **Feedback with references:** (done: 3a7d31a) post mortems and findings as lists, `relies_on` and `depends_on`,
    tool contracts in the prompt, `tool` feedback.
 4. **Update steps and skippable steps:**
    - fast-forward, and `work_item_updated`;

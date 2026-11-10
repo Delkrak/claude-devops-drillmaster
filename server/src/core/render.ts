@@ -28,6 +28,7 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     ...(agentMetrics.length ? { metrics: agentMetrics.map((metric) => ({ name: metric.name, value: metric.categories.map((category) => category.value).join('|'), explanation: '<why>' })) } : {}),
   }
   const gateWho = { self: 'you judge it yourself', drillmaster: 'Drillmaster judges it from your report and the work traces', owner: 'Owner approves it' }[step.gate]
+  const skipWho = { self: 'you decide', drillmaster: 'Drillmaster decides', owner: 'Owner decides' }
   return [
     `## Work step ${stageNumber}.${stepNumber}: ${step.name}`,
     '',
@@ -42,6 +43,9 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     ...(rules.length ? rules : ['- none']),
     '',
     `**Report with the gate:** ${step.report.length ? step.report.join('; ') : 'what you did'}.`,
+    ...(step.skippable
+      ? ['', `**Skippable** (${skipWho[step.skippable]}): if this work item doesn't need the step, call \`work_skip\` with \`{"token": "<your agent_token>", "step": "${stepName(stageNumber, stepNumber)}", "why": "<why this work item doesn't need it>"}\`.`]
+      : []),
     ...(metrics.length ? ['', '**Metrics taken at this step:**', ...metrics.map(metricLine)] : []),
     ...(workflow.experiments.length
       ? ['', '**Running experiments:**', ...workflow.experiments.map((experiment) => `- #${experiment.id} ${experiment.change}: ${experiment.hypothesis || experiment.purpose}`)]
@@ -81,6 +85,7 @@ export function renderStarted(args: { workItemId: string; agentToken: string; is
 }
 
 export interface GateOutcome {
+  update?: UpdateSummary
   verdict: 'accepted' | 'rejected' | 'pending' | 'superseded'
   by?: string
   rule?: string | null
@@ -96,7 +101,12 @@ export function renderGateOutcome(workflow: WorkflowDocument, outcome: GateOutco
   const at = outcome.stage !== undefined ? ` (work step ${outcome.stage}.${outcome.step})` : ''
   switch (outcome.verdict) {
     case 'accepted':
-      return [`**Gate accepted** by ${outcome.by}${at}. ${outcome.why ?? ''}`.trim(), '', renderNext(workflow, outcome.next!, outcome.done ?? false)].join('\n')
+      return [
+        `**Gate accepted** by ${outcome.by}${at}. ${outcome.why ?? ''}`.trim(),
+        ...(outcome.update ? ['', renderUpdate(outcome.update)] : []),
+        '',
+        renderNext(workflow, outcome.next!, outcome.done ?? false),
+      ].join('\n')
     case 'rejected':
       return [
         `**Gate rejected** by ${outcome.by}${at}${outcome.rule ? `, citing \`${outcome.rule}\`` : ''}: ${outcome.why ?? ''}`,
@@ -146,41 +156,44 @@ export function renderAskOwner(askInput: { questions: unknown[] }) {
   ].join('\n')
 }
 
-export function renderRestart(args: { from: WorkflowDocument; to: WorkflowDocument; changes: string[]; first: Position }) {
+export interface UpdateSummary {
+  from_version: string
+  to_version: string
+  kept: string[]
+  changes: string[]
+}
+
+export function renderUpdate(update: UpdateSummary) {
   return [
-    `**Workflow ${args.from.version} became ${args.to.version}, a major change, so this work item starts over** at the first work step. Your earlier work and its traces still count as evidence.`,
+    `**The work item updated from workflow ${update.from_version} to ${update.to_version}** before this step, as the step allows.`,
+    `Kept as done, unchanged: ${update.kept.length ? `step ${update.kept.join(', ')}` : 'no step'}. It resumes at the first step that changed or is still to do.`,
     '',
     'What changed:',
-    ...args.changes,
-    '',
-    'To skip work steps your earlier work already meets, call `work_skip` with `start_at`, a justification and the evidence. Drillmaster judges the self and Drillmaster gates you skip; Owner decides any Owner gate.',
-    '',
-    renderNext(args.to, args.first, args.first.stage === null),
+    ...update.changes,
   ].join('\n')
 }
 
-export interface LateStartOutcome {
-  verdict: 'skipped' | 'rejected' | 'awaiting_owner'
-  why: string
-  rule: string | null
-  skipped: string[]
-  start_at: Position
-  first: Position
+export interface SkipOutcome {
+  skip: 'accepted' | 'rejected' | 'pending'
+  by?: string
+  decided_by?: string
+  why?: string
+  stage: number
+  step: number
+  next?: Position
+  done?: boolean
+  update?: UpdateSummary
+  note?: string
 }
 
-export function renderLateStart(workflow: WorkflowDocument, outcome: LateStartOutcome) {
-  switch (outcome.verdict) {
-    case 'skipped':
-      return [`**Late start approved.** Skipped, justified: work step ${outcome.skipped.join(', ')}. ${outcome.why}`, '', renderNext(workflow, outcome.start_at, false)].join('\n')
-    case 'awaiting_owner':
-      return `**Drillmaster approves the late start**, but it skips an Owner gate, so Owner decides. ${outcome.why}`
+export function renderSkipOutcome(workflow: WorkflowDocument, outcome: SkipOutcome) {
+  const at = `step ${outcome.stage}.${outcome.step}`
+  switch (outcome.skip) {
+    case 'accepted':
+      return [`**Skipped** ${at} (${outcome.by}): ${outcome.why}`, ...(outcome.update ? ['', renderUpdate(outcome.update)] : []), '', renderNext(workflow, outcome.next!, outcome.done ?? false)].join('\n')
+    case 'rejected':
+      return [`**Skip rejected** by ${outcome.by}: ${outcome.why}`, '', 'Do the step.', '', renderNext(workflow, outcome.next!, false)].join('\n')
     default:
-      return [
-        `**Late start rejected**${outcome.rule ? `, citing \`${outcome.rule}\`` : ''}: ${outcome.why}`,
-        '',
-        'Start at the first work step.',
-        '',
-        renderNext(workflow, outcome.first, outcome.first.stage === null),
-      ].join('\n')
+      return `**Skip of ${at} pending.** ${outcome.note ?? ''}`.trim()
   }
 }

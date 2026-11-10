@@ -37,9 +37,6 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
    first work step in full: the stage's purpose, the step's instruction, the gate, each rule with how
    it is verified, what to report, the metrics to take, and the `work_gate` call to fill in. The
    `PostToolUse` hook binds the session to the work item.
-   - **Late start:** when earlier work already meets the first steps, `work_start` (or `work_skip`)
-     takes `start_at`, a justification and evidence. Drillmaster judges the skipped self and
-     Drillmaster gates; Owner decides any skipped Owner gate.
 6. For each work step, in order:
    1. **Agent** does the work the step's instruction gives. Every tool call is recorded by the
       `PreToolUse` and `PostToolUse` hooks, with its exit status and the tail of its output.
@@ -75,9 +72,8 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
     or a typed answer declines. The hooks record the decision.
 13. **Agent** calls `workflow_retrospective(apply)`. The server applies every proposal Owner
     approved, and refuses the rest. Each change makes a new workflow version (major, minor or patch,
-    set by what changed) and opens a workflow experiment with its measure's baseline. A major version
-    restarts open work items at the first step; their earlier work still counts as evidence for a
-    late start.
+    set by what changed) and opens a workflow experiment with its measure's baseline. Open work
+    items stay on their version until they reach a step that allows an update (below).
 
 ```mermaid
 sequenceDiagram
@@ -180,9 +176,25 @@ target is met.
 Drillmaster or Owner. Measures can be split by them.
 
 **Versions** follow semver. A change to the path or its checks (a stage, step, gate or rule
-reference) is major; a change to what Agent is told (an instruction, a rule's text, a metric, a new
-experiment) is minor; anything else is a patch. Every event records the workflow and Drillmaster
-versions it was made under.
+reference, or whether a step can be skipped) is major; a change to what Agent is told (an
+instruction, a rule's text, a metric, a new experiment, when a work item updates) is minor; anything
+else is a patch. Every event records the workflow and Drillmaster versions it was made under.
+
+**Updates.** A work item runs on the workflow version it started on. A step can allow an update
+(`"update": "patch" | "minor" | "major"`): before the step starts, if the latest version differs by
+at least that much, the work item moves to it. It keeps every step it passed or skipped that is
+unchanged (the step, its stage and the policies of its rules, matched by GUID), and resumes at the
+first one that isn't, even an earlier one. So a step added to a stage that is done doesn't call for
+a new approval, while a changed step is done again.
+
+**Skippable steps.** A step can be skippable (`"skippable": "self" | "drillmaster" | "owner"`), for
+example a production test that not every work item needs. Agent asks with `work_skip` at that
+step, and the step says who decides. Only the current step can be skipped; there is no late start.
+
+**References.** Every component of a workflow is named the same way everywhere: `step 1.2`,
+`stage 1`, `rule pr 1.1`, `policy pr`, `metric size`, and `tool work_deliver` for Drillmaster's
+own tools. Where a field fixes the kind, it is left out (`"step": "1.2"`). Behind each is a GUID
+that stays with the component across versions, so its history can be followed.
 
 On workflow `0.0.0` there are no gates, so Owner often corrects after delivery. That also counts as a
 correction when Agent then changes the work. Agent first asks Owner "fix it now, or create a

@@ -1,4 +1,4 @@
-import type { DrillmasterEvent, GateSubmitted, MetricAnswer, Position, WorkTrace } from './events.js'
+import type { DrillmasterEvent, GateSubmitted, MetricAnswer, Position, StepSkipRequested, WorkTrace } from './events.js'
 import { parseRef, stepName, stepPosition } from './refs.js'
 import type { WorkItemState } from './state.js'
 import { nextPosition, stepAt } from './work.js'
@@ -105,6 +105,41 @@ export function readMetricAnswers(metrics: readonly WorkflowMetric[], answer: un
     if (!metric || !metric.categories.some((category) => category.value === candidate.value)) return []
     return [{ name: metric.name, value: candidate.value!, ...(typeof candidate.explanation === 'string' ? { explanation: candidate.explanation } : {}) }]
   })
+}
+
+export const SKIP_REVIEW_KIND = 'skip'
+
+/** Drillmaster judges whether a skippable step can be skipped for this work item. */
+export function buildSkipPrompt(workflow: WorkflowDocument, item: WorkItemState, request: StepSkipRequested, events: readonly DrillmasterEvent[]) {
+  const step = stepAt(workflow, request.stage, request.step)!
+  const traces = events.filter((event): event is WorkTrace => event.type === 'work_trace' && event.work_item_id === item.work_item_id).slice(-MAX_TRACES_IN_PROMPT)
+  return [
+    'You are Drillmaster. The workflow marks this work step as skippable, with you deciding. Agent asks to skip it for this work item.',
+    'Approve when the step is not needed for this work item, judged by what the work item is about and what Agent did. Otherwise reject it, and say why.',
+    '',
+    `Work item ${item.work_item_id} (${item.issue}): ${item.description || 'no description'}`,
+    `Step ${request.stage}.${request.step} "${step.name}" (${step.gate} gate): ${step.instruction || 'no instruction'}`,
+    ...step.rules.map((ruleRef) => {
+      const rule = findRule(workflow, ruleRef)!
+      return `- rule ${ruleRef}: ${rule.rule} (verified by ${rule.verified_by})`
+    }),
+    '',
+    `Agent's reason: ${request.why}`,
+    '',
+    `Work traces (${traces.length}, most recent last):`,
+    ...(traces.length ? traces.map(formatTraceLine) : ['- none']),
+    '',
+    'Answer with JSON only:',
+    '{"accepted": true|false, "why": "<one or two sentences>"}',
+  ].join('\n')
+}
+
+export function readSkipAnswer(answer: unknown) {
+  const parsed = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { accepted?: unknown; why?: unknown } | undefined
+  if (!parsed || typeof parsed.accepted !== 'boolean' || typeof parsed.why !== 'string' || !parsed.why.trim()) {
+    throw new InvalidAnswer(`Drillmaster's answer is not a verdict: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
+  }
+  return { accepted: parsed.accepted, why: parsed.why }
 }
 
 export class InvalidAnswer extends Error {}

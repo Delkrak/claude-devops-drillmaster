@@ -9,6 +9,10 @@ export { bumpVersion, compareVersions, isMajorChange, toSemver } from './version
 const MAX_OWNER_CHOICES = 4
 
 export const GateKind = z.enum(['self', 'drillmaster', 'owner'])
+/** Who decides that a skippable step is skipped: Agent itself, Drillmaster, or Owner. */
+export const SkipDecider = z.enum(['self', 'drillmaster', 'owner'])
+/** How big a newer workflow version must be for a work item to update to it before this step. */
+export const UpdateLevel = z.enum(['patch', 'minor', 'major', 'none'])
 export const MetricTaker = z.enum(['agent', 'drillmaster', 'owner'])
 
 export const SEMVER = /^\d+\.\d+\.\d+$/
@@ -26,6 +30,8 @@ export const WorkStep = z.object({
   gate: GateKind,
   rules: z.array(z.string().regex(/^\S+ \S+$/, 'a rule reference is "<policy> <rule id>"')),
   report: z.array(z.string()),
+  skippable: SkipDecider.optional(),
+  update: UpdateLevel.optional(),
 })
 
 export const WorkStage = z.object({

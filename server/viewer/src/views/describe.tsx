@@ -101,18 +101,27 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
           </Muted>
         ),
       }
-    case 'work_item_restarted':
-      return { group: 'gates', tone: 'warn', text: `restarted ${asText(event.from_version)} ${asText(event.to_version)}`, body: <Strong>Restarted: workflow {asText(event.from_version)} became {asText(event.to_version)}</Strong> }
-    case 'late_start_requested':
-      return { group: 'gates', tone: 'info', text: `late start ${asText(event.justification)}`, body: <Muted>Late start asked, skipping {(event.skipped as string[]).join(', ')}: {asText(event.justification)}</Muted> }
-    case 'late_start_judged':
+    case 'work_item_updated':
+      return {
+        group: 'gates',
+        tone: 'info',
+        text: `updated ${asText(event.from_version)} ${asText(event.to_version)}`,
+        body: (
+          <Strong>
+            Updated from workflow {asText(event.from_version)} to {asText(event.to_version)}, resuming at {formatPosition((event.resumes_at as { stage: number | null }).stage, (event.resumes_at as { step: number | null }).step)}
+          </Strong>
+        ),
+      }
+    case 'step_skip_requested':
+      return { group: 'gates', tone: 'info', text: `skip asked ${asText(event.why)}`, body: <Muted>Skip of step {formatPosition(event.stage as number, event.step as number)} asked ({asText(event.decided_by)} decides): {asText(event.why)}</Muted> }
+    case 'step_skip_decided':
       return {
         group: 'gates',
         tone: event.accepted ? 'ok' : 'bad',
-        text: `late start ${event.accepted ? 'approved' : 'rejected'} ${asText(event.why)}`,
+        text: `skip ${event.accepted ? 'accepted' : 'rejected'} ${asText(event.why)}`,
         body: (
           <Muted>
-            Late start {event.accepted ? 'approved' : 'rejected'} by {asText(event.by)}: {asText(event.why)}
+            Skip of step {formatPosition(event.stage as number, event.step as number)} {event.accepted ? 'accepted' : 'rejected'} by {asText(event.by)}: {asText(event.why)}
           </Muted>
         ),
       }

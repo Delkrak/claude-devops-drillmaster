@@ -1,7 +1,8 @@
 import type { NewEvent } from './events.js'
-import { stepPosition } from './refs.js'
+import { resolveRef, stepGuidAt, stepPosition } from './refs.js'
+import { updateOnReaching } from './updates.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { atStep, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
+import { atStep, decideSkip, describeUpdate, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
 import type { WorkflowMetric } from './workflow.js'
 
 /** AskUserQuestion takes at most this many questions per call. */
@@ -27,7 +28,7 @@ export type OwnerQuestion = {
   | { kind: 'owner_gate'; work_item_id: string; stage: number; step: number }
   | { kind: 'proposal'; retro_id: string; proposal: number }
   | { kind: 'owner_metric'; work_item_id: string; stage: number; step: number; metric: string }
-  | { kind: 'gate_skip'; work_item_id: string }
+  | { kind: 'step_skip'; work_item_id: string; stage: number; step: number }
 )
 
 const header = (text: string) => text.slice(0, MAX_HEADER_LENGTH)
@@ -54,18 +55,20 @@ function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuest
 
 const MAX_QUOTED_JUSTIFICATION_LENGTH = 200
 
-function gateSkipQuestion(item: WorkItemState): OwnerQuestion | undefined {
-  const lateStart = item.late_start
-  if (lateStart?.status !== 'awaiting_owner') return undefined
-  const startAt = `${lateStart.start_at.stage}.${lateStart.start_at.step}`
+function stepSkipQuestion(state: ProjectState, item: WorkItemState): OwnerQuestion | undefined {
+  const skip = item.pending_skip
+  if (skip?.decided_by !== 'owner') return undefined
+  const step = stepAt(workflowOfWorkItem(state, item), skip.stage, skip.step)
   return {
-    kind: 'gate_skip',
+    kind: 'step_skip',
     work_item_id: item.work_item_id,
-    question: `Start ${item.work_item_id} (${item.issue}) at work step ${startAt}, skipping ${lateStart.skipped.join(', ')} and your Owner gate of ${lateStart.owner_gates.join(', ')}? Agent says: ${quote(lateStart.justification, MAX_QUOTED_JUSTIFICATION_LENGTH)}`,
-    header: 'Skip gate',
+    stage: skip.stage,
+    step: skip.step,
+    question: `Skip step ${skip.stage}.${skip.step} "${step?.name ?? ''}" of ${item.work_item_id} (${item.issue})? Agent says: ${quote(skip.why, MAX_QUOTED_JUSTIFICATION_LENGTH)}`,
+    header: 'Skip step',
     options: [
-      { label: APPROVE, description: `Drillmaster found the earlier work meets the rules. The work starts at ${startAt}.` },
-      { label: REJECT, description: 'The work starts at the first work step.' },
+      { label: APPROVE, description: 'The step is not needed for this work item: it moves on. A note makes it a rejection.' },
+      { label: REJECT, description: 'Agent does the step. Say why in a note, or type it.' },
     ],
     multiSelect: false,
   }
@@ -93,8 +96,9 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
 
 function ownerMetricQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
   const workflow = workflowOfWorkItem(state, item)
+  const passed = new Set(item.passed_step_guids)
   return workflow.metrics
-    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && item.passed_steps.includes(metric.at_step))
+    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && passed.has(resolveRef(workflow, metric.at_step, { impliedKind: 'step' }).guid!))
     .map((metric: WorkflowMetric) => ({
       kind: 'owner_metric' as const,
       work_item_id: item.work_item_id,
@@ -111,7 +115,7 @@ export function pendingOwnerQuestions(state: ProjectState): OwnerQuestion[] {
   const items = Object.values(state.workItems)
   return [
     ...items.flatMap((item) => ownerGateQuestion(state, item) ?? []),
-    ...items.flatMap((item) => gateSkipQuestion(item) ?? []),
+    ...items.flatMap((item) => stepSkipQuestion(state, item) ?? []),
     ...items.flatMap((item) => ownerMetricQuestions(state, item)),
     ...proposalQuestions(state),
   ]
@@ -151,7 +155,9 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       const { approved: accepted, reason } = approvedOnly(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const workflow = workflowOfWorkItem(state, item)
-      const position = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
+      const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
+      const update = accepted ? updateOnReaching(state, item, workflow, passed.next, [stepGuidAt(workflow, question.stage, question.step)!]) : undefined
+      const position = update ? { next: update.next, done: update.done } : passed
       const rules = stepAt(workflow, question.stage, question.step)?.rules ?? []
       const stepLabel = `step ${question.stage}.${question.step}`
       return {
@@ -165,12 +171,13 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
             via: 'question',
             why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}`,
             rule: rules.length ? rules.join(', ') : null,
-            ...position,
+            ...passed,
           },
+          ...(update ? [update.event] : []),
         ],
         lines: [
           accepted
-            ? `Owner approved the Owner gate of ${stepLabel}. ${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`}`
+            ? `Owner approved the Owner gate of ${stepLabel}. ${update ? `${updateLine(describeUpdate(update))} ` : ''}${position.done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`}`
             : `Owner rejected the Owner gate of ${stepLabel}${reason ? `: "${quote(reason)}"` : ''}. Do what Owner asks, report the impediment, and hand the gate in again.`,
         ],
       }
@@ -192,13 +199,18 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
         lines: [`Owner ${approved ? 'approved' : 'declined'} proposal ${question.proposal}${reason ? ` ("${quote(reason)}")` : ''}.`],
       }
     }
-    case 'gate_skip': {
+    case 'step_skip': {
       const { approved: accepted, reason } = approvedOnly(ownerAnswer)
-      const lateStart = state.workItems[question.work_item_id]!.late_start!
-      const startAt = `${lateStart.start_at.stage}.${lateStart.start_at.step}`
+      const item = state.workItems[question.work_item_id]!
+      const decided = decideSkip(state, item, { accepted, by: 'owner', via: 'question', why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}` })
+      const { next, done, update } = decided.answer as { next: { stage: number | null; step: number | null }; done: boolean; update?: Parameters<typeof updateLine>[0] }
       return {
-        events: [{ type: 'late_start_judged', work_item_id: question.work_item_id, by: 'owner', via: 'question', accepted, why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}`, rule: null }],
-        lines: [accepted ? `Owner approved the late start: the work starts at step ${startAt} (work_status shows it).` : 'Owner rejected the late start: start at the first work step.'],
+        events: decided.events,
+        lines: [
+          accepted
+            ? `Owner approved skipping step ${question.stage}.${question.step}. ${update ? `${updateLine(update)} ` : ''}${done ? 'Every work gate has passed: deliver the work item.' : `Next: step ${next.stage}.${next.step} (work_status shows it).`}`
+            : `Owner rejected skipping step ${question.stage}.${question.step}${reason ? `: "${quote(reason)}"` : ''}. Do the step.`,
+        ],
       }
     }
     case 'owner_metric': {
@@ -224,6 +236,9 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
     }
   }
 }
+
+const updateLine = (update: { from_version: string; to_version: string; kept: string[] }) =>
+  `The work item updated from workflow ${update.from_version} to ${update.to_version}, keeping ${update.kept.length ? `step ${update.kept.join(', ')}` : 'no step'} as done.`
 
 export function decideOwnerAnswers(state: ProjectState, answers: Record<string, unknown>, annotations: Record<string, unknown>): AnswerOutcome {
   const pending = pendingOwnerQuestions(state)

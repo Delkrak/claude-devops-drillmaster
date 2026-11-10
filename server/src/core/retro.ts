@@ -7,7 +7,7 @@ import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import type { PostMortemArgs } from './work.js'
-import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
+import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, SkipDecider, UpdateLevel, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
 
 export const RETRO_REVIEW_KIND = 'retrospective'
 export const POST_MORTEM_REVIEW_KIND = 'post_mortem'
@@ -17,7 +17,15 @@ const MAX_EVENTS_IN_POST_MORTEM_PROMPT = 200
 const MAX_ANSWER_IN_ERROR = 300
 
 const StepInput = z
-  .object({ name: z.string().min(1), instruction: z.string().min(1), gate: GateKind, rules: z.array(z.string()), report: z.array(z.string()) })
+  .object({
+    name: z.string().min(1),
+    instruction: z.string().min(1),
+    gate: GateKind,
+    rules: z.array(z.string()),
+    report: z.array(z.string()),
+    skippable: SkipDecider.optional(),
+    update: UpdateLevel.optional(),
+  })
   .strict()
 const RuleInput = PolicyRule.omit({ guid: true }).strict()
 const MetricInput = WorkflowMetric.omit({ guid: true }).strict()
@@ -91,6 +99,8 @@ export const WorkflowOp = z.preprocess(
         gate: GateKind.optional(),
         rules: z.array(z.string()).optional(),
         report: z.array(z.string()).optional(),
+        skippable: z.union([SkipDecider, z.literal('no')]).optional(),
+        update: UpdateLevel.optional(),
       })
       .strict(),
     z.object({ op: z.literal('remove_step'), step: Ref }).strict(),
@@ -120,7 +130,10 @@ export class InvalidChange extends Error {}
 
 const LEVEL_RANK: Record<VersionLevel, number> = { patch: 0, minor: 1, major: 2 }
 
-/** Major: the path or its checks change. Minor: what Agent is told changes. Patch: nothing Agent does. */
+/**
+ * Major: the path or its checks change, including whether a step can be skipped. Minor: what Agent
+ * is told changes, including when a work item updates. Patch: nothing Agent does.
+ */
 export function levelOfOp(op: WorkflowOp): VersionLevel {
   switch (op.op) {
     case 'add_stage':
@@ -129,7 +142,7 @@ export function levelOfOp(op: WorkflowOp): VersionLevel {
     case 'remove_step':
       return 'major'
     case 'change_step':
-      return op.gate !== undefined || op.rules !== undefined ? 'major' : 'minor'
+      return op.gate !== undefined || op.rules !== undefined || op.skippable !== undefined ? 'major' : 'minor'
     case 'end_experiment':
       return 'patch'
     default:
@@ -232,7 +245,10 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
       case 'change_step': {
         const { op: _op, step: stepRef, ...stepChanges } = op
         const { step } = requireStep(workflow, stepRef)
-        Object.assign(step, withoutUndefined({ ...stepChanges, rules: stepChanges.rules && ruleRefsOf(stepChanges.rules) }))
+        const { skippable, ...otherChanges } = stepChanges
+        Object.assign(step, withoutUndefined({ ...otherChanges, rules: stepChanges.rules && ruleRefsOf(stepChanges.rules) }))
+        if (skippable === 'no') delete step.skippable
+        else if (skippable !== undefined) step.skippable = skippable
         break
       }
       case 'remove_step': {
@@ -339,8 +355,10 @@ const WORKFLOW_OP_REFERENCE = `Operations. They name what they change by referen
 {"op":"add_stage","name":"build","purpose":"<what the stage achieves>","after":"1","steps":[{"name":"write the tests first","instruction":"<the work to do in this step, as an order to Agent>","gate":"self","rules":["test 1.1"],"report":["test result"]}]}   (after: the stage it follows, "0" to put it first; omit to append)
 {"op":"change_stage","stage":"1","purpose":"..."}   (any of name, purpose)
 {"op":"remove_stage","stage":"2"}
-{"op":"add_step","stage":"1","after":"1.1","step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."]}}   (after: the step it follows, "0" to put it first; omit to append)
-{"op":"change_step","step":"1.2","gate":"drillmaster"}   (any of name, instruction, gate, rules, report)
+{"op":"add_step","stage":"1","after":"1.1","step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."],"skippable":"self|drillmaster|owner","update":"patch|minor|major|none"}}   (after: the step it follows, "0" to put it first; omit to append. skippable and update are optional, see below)
+{"op":"change_step","step":"1.2","gate":"drillmaster"}   (any of name, instruction, gate, rules, report, skippable ("no" makes it unskippable), update)
+A step's skippable says who decides that a work item can skip it (for example a step not every kind of work item needs); leave it out for a step every work item must do.
+A step's update lets an open work item move to the latest workflow version before the step starts, when the latest differs by at least that level; the item keeps the steps it did that are unchanged, and resumes at the first that changed. Put it on the first step of a stage that is done in a later session (for example the first build step), so work captured earlier runs on the current workflow. Leave it out (none) elsewhere.
 {"op":"remove_step","step":"1.2"}
 {"op":"add_policy","name":"pr","rules":[{"id":"1.1","rule":"the PR says what it changes","verified_by":"reading the PR description"}]}
 {"op":"add_rule","policy":"pr","rule":{"id":"1.2","rule":"...","verified_by":"..."}}

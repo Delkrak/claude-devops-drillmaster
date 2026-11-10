@@ -44,9 +44,10 @@ export function isPublishMoment(event: DrillmasterEvent) {
     case 'owner_decided':
     case 'work_item_delivered':
     case 'post_mortem_written':
-    case 'work_item_restarted':
-    case 'late_start_judged':
+    case 'work_item_updated':
       return true
+    case 'step_skip_decided':
+      return event.accepted && (event.done || event.next.stage !== event.stage)
     default:
       return false
   }

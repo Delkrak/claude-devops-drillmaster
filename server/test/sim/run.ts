@@ -27,7 +27,6 @@ interface Scenario {
   /** Give the project a local bare origin, so Agent can push a branch and merge it. */
   origin?: boolean
   /** The run expects a late start to be asked for and judged. */
-  expects_late_start?: boolean
   /** Work done "in an earlier session": committed on a branch and pushed to origin before the run. */
   prepared_branch?: { name: string; message: string; files: Record<string, string> }
   extra_tools?: string[]
@@ -250,7 +249,6 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     ownerQuestions,
     issues: scenario.issues.length,
     retros,
-    expectsLateStart: scenario.expects_late_start === true,
     storeCommits: usesStore(scenario) ? storeCommitSubjects(storeRepo) : undefined,
   })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)

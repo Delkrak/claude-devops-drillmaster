@@ -50,17 +50,21 @@ function WorkItem({ view, projectId }: { view: WorkItemView; projectId: string }
             {item.stage !== null ? `, at work step ${formatPosition(item.stage, item.step)}` : ''}
           </Muted>
           {item.pending_gate?.review_failed && <Badge tone="warn">review failed: {item.pending_gate.review_failed}</Badge>}
-          {item.restarted && (
-            <Badge tone="warn" testId="restarted">
-              restarted: workflow {item.restarted.from_version} became {item.restarted.to_version}
+          {item.last_update && (
+            <Badge tone="info" testId="updated">
+              updated: workflow {item.last_update.from_version} to {item.last_update.to_version}
             </Badge>
           )}
           {item.skipped_steps.length > 0 && (
             <Badge tone="info" testId="skipped">
-              skipped, justified: {item.skipped_steps.join(', ')}
+              skipped: step {item.skipped_steps.join(', ')}
             </Badge>
           )}
-          {item.late_start && item.late_start.status !== 'approved' && <Badge tone="warn">late start {item.late_start.status.replace('_', ' ')}</Badge>}
+          {item.pending_skip && (
+            <Badge tone="warn">
+              skip of step {item.pending_skip.stage}.{item.pending_skip.step} waits for {item.pending_skip.decided_by}
+            </Badge>
+          )}
         </Row>
       </Stack>
       <Story view={view} projectId={projectId} />

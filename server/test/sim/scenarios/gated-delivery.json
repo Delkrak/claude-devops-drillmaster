@@ -4,7 +4,6 @@
   "objective": "ship features Owner has reviewed, without Owner having to correct them",
   "measures": ["owner_corrections_per_item", "gate_rejections_per_item"],
   "origin": true,
-  "expects_late_start": true,
   "extra_tools": ["Bash(git:*)", "Bash(npm:*)"],
   "prepared_branch": {
     "name": "issue-5",

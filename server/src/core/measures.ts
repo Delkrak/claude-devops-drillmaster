@@ -44,9 +44,9 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
       items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), metrics: {} })
       continue
     }
-    if (event.type === 'work_item_restarted') {
-      const restarted = items.get(event.work_item_id)
-      if (restarted) restarted.workflowVersion = event.to_version
+    if (event.type === 'work_item_updated') {
+      const updated = items.get(event.work_item_id)
+      if (updated) updated.workflowVersion = event.to_version
       continue
     }
     if (event.type === 'metric_recorded') {

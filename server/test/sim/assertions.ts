@@ -1,6 +1,7 @@
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { averageMeasure, measureDeliveredItems } from '../../src/core/measures.js'
 import { foldState } from '../../src/core/state.js'
+import { resolveRef } from '../../src/core/refs.js'
 import { workflowOfWorkItem } from '../../src/core/work.js'
 
 export interface Check {
@@ -13,7 +14,6 @@ export interface Check {
 export interface RunFacts {
   ownerMessages: number
   ownerQuestions?: number
-  expectsLateStart?: boolean
   /** The commit subjects on the git store's main branch, when the run used one. */
   storeCommits?: string[]
   issues: number
@@ -32,7 +32,7 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   const storedText = JSON.stringify(events)
   const leakedToken =
     /"(?:agent_)?token\\?"\s*:\s*\\?"(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(storedText) || /agent_token:\s*(?!\[redacted\])[A-Za-z0-9_-]{16,}/.test(storedText)
-  const decidedThroughQuestion = events.some((event) => (event.type === 'owner_decided' || event.type === 'gate_verdict' || event.type === 'late_start_judged') && event.via === 'question')
+  const decidedThroughQuestion = events.some((event) => (event.type === 'owner_decided' || event.type === 'gate_verdict' || event.type === 'step_skip_decided') && event.via === 'question')
 
   const deliveredMeasures = measureDeliveredItems(events)
   const firstRetroAt = facts.retros > 0 ? (retros[0]?.at ?? '') : ''
@@ -76,22 +76,13 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     doesNotFailRun: true,
   })
   // A metric added by the last retrospective has had no work item to be taken on.
-  const takeableMetrics = items.flatMap((workItem) =>
-    workflowOfWorkItem(state, workItem).metrics.filter((metric) => workItem.passed_steps.includes(metric.at_step)).map((metric) => metric.name),
-  )
+  const takeableMetrics = items.flatMap((workItem) => {
+    const workflow = workflowOfWorkItem(state, workItem)
+    return workflow.metrics.filter((metric) => workItem.passed_step_guids.includes(resolveRef(workflow, metric.at_step, { impliedKind: 'step' }).guid!)).map((metric) => metric.name)
+  })
   if (takeableMetrics.length > 0) {
     const recorded = events.filter((event) => event.type === 'metric_recorded')
     checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded; ${new Set(takeableMetrics).size} metrics were due at steps work items passed` })
-  }
-  if (facts.expectsLateStart) {
-    const judged = events.filter((event) => event.type === 'late_start_judged')
-    // Agent may rightly start at the first step instead, when the earlier work no longer meets a grown workflow.
-    checks.push({
-      name: 'a late start was judged',
-      ok: judged.length > 0,
-      detail: judged.map((event) => (event.type === 'late_start_judged' ? `${event.by}: ${event.accepted ? 'approved' : 'rejected'}` : '')).join(', ') || 'none',
-      doesNotFailRun: true,
-    })
   }
   if (facts.storeCommits) {
     const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)

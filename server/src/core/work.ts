@@ -2,7 +2,8 @@ import type { Artifact, MetricAnswer, NewEvent, Position, ReportKind, SelfCheck 
 import type { ExperimentReflection, Feedback } from './feedback.js'
 import { stepGuidAt, stepName } from './refs.js'
 import { findVersion, type ProjectState, type WorkItemState } from './state.js'
-import { compareVersions, isMajorChange, type WorkflowDocument, type WorkflowMetric, type WorkStep } from './workflow.js'
+import { updateOnReaching, type ItemUpdate } from './updates.js'
+import type { WorkflowDocument, WorkflowMetric, WorkStep } from './workflow.js'
 
 export class Refused extends Error {}
 
@@ -25,16 +26,15 @@ export type ReportArgs = {
 export type GateArgs = { stage: number; step: number; self_check: SelfCheck[]; text: string; metrics?: MetricAnswer[] }
 export type DeliverArgs = { pr: string; summary: string; artifacts: Artifact[] }
 export type PostMortemArgs = { keep: Feedback[]; change: Feedback[]; experiment_reflections: ExperimentReflection[] }
-/**
- * A work item runs on the latest version with the major version it started or restarted on: a
- * minor change applies to it right away, and only a major one restarts it.
- */
+/** A work item runs on its own workflow version; it moves to a newer one only at an update step. */
 export function workflowOfWorkItem(state: ProjectState, item: WorkItemState): WorkflowDocument {
-  const started = findVersion(state, item.workflow_version)
-  if (!started) throw new Error(`Work item ${item.work_item_id} runs on unknown workflow version ${item.workflow_version}`)
-  const sameMajor = state.versions.filter((candidate) => !isMajorChange(candidate.version, started.version))
-  return sameMajor.reduce((latest, candidate) => (compareVersions(candidate.version, latest.version) > 0 ? candidate : latest), started)
+  const workflow = findVersion(state, item.workflow_version)
+  if (!workflow) throw new Error(`Work item ${item.work_item_id} runs on unknown workflow version ${item.workflow_version}`)
+  return workflow
 }
+
+/** An update as a tool's answer tells it. */
+export const describeUpdate = (update: ItemUpdate) => ({ from_version: update.from.version, to_version: update.to.version, kept: update.kept, changes: update.changes })
 
 export function stepAt(workflow: WorkflowDocument, stage: number, step: number): WorkStep | undefined {
   return workflow.stages.find((candidate) => candidate.n === stage)?.steps.find((candidate) => candidate.n === step)
@@ -122,8 +122,8 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
         : 'Every work gate has passed. Deliver the work item.',
     )
   }
-  if (item.late_start?.status === 'judging' || item.late_start?.status === 'awaiting_owner') {
-    throw new Refused(`Your late start at work step ${item.late_start.start_at.stage}.${item.late_start.start_at.step} is being judged. Wait for the verdict (work_status).`)
+  if (item.pending_skip) {
+    throw new Refused(`Your skip of step ${item.pending_skip.stage}.${item.pending_skip.step} waits for ${item.pending_skip.decided_by === 'owner' ? "Owner's" : "Drillmaster's"} decision (work_status).`)
   }
   if (item.pending_gate && !(item.pending_gate.gate === 'drillmaster' && item.pending_gate.review_failed)) {
     throw new Refused(`The ${item.pending_gate.gate} gate of ${describePosition(item)} is pending. Wait for its verdict (work_status).`)
@@ -167,7 +167,9 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
     }
   }
   const failedCheck = args.self_check.find((check) => !check.accepted)
-  const position = failedCheck ? { next: { stage: args.stage, step: args.step }, done: false } : nextPosition(workflow, args.stage, args.step)
+  const passed = failedCheck ? { next: { stage: args.stage, step: args.step }, done: false } : nextPosition(workflow, args.stage, args.step)
+  const update = failedCheck ? undefined : updateOnReaching(state, item, workflow, passed.next, [step.guid])
+  const position = update ? { next: update.next, done: update.done } : passed
   const verdict: NewEvent = {
     type: 'gate_verdict',
     work_item_id: item.work_item_id,
@@ -176,10 +178,10 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
     by: 'agent',
     why: failedCheck ? `Self check failed: ${failedCheck.evidence}` : 'Self check passed.',
     rule: failedCheck?.rule ?? null,
-    ...position,
+    ...passed,
   }
   return {
-    events: [submitted, ...metricEvents, verdict],
+    events: [submitted, ...metricEvents, verdict, ...(update ? [update.event] : [])],
     answer: {
       verdict: failedCheck ? 'rejected' : 'accepted',
       by: 'agent',
@@ -187,11 +189,59 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
       why: verdict.why,
       next: position.next,
       done: position.done,
+      ...(update ? { update: describeUpdate(update) } : {}),
       note: failedCheck
         ? `Fix it and submit the gate of ${args.stage}.${args.step} again. A rejection is an impediment: report what got in the way.`
         : position.done
           ? 'Every work gate has passed. Deliver the work item.'
           : `Next: ${describePosition(position.next)}.`,
+    },
+  }
+}
+
+export type SkipArgs = { stage: number; step: number; why: string }
+
+/** Agent asks to skip its current step, which the workflow marks as skippable. */
+export function requestSkip(state: ProjectState, item: WorkItemState, args: SkipArgs): Decision {
+  refuseIfDelivered(item)
+  if (item.pending_gate) throw new Refused(`The ${item.pending_gate.gate} gate of ${describePosition(item)} is pending.`)
+  if (item.pending_skip) throw new Refused(`A skip of step ${item.pending_skip.stage}.${item.pending_skip.step} is already waiting for a decision.`)
+  if (args.stage !== item.stage || args.step !== item.step) {
+    throw new Refused(`The work item is at ${describePosition(item)}. Only the step you are at can be skipped, not ${args.stage}.${args.step}.`)
+  }
+  const workflow = workflowOfWorkItem(state, item)
+  const step = stepAt(workflow, args.stage, args.step)!
+  if (!step.skippable) throw new Refused(`Step ${args.stage}.${args.step} "${step.name}" is not skippable in workflow ${workflow.version}. Do its work and hand in its gate.`)
+  const requested: NewEvent = { type: 'step_skip_requested', work_item_id: item.work_item_id, ...atStep(workflow, args.stage, args.step), decided_by: step.skippable, why: args.why }
+  if (step.skippable !== 'self') {
+    return {
+      events: [requested],
+      answer: { skip: 'pending', decided_by: step.skippable, stage: args.stage, step: args.step, note: step.skippable === 'owner' ? 'Owner decides this skip. Ask Owner, then check work_status.' : 'Drillmaster is judging this skip.' },
+    }
+  }
+  const decided = decideSkip(state, item, { accepted: true, by: 'agent', why: args.why })
+  return { events: [requested, ...decided.events], answer: decided.answer }
+}
+
+/** The decision on a skip: an accepted one moves the work item past the step. */
+export function decideSkip(state: ProjectState, item: WorkItemState, verdict: { accepted: boolean; by: 'agent' | 'drillmaster' | 'owner'; why: string; via?: 'question' }): Decision {
+  const workflow = workflowOfWorkItem(state, item)
+  const stage = item.stage!
+  const stepNumber = item.step!
+  const skipped = verdict.accepted ? nextPosition(workflow, stage, stepNumber) : { next: { stage, step: stepNumber }, done: false }
+  const update = verdict.accepted ? updateOnReaching(state, item, workflow, skipped.next, [stepGuidAt(workflow, stage, stepNumber)!]) : undefined
+  const position = update ? { next: update.next, done: update.done } : skipped
+  return {
+    events: [{ type: 'step_skip_decided', work_item_id: item.work_item_id, ...atStep(workflow, stage, stepNumber), ...verdict, ...skipped }, ...(update ? [update.event] : [])],
+    answer: {
+      skip: verdict.accepted ? 'accepted' : 'rejected',
+      by: verdict.by,
+      why: verdict.why,
+      stage,
+      step: stepNumber,
+      next: position.next,
+      done: position.done,
+      ...(update ? { update: describeUpdate(update) } : {}),
     },
   }
 }

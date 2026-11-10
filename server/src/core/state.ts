@@ -1,4 +1,5 @@
 import type { Artifact, DrillmasterEvent, Proposal, WorkTrace } from './events.js'
+import { stepGuidAt } from './refs.js'
 import { findRule, migrateWorkflow, toSemver, type WorkflowDocument } from './workflow.js'
 
 export interface WorkItemState {
@@ -21,21 +22,12 @@ export interface WorkItemState {
   traces: number
   reports: number
   rejections: number
-  passed_steps: string[]
-  skipped_steps: string[]
-  restarted: { from_version: string; to_version: string } | null
-  late_start: LateStart | null
+  /** GUIDs of the steps whose gate passed, and of the steps skipped. */
+  passed_step_guids: string[]
+  skipped_step_guids: string[]
+  pending_skip: { stage: number; step: number; decided_by: 'drillmaster' | 'owner'; why: string } | null
+  last_update: { from_version: string; to_version: string } | null
   post_mortems: ('agent' | 'drillmaster')[]
-}
-
-export interface LateStart {
-  start_at: { stage: number; step: number }
-  skipped: string[]
-  owner_gates: string[]
-  justification: string
-  status: 'judging' | 'awaiting_owner' | 'approved' | 'rejected'
-  why: string | null
-  rule: string | null
 }
 
 export interface SessionState {
@@ -133,10 +125,10 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           traces: 0,
           reports: 0,
           rejections: 0,
-          passed_steps: [],
-          skipped_steps: [],
-          restarted: null,
-          late_start: null,
+          passed_step_guids: [],
+          skipped_step_guids: [],
+          pending_skip: null,
+          last_update: null,
           post_mortems: [],
         }
         break
@@ -148,7 +140,6 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
       case 'gate_submitted': {
         const item = state.workItems[event.work_item_id]
         if (item) {
-          item.restarted = null
           item.reports++
           if (event.gate !== 'self') item.pending_gate = { stage: event.stage, step: event.step, gate: event.gate }
         }
@@ -162,7 +153,8 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           item.step = event.next.step
           item.gates_done = event.done
           if (!event.accepted) item.rejections++
-          if (event.accepted) item.passed_steps.push(`${event.stage}.${event.step}`)
+          const guid = event.step_guid ?? stepGuidOfItem(state, item, event.stage, event.step)
+          if (event.accepted && guid) item.passed_step_guids.push(guid)
         }
         break
       }
@@ -181,54 +173,39 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         }
         break
       }
-      case 'work_item_restarted': {
+      case 'work_item_updated': {
         const item = state.workItems[event.work_item_id]
-        const workflow = state.versions.find((candidate) => candidate.version === event.to_version)
-        if (item && workflow) {
-          const first = firstPosition(workflow)
+        if (item) {
+          const kept = new Set(event.kept)
           Object.assign(item, {
             workflow_version: event.to_version,
-            stage: first.stage,
-            step: first.step,
+            stage: event.resumes_at.stage,
+            step: event.resumes_at.step,
             pending_gate: null,
-            gates_done: first.stage === null,
-            passed_steps: [],
-            skipped_steps: [],
-            late_start: null,
-            restarted: { from_version: event.from_version, to_version: event.to_version },
+            gates_done: event.done,
+            passed_step_guids: item.passed_step_guids.filter((guid) => kept.has(guid)),
+            skipped_step_guids: item.skipped_step_guids.filter((guid) => kept.has(guid)),
+            last_update: { from_version: event.from_version, to_version: event.to_version },
           })
         }
         break
       }
-      case 'late_start_requested': {
+      case 'step_skip_requested': {
         const item = state.workItems[event.work_item_id]
-        if (item && event.start_at.stage !== null && event.start_at.step !== null) {
-          item.restarted = null
-          item.late_start = {
-            start_at: { stage: event.start_at.stage, step: event.start_at.step },
-            skipped: event.skipped,
-            owner_gates: event.owner_gates,
-            justification: event.justification,
-            status: 'judging',
-            why: null,
-            rule: null,
-          }
-        }
+        if (item && event.decided_by !== 'self') item.pending_skip = { stage: event.stage, step: event.step, decided_by: event.decided_by, why: event.why }
         break
       }
-      case 'late_start_judged': {
+      case 'step_skip_decided': {
         const item = state.workItems[event.work_item_id]
-        const lateStart = item?.late_start
-        if (!item || !lateStart) break
-        Object.assign(lateStart, { why: event.why, rule: event.rule })
-        const skipApproved = event.accepted && (event.by === 'owner' || lateStart.owner_gates.length === 0)
-        if (!event.accepted) lateStart.status = 'rejected'
-        else if (!skipApproved) lateStart.status = 'awaiting_owner'
-        else {
-          lateStart.status = 'approved'
-          item.stage = lateStart.start_at.stage
-          item.step = lateStart.start_at.step
-          item.skipped_steps = lateStart.skipped
+        if (item) {
+          item.pending_skip = null
+          const guid = event.step_guid ?? stepGuidOfItem(state, item, event.stage, event.step)
+          if (event.accepted) {
+            if (guid) item.skipped_step_guids.push(guid)
+            item.stage = event.next.stage
+            item.step = event.next.step
+            item.gates_done = event.done
+          }
         }
         break
       }
@@ -260,6 +237,11 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
   }
   return state
 }
+function stepGuidOfItem(state: ProjectState, item: WorkItemState, stage: number, step: number) {
+  const workflow = findVersion(state, item.workflow_version)
+  return workflow ? stepGuidAt(workflow, stage, step) : undefined
+}
+
 export function firstPosition(workflow: WorkflowDocument): { stage: number | null; step: number | null } {
   const firstStage = workflow.stages.find((stage) => stage.steps.length > 0)
   return firstStage ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }

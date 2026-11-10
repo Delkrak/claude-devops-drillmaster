@@ -95,31 +95,42 @@ export interface WorkItemStarted extends EventEnvelope {
   step: number | null
 }
 
-export interface WorkItemRestarted extends EventEnvelope {
-  type: 'work_item_restarted'
+/** A work item moved to a newer workflow version at an update step, keeping the steps it had done that are unchanged. */
+export interface WorkItemUpdated extends EventEnvelope {
+  type: 'work_item_updated'
   work_item_id: string
   from_version: string
   to_version: string
+  /** GUIDs of the steps kept as done. */
+  kept: string[]
+  resumes_at: Position & { step_guid?: string }
+  done: boolean
 }
 
-export interface LateStartRequested extends EventEnvelope {
-  type: 'late_start_requested'
-  work_item_id: string
-  start_at: Position
-  justification: string
-  evidence: string
-  skipped: string[]
-  owner_gates: string[]
-}
+export type SkipDecider = 'self' | 'drillmaster' | 'owner'
 
-export interface LateStartJudged extends EventEnvelope {
-  type: 'late_start_judged'
+export interface StepSkipRequested extends EventEnvelope {
+  type: 'step_skip_requested'
   work_item_id: string
-  by: 'drillmaster' | 'owner'
-  via?: DecidedVia
-  accepted: boolean
+  stage: number
+  step: number
+  step_guid?: string
+  decided_by: SkipDecider
   why: string
-  rule: string | null
+}
+
+export interface StepSkipDecided extends EventEnvelope {
+  type: 'step_skip_decided'
+  work_item_id: string
+  stage: number
+  step: number
+  step_guid?: string
+  accepted: boolean
+  by: 'agent' | 'drillmaster' | 'owner'
+  via?: DecidedVia
+  why: string
+  next: Position
+  done: boolean
 }
 
 export interface SessionBound extends EventEnvelope {
@@ -263,9 +274,9 @@ export type DrillmasterEvent =
   | WorkflowChanged
   | SessionRegistered
   | WorkItemStarted
-  | WorkItemRestarted
-  | LateStartRequested
-  | LateStartJudged
+  | WorkItemUpdated
+  | StepSkipRequested
+  | StepSkipDecided
   | SessionBound
   | WorkTrace
   | WorkReported

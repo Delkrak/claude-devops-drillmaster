@@ -167,9 +167,10 @@ export interface WorkItemView {
     summary: string | null
     artifacts: Artifact[]
     metrics: Record<string, { value: string; by: string; explanation?: string }>
+    passed_steps: string[]
     skipped_steps: string[]
-    restarted: { from_version: string; to_version: string } | null
-    late_start: { status: string; skipped: string[]; start_at: { stage: number; step: number }; why: string | null } | null
+    pending_skip: { stage: number; step: number; decided_by: string; why: string } | null
+    last_update: { from_version: string; to_version: string } | null
   }
   workflow: Workflow | undefined
   measures: Record<string, number> | null

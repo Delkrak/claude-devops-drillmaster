@@ -1,6 +1,7 @@
 import type { DrillmasterEvent } from './events.js'
 import { judgeExperiments } from './experiments.js'
 import { feedbackOnDrillmaster } from './feedback.js'
+import { refOfGuid } from './refs.js'
 import { averageMeasure, BASELINE_WINDOW, measureDeliveredItems, splitMeasureByMetric, type ItemMeasures } from './measures.js'
 import { findVersion, foldState, type ProjectState } from './state.js'
 
@@ -125,8 +126,10 @@ export function workItemView(events: readonly DrillmasterEvent[], workItemId: st
   if (!item) return undefined
   const { token_hash: _tokenHash, ...itemWithoutHash } = item
   const timeline = events.filter((event) => 'work_item_id' in event && event.work_item_id === workItemId).map(withoutSecrets)
+  const workflow = findVersion(state, item.workflow_version)
+  const stepNames = (guids: readonly string[]) => guids.map((guid) => (workflow && refOfGuid(workflow, guid)?.name) ?? guid)
   return {
-    item: itemWithoutHash,
+    item: { ...itemWithoutHash, passed_steps: stepNames(item.passed_step_guids), skipped_steps: stepNames(item.skipped_step_guids) },
     workflow: findVersion(state, item.workflow_version),
     measures: measureDeliveredItems(events).find((measured) => measured.work_item_id === workItemId)?.values ?? null,
     timeline,
