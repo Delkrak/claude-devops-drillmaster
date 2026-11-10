@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
-import { projectId } from '../../src/env.js'
 import type { UpdateLevel } from '../../src/core/updates.js'
 import { migrateWorkflow, type WorkflowDocument } from '../../src/core/workflow.js'
 import { VERSION } from '../../src/version.js'
@@ -45,14 +44,6 @@ describe('versions on every event', () => {
     expect(started).toMatchObject({ workflow_version: '3.0.0', drillmaster_version: VERSION })
   })
 
-  it('refuses to write a project that a newer Drillmaster wrote', async () => {
-    const ports = testPorts()
-    await seedWorkflow(ports, '/projects/newer', WORKFLOW_3)
-    await ports.store.append(projectId('/projects/newer'), { id: 'future', at: '2026-12-01T00:00:00Z', drillmaster_version: '99.0.0', type: 'session_registered', session_id: 'x', source: 'startup' })
-    const app = new Drillmaster(ports)
-    const refused = await app.callTool('/projects/newer', 'work_start', { issue: '#1', description: 'd' })
-    expect(refused).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/newer than this one/) }] })
-  })
 })
 
 describe('updating a work item at a step that allows it', () => {

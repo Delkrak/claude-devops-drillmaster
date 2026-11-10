@@ -86,17 +86,10 @@ export const Objective = z.object({
   measures: z.array(z.enum(MEASURE_NAMES)).min(1),
 })
 
-export const WorkflowStorage = z.object({
-  repo: z.string().min(1),
-  path: z.string().min(1),
-  branch: z.object({ pattern: z.string().includes('{work_item_id}') }),
-})
-
 export const WorkflowDocument = z
   .object({
     version: WorkflowVersion,
     objective: Objective,
-    storage: WorkflowStorage.optional(),
     stages: z.array(WorkStage),
     policies: z.array(WorkPolicy),
     metrics: z.array(WorkflowMetric),
@@ -165,7 +158,7 @@ export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: 
  * versions; a new one gets a GUID made from its name.
  */
 export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): WorkflowDocument {
-  const document = structuredClone(raw) as Record<string, any>
+  const { storage: _storage, ...document } = structuredClone(raw) as Record<string, any>
   const version = toSemver(document.version)
   const used = new Set<string>()
   const guidFor = (existing: unknown, earlier: string | undefined, seed: string) => {

@@ -8,6 +8,7 @@ import { MemoryStore } from '../src/adapters/stores.js'
 import { askUserQuestionInput, pendingOwnerQuestions } from '../src/core/questions.js'
 import type { ProjectState } from '../src/core/state.js'
 import { migrateWorkflow, type WorkflowDocument } from '../src/core/workflow.js'
+import { FolderResolver, folderKey } from '../src/adapters/projects.js'
 import type { Ports } from '../src/ports.js'
 
 /** Deterministic ports: memory store, fixed clock, sequential ids, scripted reviewer. */
@@ -18,8 +19,11 @@ export function testPorts(script: Record<string, unknown[]> = {}): Ports & { rev
     clock: steppingClock('2026-11-09T10:00:00Z'),
     ids: sequentialIds(),
     reviewer: new ScriptedReviewer(script),
+    projects: new FolderResolver(),
   }
 }
+
+export const TEST_REPOSITORY = 'git@example.com:owner/drillmaster.git'
 
 export async function tempDir(prefix: string) {
   const dir = await mkdtemp(path.join(os.tmpdir(), `drillmaster-${prefix}-`))
@@ -79,8 +83,7 @@ export const WORKFLOW_DM: WorkflowDocument = {
 
 /** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
 export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
-  const { projectId } = await import('../src/env.js')
-  const project = projectId(dir)
+  const project = folderKey(dir)
   const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], metrics: [], experiments: [] }
   await ports.store.append(project, { id: 'seed_0', at: '2026-11-01T00:00:00Z', type: 'project_initialized', dir, workflow: v0 })
   const major = Number(workflow.version.split('.')[0])

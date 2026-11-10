@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { OBJECTIVE, testPorts } from '../helpers.js'
+import { OBJECTIVE, TEST_REPOSITORY, testPorts } from '../helpers.js'
 
 let server: RunningServer
 const PROJECT = '/projects/dummy'
@@ -32,15 +32,15 @@ describe('REST API', () => {
   })
 
   it('refuses an invalid objective', async () => {
-    const res = await call('POST', '/projects/init', { project: PROJECT, objective: { text: 'x', measures: ['joy'] } })
+    const res = await call('POST', '/projects/init', { project: PROJECT, drillmaster_repository: TEST_REPOSITORY, objective: { text: 'x', measures: ['joy'] } })
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Invalid objective/)
   })
 
   it('creates workflow_0 once', async () => {
-    const first = await call('POST', '/projects/init', { project: PROJECT, objective: OBJECTIVE })
+    const first = await call('POST', '/projects/init', { project: PROJECT, drillmaster_repository: TEST_REPOSITORY, objective: OBJECTIVE })
     expect(first).toMatchObject({ status: 201, body: { workflow: { version: '0.0.0', stages: [] } } })
-    const second = await call('POST', '/projects/init', { project: PROJECT, objective: OBJECTIVE })
+    const second = await call('POST', '/projects/init', { project: PROJECT, drillmaster_repository: TEST_REPOSITORY, objective: OBJECTIVE })
     expect(second.status).toBe(409)
   })
 

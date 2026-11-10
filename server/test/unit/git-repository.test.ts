@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { GitStore } from '../../src/adapters/gitStore.js'
+import { GitRepository } from '../../src/adapters/gitRepository.js'
 import { tempDir } from '../helpers.js'
 
 let root: Awaited<ReturnType<typeof tempDir>>
@@ -16,9 +16,9 @@ beforeAll(async () => {
 })
 afterAll(() => root.remove())
 
-describe('the git store', () => {
+describe('the Drillmaster repository, through git plumbing', () => {
   it('writes item branches side by side, without a checkout, and pushes them', async () => {
-    const store = new GitStore(path.join(root.dir, 'clone-a'), remote)
+    const store = new GitRepository(path.join(root.dir, 'clone-a'), remote)
     await store.ensureClone()
     expect(await store.writeFiles('main', { 'p/project/a.jsonl': '{"id":"e1"}\n' }, 'setup')).toBe(true)
     await store.push('main', ownedBy('a'))
@@ -33,7 +33,7 @@ describe('the git store', () => {
   })
 
   it('squash-merges a finished item into main as one commit, and deletes its branch', async () => {
-    const store = new GitStore(path.join(root.dir, 'clone-a'), remote)
+    const store = new GitRepository(path.join(root.dir, 'clone-a'), remote)
     await store.writeFiles('drillmaster/wi_1', { 'p/items/wi_1/a.jsonl': '{"id":"e2"}\n{"id":"e4"}\n' }, 'wi_1 stage 2')
     const mainBefore = git(remote, 'rev-parse', 'main')
     await store.squashMerge('drillmaster/wi_1', 'p/items/wi_1', 'wi_1 (#1) delivered')
@@ -46,8 +46,8 @@ describe('the git store', () => {
   })
 
   it('lays its own files on top when another machine pushed first, and reads every branch', async () => {
-    const first = new GitStore(path.join(root.dir, 'clone-a'), remote)
-    const second = new GitStore(path.join(root.dir, 'clone-b'), remote)
+    const first = new GitRepository(path.join(root.dir, 'clone-a'), remote)
+    const second = new GitRepository(path.join(root.dir, 'clone-b'), remote)
     await second.ensureClone()
     await second.writeFiles('main', { 'p/project/b.jsonl': '{"id":"b1"}\n' }, 'b writes')
     await second.push('main', ownedBy('b'))

@@ -7,7 +7,7 @@ import { foldState } from '../../src/core/state.js'
 import { tempDir } from '../helpers.js'
 import { claudeTurn } from '../sim/claude.js'
 import { defaultAnswers, listenForOwnerQuestions, OWNER_PERMISSION_TOOL, ownerMcpConfig, type AskedQuestion } from '../sim/ownerAnswers.js'
-import { projectId } from '../../src/env.js'
+import { DotDrillmasterResolver } from '../../src/adapters/projects.js'
 
 const enabled = process.env.DRILLMASTER_PLUGIN_TESTS === '1'
 const REPO = path.resolve(import.meta.dirname, '../../..')
@@ -101,7 +101,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
       metrics: [],
       experiments: [],
     }
-    const eventsFile = path.join(home.dir, 'projects', projectId(project.dir), 'events.jsonl')
+    const eventsFile = path.join(home.dir, 'projects', new DotDrillmasterResolver().resolve(project.dir)!.key, 'events.jsonl')
     await writeFile(eventsFile, (await readFile(eventsFile, 'utf8')) + JSON.stringify({ id: 'ev_plugin_v1', at: new Date().toISOString(), type: 'workflow_changed', workflow: ownerGated, reason: 'an Owner gate' }) + '\n')
     await writeFile(path.join(project.dir, 'shot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
     await turn('Do issue #2 with the drillmaster work skill: create bye.txt containing "bye". At the Owner gate, ask me as the work tool tells you. Then deliver it as pr "local" with shot.png as an artifact, and write your post mortem.')

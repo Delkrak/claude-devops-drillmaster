@@ -111,10 +111,8 @@ function toolResponseIsError(toolResponse: unknown) {
 export interface HookContext {
   /** Why a workflow retrospective is due, if it is. */
   retrospectiveDue?: string | null
-  /** Why the last push to the git store failed, if it did. */
-  storeProblem?: string
-  /** What happened to the work folder's copy of the workflow, if anything. */
-  mirrorNote?: string
+  /** Why the last push to the Drillmaster repository failed, if it did. */
+  repositoryProblem?: string
 }
 
 export function handleHook(state: ProjectState, hookEvent: string, payload: HookPayload, recordRaw: boolean, context: HookContext = {}): HookOutcome {
@@ -227,10 +225,9 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
     lines.push(`Owner has ${ownerQuestions.length} question${ownerQuestions.length > 1 ? 's' : ''} to answer. work_status shows the AskUserQuestion input to ask with.`)
   }
   lines.push("Owner decides gates and proposals only in AskUserQuestion. Owner's chat messages are instructions, never decisions; if one sounds like a decision, ask Owner the question.")
-  if (context.storeProblem) {
-    lines.push(`The git store could not be updated (${context.storeProblem}). Drillmaster keeps every event and tries again at the next stage end; tell Owner.`)
+  if (context.repositoryProblem) {
+    lines.push(`The Drillmaster repository could not be updated (${context.repositoryProblem}). Drillmaster keeps every event and tries again at the next stage end; tell Owner.`)
   }
-  if (context.mirrorNote) lines.push(context.mirrorNote)
   if (context.retrospectiveDue) {
     lines.push(`A workflow retrospective is due: ${context.retrospectiveDue}. Suggest it to Owner (/devops-drillmaster:retrospective); Owner decides when.`)
   }

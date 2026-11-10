@@ -7,7 +7,7 @@ export interface EventEnvelope {
   /** The workflow version the event was made under: its work item's, or the project's. */
   workflow_version?: string
   drillmaster_version?: string
-  /** The Drillmaster server that wrote the event; each writes its own files in the store. */
+  /** The Drillmaster server that wrote the event; each writes its own files in the Drillmaster repository. */
   writer?: string
 }
 

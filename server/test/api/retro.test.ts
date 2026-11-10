@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { ownerAnswers, testPorts, workToolCall } from '../helpers.js'
+import { ownerAnswers, TEST_REPOSITORY, testPorts, workToolCall } from '../helpers.js'
 
 let app: Drillmaster
 let server: RunningServer
@@ -59,9 +59,9 @@ describe('the improvement loop', () => {
   let token: string
 
   it("sets workflow_0 from Owner's objective, once", async () => {
-    const setup = await tool('workflow_retrospective', { action: 'setup', objective: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] })
+    const setup = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] })
     expect(setup.value.workflow).toMatchObject({ version: '0.0.0', stages: [] })
-    expect((await tool('workflow_retrospective', { action: 'setup', objective: 'again', measures: ['minutes_per_item'] })).isError).toBe(true)
+    expect((await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'again', measures: ['minutes_per_item'] })).isError).toBe(true)
   })
 
   it('runs a work item that Owner has to correct', async () => {

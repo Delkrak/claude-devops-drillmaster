@@ -76,13 +76,12 @@ export function createRequestHandler(app: Drillmaster) {
         }
         case 'POST /projects/init': {
           const body = await readJsonBody(request)
-          const store = body.store as { repo?: unknown; path?: unknown } | undefined
-          const workflow = await app.init(
-            requireProjectDir(body.project),
-            body.objective,
-            typeof store?.repo === 'string' ? { repo: store.repo, ...(typeof store.path === 'string' ? { path: store.path } : {}) } : undefined,
-          )
-          return sendJson(response, 201, { workflow })
+          if (typeof body.drillmaster_repository !== 'string' || !body.drillmaster_repository) throw new UserError('`drillmaster_repository` (the git repository that keeps the project) is required')
+          const { workflow, project } = await app.init(requireProjectDir(body.project), body.objective, {
+            url: body.drillmaster_repository,
+            ...(typeof body.folder === 'string' ? { folder: body.folder } : {}),
+          })
+          return sendJson(response, 201, { workflow, project: project.key })
         }
         case 'GET /tools':
           return sendJson(response, 200, { tools: app.tools() })

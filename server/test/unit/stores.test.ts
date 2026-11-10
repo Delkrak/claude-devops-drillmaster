@@ -6,7 +6,7 @@ import { ScriptedReviewer } from '../../src/adapters/reviewers.js'
 import { JsonlStore } from '../../src/adapters/stores.js'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { workflowZero } from '../../src/core/workflow.js'
-import { projectId } from '../../src/env.js'
+import { folderKey as projectId } from '../../src/adapters/projects.js'
 import { OBJECTIVE, tempDir } from '../helpers.js'
 
 const event = (n: number): DrillmasterEvent => ({

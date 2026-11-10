@@ -24,16 +24,18 @@ corrections at each workflow retrospective. Nothing is copied from another workf
    | `minutes_per_item` | Minutes from start to delivery |
    | `tool_calls_per_item` | Tool calls per work item |
 
-3. **Ask Owner for the store:** a separate, private git repo (a URL or a path) where Drillmaster
-   keeps the work traces. Each work item's traces go on their own branch and are squash-merged into
-   its main branch once the work item is complete. Traces can hold tool output, so the repo must
-   be private. Drillmaster pushes to it, so Owner's git credentials must allow that.
+3. **Ask Owner for the Drillmaster repository:** a separate, private git repository (a URL or a
+   path) that keeps everything of Drillmaster for this project: the workflow and its history, the
+   Drillmaster version the project runs on, and every work item's traces. Its main branch is the
+   source of truth. Traces can hold tool output, so it must be private. Drillmaster pushes to it, so
+   Owner's git credentials must allow that. One repository can hold several projects, each in its
+   own folder; the folder defaults to this work folder's name.
 4. **Create the first workflow:**
-   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [...], store: {repo: "<the store repo>"}})`.
-   - Drillmaster pushes a first commit to the store, and writes `.drillmaster/drillmaster.json`
-     (the Drillmaster version and the store) and `.drillmaster/workflow.json` (a copy of the
-     workflow) in the work folder. Commit both with the project.
-   - If the push fails, tell Owner what git said, and ask for another repo or for access.
+   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [...], drillmaster_repository: "<the repository>", folder: "<optional>"})`.
+   - Drillmaster pushes the pin and workflow `0.0.0` to the repository's main first, then writes
+     `.drillmaster` in the work folder: the repository and the folder, nothing else. Commit it with
+     the project; it's how Drillmaster knows this folder, on any machine.
+   - If the push fails, tell Owner what git said, and ask for another repository or for access.
    - If the project already has a workflow, say so and stop. The objective changes only at a
      workflow retrospective (`/devops-drillmaster:retrospective`).
 5. **Tell Owner how it goes from here,** in a few lines:

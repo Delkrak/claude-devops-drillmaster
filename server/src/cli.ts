@@ -12,14 +12,15 @@ const USAGE = `drillmaster ${VERSION}
 Usage:
   drillmaster daemon                    Run the shared Drillmaster server.
   drillmaster mcp                       Run the stdio MCP server for Claude Code.
-  drillmaster init --objective <text> --measure <name> [--measure <name>] [--store <git repo>] [--project <dir>]
-                                        Create workflow_0 from Owner's objective.
+  drillmaster init --objective <text> --measure <name> [--measure <name>] --repository <git url> [--folder <name>] [--project <dir>]
+                                        Set the project up: workflow 0.0.0 from Owner's objective, kept in
+                                        the folder of the Drillmaster repository, named in .drillmaster.
   drillmaster inspect [--project <dir>] [--json]
                                         Show the project's events and folded state.
   drillmaster open                      Open the read-only viewer in the browser.
 
 Environment:
-  DRILLMASTER_HOME      Where the server keeps its port file and store (default ~/.drillmaster).
+  DRILLMASTER_HOME      Where the server keeps its port file, events and repository clones (default ~/.drillmaster).
   DRILLMASTER_REVIEWER  claude (default) | scripted:<file> | none
   DRILLMASTER_CLAUDE    the claude executable for the reviewer (default: claude)
   DRILLMASTER_REVIEW_MODEL, DRILLMASTER_REVIEW_TIMEOUT (seconds per attempt, default 90),
@@ -41,16 +42,18 @@ async function runCommand(argv: string[]) {
         options: {
           objective: { type: 'string' },
           measure: { type: 'string', multiple: true },
-          store: { type: 'string' },
+          repository: { type: 'string' },
+          folder: { type: 'string' },
           project: { type: 'string' },
         },
       })
-      if (!values.objective || !values.measure?.length) throw new Error(`init needs --objective and at least one --measure.\n\n${USAGE}`)
+      if (!values.objective || !values.measure?.length || !values.repository) throw new Error(`init needs --objective, at least one --measure, and --repository.\n\n${USAGE}`)
       const url = await findOrStartServer()
       const { workflow } = await requestJson<{ workflow: unknown }>(url, 'POST', '/projects/init', {
         project: values.project ?? process.cwd(),
         objective: { text: values.objective, measures: values.measure },
-        ...(values.store ? { store: { repo: values.store } } : {}),
+        drillmaster_repository: values.repository,
+        ...(values.folder ? { folder: values.folder } : {}),
       })
       console.log(JSON.stringify(workflow, null, 2))
       return

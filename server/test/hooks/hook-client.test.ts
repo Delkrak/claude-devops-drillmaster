@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { OBJECTIVE, tempDir, testPorts } from '../helpers.js'
+import { OBJECTIVE, TEST_REPOSITORY, tempDir, testPorts } from '../helpers.js'
 
 const HOOK = path.resolve(import.meta.dirname, '../../../scripts/hook.mjs')
 const FIXTURES = path.join(import.meta.dirname, 'fixtures')
@@ -35,7 +35,7 @@ beforeAll(async () => {
   await fetch(`${server.url}/projects/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ project: project.dir, objective: OBJECTIVE }),
+    body: JSON.stringify({ project: project.dir, drillmaster_repository: TEST_REPOSITORY, objective: OBJECTIVE }),
   })
 })
 

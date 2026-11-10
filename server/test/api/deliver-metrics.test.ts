@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
-import { projectId } from '../../src/env.js'
+import { folderKey as projectId } from '../../src/adapters/projects.js'
 import type { WorkflowDocument } from '../../src/core/workflow.js'
 import { ownerAnswers, seedWorkflow, tempDir, testPorts, WORKFLOW_3 } from '../helpers.js'
 

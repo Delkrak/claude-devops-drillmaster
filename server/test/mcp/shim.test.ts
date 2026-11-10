@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -51,13 +52,15 @@ describe('stdio MCP shim', () => {
   it('forwards workflow_get with the project dir', async () => {
     const before = await client.callTool({ name: 'workflow_get', arguments: {} })
     expect(before.isError).toBe(true)
-    expect(text(before)).toMatch(/no workflow yet/)
+    expect(text(before)).toMatch(/not a Drillmaster project/)
 
+    const drillmasterRepository = path.join(home.dir, 'drillmaster.git')
+    execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', drillmasterRepository])
     const { url } = JSON.parse(await readFile(path.join(home.dir, 'daemon.json'), 'utf8')) as { url: string }
     const init = await fetch(`${url}/projects/init`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project: project.dir, objective: OBJECTIVE }),
+      body: JSON.stringify({ project: project.dir, objective: OBJECTIVE, drillmaster_repository: drillmasterRepository }),
     })
     expect(init.status).toBe(201)
 

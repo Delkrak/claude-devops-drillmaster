@@ -185,7 +185,7 @@ OK.
    - fast-forward, and `work_item_updated`;
    - the new `work_skip`;
    - remove the late start and the restart.
-5. **Phases across sessions:** `work_resume`, `stages`, stopping at the end, rotating tokens, and
+5. **Phases across sessions:** (done: 4194c50) `work_resume`, `stages`, stopping at the end, rotating tokens, and
    binding a resumed session.
 6. **The Drillmaster repository:**
    - the `.drillmaster` file;

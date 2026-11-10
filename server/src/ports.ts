@@ -40,4 +40,25 @@ export interface Ports {
   clock: Clock
   ids: Ids
   reviewer: Reviewer
+  projects: ProjectResolver
+}
+
+/** Where a project's history is kept: a folder in a Drillmaster repository, a private git repository. */
+export interface DrillmasterRepositoryPlace {
+  url: string
+  folder: string
+}
+
+export interface ProjectRef {
+  key: string
+  /** Null for a project kept only on this machine, as in tests. */
+  repository: DrillmasterRepositoryPlace | null
+}
+
+/** Which project a work folder belongs to. */
+export interface ProjectResolver {
+  /** Undefined when the folder isn't a Drillmaster project yet. */
+  resolve(projectDir: string): ProjectRef | undefined
+  /** Makes the folder part of the project kept at `repository`. */
+  link(projectDir: string, repository: DrillmasterRepositoryPlace): Promise<ProjectRef>
 }

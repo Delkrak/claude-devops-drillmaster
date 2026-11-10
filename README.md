@@ -18,17 +18,17 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
 **Once, to begin**
 
 1. **Owner** runs `/devops-drillmaster:setup`, states the objective and its measures, and names
-   a private git repo as the store for the work traces.
+   the Drillmaster repository: a private git repository that keeps everything of Drillmaster.
 2. **Agent** calls `workflow_retrospective(setup)`, and the server creates workflow `0.0.0`. It
    holds only the objective: no work stages, work policies or workflow experiments yet. The server
-   pushes a first commit to the store, and writes `.drillmaster/drillmaster.json` and a copy of the
-   workflow into the work folder.
+   pushes the pin and the workflow to the repository's main first, then writes `.drillmaster` into
+   the work folder.
 
 **Every session**
 
 3. The `SessionStart` hook registers the session and briefs **Agent**: the workflow version, any
    active work item, any pending gate or question for Owner, and whether a retrospective is due. It
-   also fetches what other machines pushed to the store.
+   also fetches what other machines pushed to the Drillmaster repository.
 
 **Every work item**
 
@@ -52,14 +52,14 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
         messages never decide; they count as corrections.
    4. The result shows the next step in full, or where a rejection sends the work back to.
    5. At the end of each work stage, the work item's events are committed and pushed to its own
-      branch in the store.
+      branch in the Drillmaster repository.
 7. With no work stages yet (workflow `0.0.0`), there are no gates: **Agent** does its best, and
    **Owner** corrects it. Those corrections are recorded, and the workflow grows from them.
 8. **Agent** calls `work_deliver` once every gate has passed, with a summary and artifacts such as
    screenshots. **Drillmaster** writes its post mortem in the background.
 9. **Agent** writes its own post mortem with `work_post_mortem`: what to keep, what to change, how
    the experiments did, and anything else. With both post mortems written, the work item's branch is
-   squash-merged into the store's main branch as one commit.
+   squash-merged into the Drillmaster repository's main branch as one commit.
 
 **When Owner calls for it**
 
@@ -129,7 +129,7 @@ sequenceDiagram
 | Skill | What it does |
 |---|---|
 | `/devops-drillmaster:concept` | Explains the Drillmaster concept: the philosophy, the chain of command and the workflow. |
-| `/devops-drillmaster:setup` | Owner sets the objective, its measures and the git store, and Drillmaster creates workflow `0.0.0`, which holds only that objective. |
+| `/devops-drillmaster:setup` | Owner sets the objective, its measures and the Drillmaster repository, and Drillmaster creates workflow `0.0.0`, which holds only that objective. |
 | `/devops-drillmaster:work` | How Agent runs a work item with the drillmaster tools: start it, do each step, report, hand in each gate, ask Owner, deliver, then write the post mortem. |
 | `/devops-drillmaster:retrospective` | Drillmaster's findings and proposals. Owner decides each proposal in AskUserQuestion, and each approved one becomes a workflow experiment. |
 
@@ -224,7 +224,7 @@ The CLI:
 
 ```
 drillmaster open      # the viewer in your browser
-drillmaster init --objective "<Owner's objective>" --measure owner_corrections_per_item --store <git repo>
+drillmaster init --objective "<Owner's objective>" --measure owner_corrections_per_item --repository <git url> [--folder <name>]
 drillmaster inspect [--json]
 ```
 
@@ -247,12 +247,30 @@ It's a React app in `server/viewer/` with a token-driven design:
 
 `npm run build` builds the viewer into `server/dist/viewer`.
 
-`DRILLMASTER_HOME` sets where the server keeps its port file, its local event log and its clones
-of the git stores. It defaults to `~/.drillmaster`.
+`DRILLMASTER_HOME` sets where the server keeps its port file, its local event log and its clone
+of each project's Drillmaster repository. It defaults to `~/.drillmaster`.
 
-## The git store
+## The Drillmaster repository
 
-Each project's work traces live in a separate, private git repo, named at setup.
+Everything of Drillmaster lives in a separate, private git repository, named at setup: the
+Drillmaster repository. Each project has a folder in it, so one repository can hold several
+projects. Its main branch is the source of truth.
+
+The work repository holds only `.drillmaster`, committed with the code:
+`{"drillmaster_repository": "<git url>", "folder": "<name>"}`. Without it a folder isn't traced.
+
+Under `<folder>/` in the Drillmaster repository:
+
+| Path | What it is |
+|---|---|
+| `drillmaster.json` | The pin: the Drillmaster version the project runs on. |
+| `workflow.json` | The complete current workflow. Each change is a commit, so its log is the workflow's history. |
+| `project/<writer>.jsonl` | The project's events from each Drillmaster server (setup, retrospectives, decisions). |
+| `items/<work_item_id>/<writer>.jsonl` | Each work item's events. |
+| `items/<work_item_id>/artifacts/` | What a delivery showed, such as screenshots. |
+
+- A workflow change is pushed to main first, and applies only once the push succeeded. When another
+  machine changed the workflow first, nothing applies, and the retrospective is run again.
 
 - A work item's events go on its own branch (`drillmaster/<work_item_id>`), committed and pushed at
   the end of each work stage.
@@ -262,12 +280,10 @@ Each project's work traces live in a separate, private git repo, named at setup.
   `project/<writer>.jsonl`), so pushes from several machines never conflict.
 - The server writes through its own bare clone with git plumbing, so it never checks anything out,
   and pushes in the background. A failing push shows in the SessionStart brief.
-- The work folder holds `.drillmaster/drillmaster.json` (the Drillmaster version, the project and
-  the store) and `.drillmaster/workflow.json` (a copy of the workflow, rewritten if edited by
-  hand). Another machine with the same `drillmaster.json` picks the project up from the store.
+- Another machine with the same `.drillmaster` picks the project up from the repository.
 
-Trace output can hold secrets: tokens and well-known secret formats are redacted, but the store repo
-must still be private.
+Trace output can hold secrets: tokens and well-known secret formats are redacted, but the
+Drillmaster repository must still be private.
 
 ## Development
 

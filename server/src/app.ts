@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { InvalidArtifact, readArtifactFromWorkFolder } from './adapters/artifacts.js'
-import { StorePublisher } from './adapters/storePublisher.js'
-import { DEFAULT_BRANCH_PATTERN, isPublishMoment, type Storage } from './core/storeLayout.js'
+import { defaultFolderOf, projectKey } from './adapters/projects.js'
+import { RepositoryConflict, RepositoryPublisher } from './adapters/repositoryPublisher.js'
+import { isPublishMoment } from './core/repositoryLayout.js'
 import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type MetricAnswer, type NewEvent, type StepSkipRequested } from './core/events.js'
 import { updateOnReaching } from './core/updates.js'
 import { judgeExperiments } from './core/experiments.js'
@@ -45,7 +44,6 @@ import {
 import {
   findVersion,
   findWorkItemByTokenHash,
-  firstPosition,
   foldState,
   viewWorkflow,
   WorkflowQueryError,
@@ -53,13 +51,11 @@ import {
   workTracesOf,
   type ProjectState,
   type RetroState,
-  type WorkItemState,
 } from './core/state.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
-import { compareVersions, Objective, toSemver, WorkflowDocument, workflowZero } from './core/workflow.js'
-import { linkedProjectName, linkedStore, projectId as projectIdOfFolder } from './env.js'
-import type { Ports } from './ports.js'
+import { Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
+import type { Ports, ProjectRef } from './ports.js'
 import { VERSION } from './version.js'
 
 const POST_MORTEM_TIMEOUT_MS = 180_000
@@ -67,6 +63,7 @@ const RETROSPECTIVE_TIMEOUT_MS = 300_000
 const MAX_LAST_REPORTS = 200
 const MAX_ARTIFACTS = 10
 const NO_WORKFLOW_YET = 'This project has no workflow yet. Owner sets the objective first (setup).'
+const NOT_A_PROJECT = 'This folder is not a Drillmaster project: it has no .drillmaster file. Owner sets it up with /devops-drillmaster:setup, which is the only thing Drillmaster does here until then.'
 const UNKNOWN_TOKEN = 'Unknown token. Use the agent_token that work_start returned.'
 
 export class UserError extends Error {
@@ -93,15 +90,12 @@ export interface ToolResult {
 interface KnownVersions {
   workflow?: string
   items: Map<string, string>
-  newestDrillmaster: string
 }
 
 export interface DrillmasterOptions {
   recordRawHookPayloads?: boolean
-  /** Who this server writes as in git stores, and where it keeps its clones of them. */
-  store?: { writer: string; clonesRoot: string }
-  /** This server's own record of which project each linked folder belongs to. */
-  linksFile?: string
+  /** Who this server writes as in Drillmaster repositories, and where it keeps each project's clone. */
+  repositories?: { writer: string; projectsRoot: string }
 }
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
@@ -155,7 +149,8 @@ const RetroArgs = z.discriminatedUnion('action', [
       action: z.literal('setup'),
       objective: z.string().min(1),
       measures: z.array(z.string()).min(1),
-      store: z.object({ repo: z.string().min(1), path: z.string().min(1).optional() }).strict().optional(),
+      drillmaster_repository: z.string().min(1),
+      folder: z.string().regex(/^[A-Za-z0-9_-]+$/, 'a folder name has letters, digits, _ and - only').optional(),
     })
     .strict(),
   z.object({ action: z.literal('run') }).strict(),
@@ -326,7 +321,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'workflow_retrospective',
     description: [
       'The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.',
-      `- setup {objective, measures}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective. measures: ${MEASURE_NAMES.join(', ')}.`,
+      `- setup {objective, measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective, in the Drillmaster repository, and writes .drillmaster in the work folder. measures: ${MEASURE_NAMES.join(', ')}.`,
       `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's corrections, the measures and the experiments' verdicts. Show them to Owner as they are.`,
       "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline.",
     ].join('\n'),
@@ -336,12 +331,8 @@ export const TOOLS: ToolDefinition[] = [
         action: { type: 'string', enum: ['setup', 'run', 'apply'] },
         objective: { type: 'string', description: 'setup: what Owner wants Drillmaster to achieve with the workflow.' },
         measures: { type: 'array', items: { type: 'string', enum: [...MEASURE_NAMES] }, description: 'setup: the measures of the objective.' },
-        store: {
-          type: 'object',
-          description: "setup: the private git repo (URL or path) that keeps the project's work traces, and the folder in it (default: the project's name).",
-          properties: { repo: { type: 'string' }, path: { type: 'string' } },
-          required: ['repo'],
-        },
+        drillmaster_repository: { type: 'string', description: "setup: the private git repository (URL or path) that keeps the project's workflow and history: the Drillmaster repository." },
+        folder: { type: 'string', description: "setup: the project's folder in the Drillmaster repository (default: the work folder's name). One repository can hold several projects." },
         proposal: { type: 'integer', minimum: 1, description: 'apply: only this proposal from the latest run.' },
       },
       required: ['action'],
@@ -370,10 +361,8 @@ export class Drillmaster {
   private readonly lockByProject = new Map<string, Promise<unknown>>()
   private readonly knownVersionsByProject = new Map<string, KnownVersions>()
   private readonly publishChainByProject = new Map<string, Promise<void>>()
-  private readonly storeProblemByProject = new Map<string, string>()
+  private readonly repositoryProblemByProject = new Map<string, string>()
   private readonly projectDirsSeen = new Set<string>()
-  private readonly projectByLinkedFolder: Map<string, string>
-  private readonly linkProblemByProject = new Map<string, string>()
   private readonly backgroundWork = new Set<Promise<unknown>>()
 
   private readonly ports: Ports
@@ -384,34 +373,20 @@ export class Drillmaster {
   ) {
     // Every event is read as the current version of Drillmaster writes it.
     this.ports = { ...ports, store: { ...ports.store, read: async (projectId) => (await ports.store.read(projectId)).map(migrateEvent), append: (projectId, event) => ports.store.append(projectId, event), projectIds: () => ports.store.projectIds() } }
-    this.projectByLinkedFolder = new Map(Object.entries(readLinks(options.linksFile)))
   }
 
-  /**
-   * A linked folder keeps the project it was first linked to. A drillmaster.json that later names
-   * another project is ignored and reported, so Agent can't re-link a folder to an empty project.
-   */
-  private projectIdOf(projectDir: string) {
-    const named = projectIdOfFolder(projectDir)
-    if (!linkedProjectName(projectDir) || !this.options.linksFile) return named
-    const folder = path.resolve(projectDir)
-    const recorded = this.projectByLinkedFolder.get(folder)
-    if (!recorded) {
-      this.projectByLinkedFolder.set(folder, named)
-      writeLinks(this.options.linksFile, this.projectByLinkedFolder)
-      return named
-    }
-    if (recorded !== named) {
-      this.linkProblemByProject.set(recorded, `.drillmaster/drillmaster.json names project ${named}, but this folder is linked to ${recorded}. Drillmaster keeps ${recorded}; tell Owner.`)
-    }
-    return recorded
+  /** The project a work folder belongs to, as its `.drillmaster` file says. */
+  private projectOf(projectDir: string): ProjectRef {
+    const project = this.ports.projects.resolve(projectDir)
+    if (!project) throw new UserError(NOT_A_PROJECT, 404)
+    return project
   }
 
-  private withProjectLock<T>(projectDir: string, criticalSection: (projectId: string) => Promise<T>): Promise<T> {
-    const projectId = this.projectIdOf(projectDir)
-    const previousRun = this.lockByProject.get(projectId) ?? Promise.resolve()
-    const thisRun = previousRun.then(() => criticalSection(projectId))
-    this.lockByProject.set(projectId, thisRun.catch(() => {}))
+  private withProjectLock<T>(projectDir: string, criticalSection: (projectId: string, project: ProjectRef) => Promise<T>): Promise<T> {
+    const project = this.projectOf(projectDir)
+    const previousRun = this.lockByProject.get(project.key) ?? Promise.resolve()
+    const thisRun = previousRun.then(() => criticalSection(project.key, project))
+    this.lockByProject.set(project.key, thisRun.catch(() => {}))
     return thisRun
   }
 
@@ -419,23 +394,15 @@ export class Drillmaster {
   private async versionsOf(projectId: string): Promise<KnownVersions> {
     let known = this.knownVersionsByProject.get(projectId)
     if (!known) {
-      const events = await this.ports.store.read(projectId)
-      const state = foldState(events)
-      known = {
-        workflow: state.workflow?.version,
-        items: new Map(Object.values(state.workItems).map((item) => [item.work_item_id, item.workflow_version])),
-        newestDrillmaster: events.reduce((newest, event) => (event.drillmaster_version && compareVersions(event.drillmaster_version, newest) > 0 ? event.drillmaster_version : newest), '0.0.0'),
-      }
+      const state = foldState(await this.ports.store.read(projectId))
+      known = { workflow: state.workflow?.version, items: new Map(Object.values(state.workItems).map((item) => [item.work_item_id, item.workflow_version])) }
       this.knownVersionsByProject.set(projectId, known)
     }
     return known
   }
 
-  private async appendEvent(projectId: string, newEvent: NewEvent): Promise<DrillmasterEvent> {
-    const known = await this.versionsOf(projectId)
-    if (compareVersions(known.newestDrillmaster, VERSION) > 0) {
-      throw new UserError(`This project was written by Drillmaster ${known.newestDrillmaster}, which is newer than this one (${VERSION}). Upgrade Drillmaster before you work on it.`, 409)
-    }
+  private async appendEvent(project: ProjectRef, newEvent: NewEvent): Promise<DrillmasterEvent> {
+    const known = await this.versionsOf(project.key)
     const workItemId = 'work_item_id' in newEvent && typeof newEvent.work_item_id === 'string' ? newEvent.work_item_id : undefined
     const madeUnder = (workItemId ? known.items.get(workItemId) : undefined) ?? known.workflow
     const storedEvent = {
@@ -443,92 +410,80 @@ export class Drillmaster {
       at: this.ports.clock.now(),
       ...(madeUnder ? { workflow_version: madeUnder } : {}),
       drillmaster_version: VERSION,
-      ...(this.options.store ? { writer: this.options.store.writer } : {}),
+      ...(this.options.repositories ? { writer: this.options.repositories.writer } : {}),
       ...newEvent,
     } as DrillmasterEvent
-    await this.ports.store.append(projectId, storedEvent)
-    if (isPublishMoment(storedEvent)) this.publishInBackground(projectId)
+    await this.ports.store.append(project.key, storedEvent)
+    if (isPublishMoment(storedEvent)) this.publishInBackground(project)
     if (storedEvent.type === 'project_initialized' || storedEvent.type === 'workflow_changed') known.workflow = toSemver(storedEvent.workflow.version)
     if (storedEvent.type === 'work_item_started') known.items.set(storedEvent.work_item_id, toSemver(storedEvent.workflow_version))
     if (storedEvent.type === 'work_item_updated') known.items.set(storedEvent.work_item_id, storedEvent.to_version)
     return storedEvent
   }
 
-  private publisherFor(projectId: string, storage: Storage) {
-    return StorePublisher.forProject(this.options.store!.clonesRoot, projectId, storage, this.options.store!.writer)
+  /** The project's Drillmaster repository, when the project has one and this server writes to repositories. */
+  private publisherFor(project: ProjectRef) {
+    if (!project.repository || !this.options.repositories) return undefined
+    return RepositoryPublisher.forProject(this.options.repositories.projectsRoot, project.key, project.repository, this.options.repositories.writer)
   }
 
-  /** One publish at a time per project; a failure is kept to tell Agent, and the next publish retries it. */
-  private publishInBackground(projectId: string) {
-    if (!this.options.store) return
-    const previousPublish = this.publishChainByProject.get(projectId) ?? Promise.resolve()
-    const thisPublish = previousPublish.then(async () => {
-      const events = await this.ports.store.read(projectId)
-      const storage = foldState(events).workflow?.storage
-      if (!storage) return
-      try {
-        await this.publisherFor(projectId, storage).publish(events, (workItemId, name) => this.ports.artifacts.read(projectId, workItemId, name))
-        this.storeProblemByProject.delete(projectId)
-      } catch (error) {
-        this.storeProblemByProject.set(projectId, error instanceof Error ? error.message : String(error))
-      }
-    })
-    this.publishChainByProject.set(projectId, thisPublish)
-    this.runInBackground(thisPublish)
+  /** One change to the repository at a time per project: publishes, workflow pushes and pins. */
+  private inRepositoryChain<T>(project: ProjectRef, change: () => Promise<T>): Promise<T> {
+    const previous = this.publishChainByProject.get(project.key) ?? Promise.resolve()
+    const thisChange = previous.then(change)
+    this.publishChainByProject.set(
+      project.key,
+      thisChange.then(
+        () => {},
+        () => {},
+      ),
+    )
+    return thisChange
+  }
+
+  /** A failure is kept to tell Agent, and the next publish retries it. */
+  private publishInBackground(project: ProjectRef) {
+    const publisher = this.publisherFor(project)
+    if (!publisher) return
+    this.runInBackground(
+      this.inRepositoryChain(project, async () => {
+        const events = await this.ports.store.read(project.key)
+        try {
+          await publisher.publish(events, (workItemId, name) => this.ports.artifacts.read(project.key, workItemId, name))
+          this.repositoryProblemByProject.delete(project.key)
+        } catch (error) {
+          this.repositoryProblemByProject.set(project.key, error instanceof Error ? error.message : String(error))
+        }
+      }),
+    )
   }
 
   /** Fetches what other machines pushed, for every project this server has seen, every `intervalMs`. */
-  syncStoresEvery(intervalMs: number) {
+  syncRepositoriesEvery(intervalMs: number) {
     const timer = setInterval(() => {
-      for (const projectDir of this.projectDirsSeen) this.runInBackground(this.importFromStore(projectDir))
+      for (const projectDir of this.projectDirsSeen) this.runInBackground(this.importFromRepository(projectDir))
     }, intervalMs)
     timer.unref()
     return () => clearInterval(timer)
   }
 
-  private async importFromStore(projectDir: string) {
-    const projectId = this.projectIdOf(projectDir)
-    const linked = linkedStore(projectDir)
-    const storage = (await this.state(projectDir)).workflow?.storage ?? (linked ? { ...linked, branch: { pattern: DEFAULT_BRANCH_PATTERN } } : undefined)
-    if (!storage || !this.options.store) return
+  private async importFromRepository(projectDir: string) {
+    const project = this.ports.projects.resolve(projectDir)
+    const publisher = project && this.publisherFor(project)
+    if (!project || !publisher) return
     let imported: DrillmasterEvent[]
     try {
-      imported = await this.publisherFor(projectId, storage).importEvents()
+      imported = await publisher.importEvents()
     } catch (error) {
-      this.storeProblemByProject.set(projectId, error instanceof Error ? error.message : String(error))
+      this.repositoryProblemByProject.set(project.key, error instanceof Error ? error.message : String(error))
       return
     }
-    await this.withProjectLock(projectDir, async () => {
+    await this.withProjectLock(projectDir, async (projectId, project) => {
       const knownIds = new Set((await this.ports.store.read(projectId)).map((event) => event.id))
       const unseen = [...new Map(imported.filter((event) => !knownIds.has(event.id)).map((event) => [event.id, event])).values()].sort((a, b) => a.at.localeCompare(b.at))
       for (const event of unseen) await this.ports.store.append(projectId, event)
       if (unseen.length) this.knownVersionsByProject.delete(projectId)
     })
-  }
-
-  /**
-   * Keeps .drillmaster/ in the work folder: the pin and store, and a copy of the workflow. The
-   * store is the source of truth; a copy edited by hand is rewritten, and the returned note says so.
-   */
-  private async writeWorkFolderMirror(projectDir: string, state: ProjectState): Promise<string | undefined> {
-    const workflow = state.workflow
-    if (!workflow?.storage) return undefined
-    const folder = path.join(projectDir, '.drillmaster')
-    const workflowFile = path.join(folder, 'workflow.json')
-    const content = JSON.stringify(workflow, null, 2) + '\n'
-    const existing = await readFile(workflowFile, 'utf8').catch(() => undefined)
-    await mkdir(folder, { recursive: true })
-    await writeFile(
-      path.join(folder, 'drillmaster.json'),
-      JSON.stringify({ drillmaster_version: VERSION, project: this.projectIdOf(projectDir), store: { repo: workflow.storage.repo, path: workflow.storage.path } }, null, 2) + '\n',
-    )
-    if (existing === content) return undefined
-    await writeFile(workflowFile, content)
-    if (existing === undefined) return undefined
-    const wasAnEarlierVersion = state.versions.some((version) => JSON.stringify(version, null, 2) + '\n' === existing.replace(/\r\n/g, '\n'))
-    return wasAnEarlierVersion
-      ? `.drillmaster/workflow.json is now workflow ${workflow.version}: commit it with your next work.`
-      : '.drillmaster/workflow.json had been edited by hand, and Drillmaster rewrote it. The workflow changes only at a workflow retrospective.'
   }
 
   private runInBackground(task: Promise<unknown>) {
@@ -542,7 +497,7 @@ export class Drillmaster {
   }
 
   async events(projectDir: string) {
-    return this.ports.store.read(this.projectIdOf(projectDir))
+    return this.ports.store.read(this.projectOf(projectDir).key)
   }
 
   async state(projectDir: string): Promise<ProjectState> {
@@ -575,49 +530,45 @@ export class Drillmaster {
     return { mediaType: recorded.media_type, bytes }
   }
 
-  async init(projectDir: string, objective: unknown, store?: { repo: string; path?: string }) {
-    const workflow = await this.withProjectLock(projectDir, async (projectId) => {
-      const parsedObjective = Objective.safeParse(objective)
-      if (!parsedObjective.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedObjective.error)}`)
-      const state = foldState(await this.ports.store.read(projectId))
-      if (state.initialized) {
-        throw new UserError('This project already has a workflow. It changes only at a workflow retrospective.', 409)
-      }
-      const storage = store ? { repo: store.repo, path: store.path ?? projectId, branch: { pattern: DEFAULT_BRANCH_PATTERN } } : undefined
-      if (storage) {
-        if (!this.options.store) throw new UserError('This Drillmaster server has no git store set up.')
-        await this.publisherFor(projectId, storage)
-          .publish([])
-          .catch((error: unknown) => {
-            throw new UserError(`The store repo ${storage.repo} does not take a push from Drillmaster: ${error instanceof Error ? error.message : String(error)}`)
-          })
-      }
-      const workflow = WorkflowDocument.parse({ ...workflowZero(parsedObjective.data), ...(storage ? { storage } : {}) })
-      await this.appendEvent(projectId, { type: 'project_initialized', dir: path.resolve(projectDir), workflow })
-      return workflow
-    })
-    await this.writeWorkFolderMirror(projectDir, await this.state(projectDir))
-    return workflow
+  /**
+   * Sets a work folder up as a Drillmaster project: the pin and workflow 0.0.0 are pushed to the
+   * Drillmaster repository first, then `.drillmaster` names it in the work folder.
+   */
+  async init(projectDir: string, objective: unknown, repository: { url: string; folder?: string }) {
+    const parsedObjective = Objective.safeParse(objective)
+    if (!parsedObjective.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedObjective.error)}`)
+    const existing = this.ports.projects.resolve(projectDir)
+    if (existing && foldState(await this.ports.store.read(existing.key)).initialized) {
+      throw new UserError('This project already has a workflow. It changes only at a workflow retrospective.', 409)
+    }
+    const place = { url: repository.url, folder: repository.folder ?? defaultFolderOf(projectDir) }
+    const workflow = workflowZero(parsedObjective.data)
+    const candidate: ProjectRef = { key: projectKey(place), repository: place }
+    const publisher = this.publisherFor(candidate)
+    if (publisher) {
+      await publisher.setUp(workflow, VERSION).catch((error: unknown) => {
+        if (error instanceof RepositoryConflict) throw new UserError(error.message, 409)
+        throw new UserError(`The Drillmaster repository ${place.url} does not take a push from Drillmaster: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
+    const project = await this.ports.projects.link(projectDir, place)
+    await this.withProjectLock(projectDir, () => this.appendEvent(project, { type: 'project_initialized', dir: path.resolve(projectDir), workflow }))
+    return { workflow, project }
   }
 
-  hook(projectDir: string, hookEvent: string, payload: unknown) {
+  async hook(projectDir: string, hookEvent: string, payload: unknown) {
     if (!(HOOK_EVENTS as readonly string[]).includes(hookEvent)) throw new UserError(`Unknown hook event: ${hookEvent}`, 404)
     if (typeof payload !== 'object' || payload === null) throw new UserError('The hook payload must be a JSON object')
-    return this.withProjectLock(projectDir, async (projectId) => {
+    // A folder without .drillmaster isn't traced.
+    if (!this.ports.projects.resolve(projectDir)) return { stored: 0, output: undefined }
+    return this.withProjectLock(projectDir, async (projectId, project) => {
       const events = await this.ports.store.read(projectId)
       const state = foldState(events)
-      const context =
-        hookEvent === 'SessionStart'
-          ? {
-              retrospectiveDue: retrospectiveDue(state, events),
-              storeProblem: this.storeProblemByProject.get(projectId),
-              mirrorNote: [this.linkProblemByProject.get(projectId), await this.writeWorkFolderMirror(projectDir, state)].filter(Boolean).join(' ') || undefined,
-            }
-          : {}
-      if (hookEvent === 'SessionStart') this.runInBackground(this.importFromStore(projectDir))
+      const context = hookEvent === 'SessionStart' ? { retrospectiveDue: retrospectiveDue(state, events), repositoryProblem: this.repositoryProblemByProject.get(projectId) } : {}
+      if (hookEvent === 'SessionStart') this.runInBackground(this.importFromRepository(projectDir))
       this.projectDirsSeen.add(projectDir)
       const outcome = handleHook(state, hookEvent, payload as HookPayload, this.options.recordRawHookPayloads ?? false, context)
-      for (const event of outcome.events) await this.appendEvent(projectId, event)
+      for (const event of outcome.events) await this.appendEvent(project, event)
       return { stored: outcome.events.length, output: outcome.output }
     })
   }
@@ -647,8 +598,11 @@ export class Drillmaster {
         case 'workflow_retrospective': {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs)
           if (retroArgs.action === 'setup') {
-            const workflow = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures }, retroArgs.store)
-            return jsonResult({ workflow, note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections.' })
+            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder })
+            return jsonResult({
+              workflow,
+              note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections. Commit .drillmaster with the code: it is how Drillmaster knows this folder.',
+            })
           }
           return jsonResult(retroArgs.action === 'run' ? await this.runRetrospective(projectDir) : await this.applyApprovedProposals(projectDir, retroArgs.proposal))
         }
@@ -686,7 +640,7 @@ export class Drillmaster {
   }
 
   private async startWorkItem(projectDir: string, args: z.infer<typeof WorkStartArgs>): Promise<ToolResult> {
-    const started = await this.withProjectLock(projectDir, async (projectId) => {
+    const started = await this.withProjectLock(projectDir, async (projectId, project) => {
       const workflow = foldState(await this.ports.store.read(projectId)).workflow
       if (!workflow) throw new UserError(NO_WORKFLOW_YET)
       const agentToken = this.ports.ids.secret()
@@ -697,7 +651,7 @@ export class Drillmaster {
         throw new UserError(`A work item starts at step 1.1, in stage 1 "${firstStage.name}", which isn't among the stages you named. To go on with an open work item, use work_resume.`)
       }
       const workItemId = this.ports.ids.next('wi')
-      await this.appendEvent(projectId, {
+      await this.appendEvent(project, {
         type: 'work_item_started',
         work_item_id: workItemId,
         issue: args.issue,
@@ -715,7 +669,7 @@ export class Drillmaster {
   }
 
   private async resumeWorkItem(projectDir: string, args: z.infer<typeof WorkResumeArgs>): Promise<ToolResult> {
-    const resumed = await this.withProjectLock(projectDir, async (projectId) => {
+    const resumed = await this.withProjectLock(projectDir, async (projectId, project) => {
       const state = foldState(await this.ports.store.read(projectId))
       const item = Object.values(state.workItems)
         .filter((candidate) => candidate.issue === args.issue && (candidate.status === 'active' || !candidate.post_mortems.includes('agent')))
@@ -724,11 +678,11 @@ export class Drillmaster {
       const workflow = work.workflowOfWorkItem(state, item)
       const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
       const agentToken = this.ports.ids.secret()
-      await this.appendEvent(projectId, { type: 'work_item_resumed', work_item_id: item.work_item_id, token_hash: hashToken(agentToken), ...(stageGuids ? { stage_guids: stageGuids } : {}) })
+      await this.appendEvent(project, { type: 'work_item_resumed', work_item_id: item.work_item_id, token_hash: hashToken(agentToken), ...(stageGuids ? { stage_guids: stageGuids } : {}) })
       const resumedItem = foldState(await this.ports.store.read(projectId)).workItems[item.work_item_id]!
       const canUpdate = resumedItem.status === 'active' && !resumedItem.pending_gate && !resumedItem.pending_skip
       const update = canUpdate ? updateOnReaching(state, resumedItem, workflow, { stage: item.stage, step: item.step }) : undefined
-      if (update) await this.appendEvent(projectId, update.event)
+      if (update) await this.appendEvent(project, update.event)
       const after = foldState(await this.ports.store.read(projectId))
       const current = after.workItems[item.work_item_id]!
       const currentWorkflow = work.workflowOfWorkItem(after, current)
@@ -750,12 +704,12 @@ export class Drillmaster {
   }
 
   private async skipStep(projectDir: string, args: z.infer<typeof WorkSkipArgs>): Promise<ToolResult> {
-    const requested = await this.withProjectLock(projectDir, async (projectId) => {
+    const requested = await this.withProjectLock(projectDir, async (projectId, project) => {
       const state = foldState(await this.ports.store.read(projectId))
       const item = findWorkItemByTokenHash(state, hashToken(args.token))
       if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
       const decision = work.requestSkip(state, item, { ...stepOfRef(work.workflowOfWorkItem(state, item), args.step), why: args.why })
-      for (const newEvent of decision.events) await this.appendEvent(projectId, newEvent)
+      for (const newEvent of decision.events) await this.appendEvent(project, newEvent)
       return { answer: decision.answer as unknown as render.SkipOutcome, workItemId: item.work_item_id }
     })
     const answer = requested.answer.skip === 'pending' && requested.answer.decided_by === 'drillmaster' ? await this.judgeSkip(projectDir, requested.workItemId) : requested.answer
@@ -779,12 +733,12 @@ export class Drillmaster {
     } catch (error) {
       verdict = { accepted: false, why: `Drillmaster could not judge the skip (${error instanceof Error ? error.message : String(error)}). Do the step.` }
     }
-    return this.withProjectLock(projectDir, async (projectId) => {
+    return this.withProjectLock(projectDir, async (projectId, project) => {
       const current = foldState(await this.ports.store.read(projectId))
       const currentItem = current.workItems[workItemId]!
       if (currentItem.pending_skip?.decided_by !== 'drillmaster') return { skip: 'pending', stage: request.stage, step: request.step, note: 'The skip was decided while Drillmaster judged it. Check work_status.' }
       const decision = work.decideSkip(current, currentItem, { ...verdict, by: 'drillmaster' })
-      for (const newEvent of decision.events) await this.appendEvent(projectId, newEvent)
+      for (const newEvent of decision.events) await this.appendEvent(project, newEvent)
       return decision.answer as unknown as render.SkipOutcome
     })
   }
@@ -793,7 +747,7 @@ export class Drillmaster {
     const artifactsToRead = toolName === 'work_deliver' ? parseToolArgs(WorkDeliverArgs, toolArgs).artifacts ?? [] : []
     const readArtifacts = await Promise.all(artifactsToRead.map((artifactPath) => readArtifactFromWorkFolder(projectDir, artifactPath)))
 
-    const outcome = await this.withProjectLock(projectDir, async (projectId) => {
+    const outcome = await this.withProjectLock(projectDir, async (projectId, project) => {
       const state = foldState(await this.ports.store.read(projectId))
       if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
       const { token } = toolArgs as { token?: unknown }
@@ -830,7 +784,7 @@ export class Drillmaster {
       }
       let gateSubmissionToJudge: string | undefined
       for (const newEvent of decision.events) {
-        const storedEvent = await this.appendEvent(projectId, newEvent)
+        const storedEvent = await this.appendEvent(project, newEvent)
         if (storedEvent.type === 'gate_submitted' && storedEvent.gate === 'drillmaster') gateSubmissionToJudge = storedEvent.id
         if (storedEvent.type === 'gate_verdict' && storedEvent.accepted) this.takeDrillmasterMetricsInBackground(projectDir, storedEvent)
         if (storedEvent.type === 'work_item_delivered') this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
@@ -889,9 +843,9 @@ export class Drillmaster {
   }
 
   private recordMetricAnswers(projectDir: string, workItemId: string, position: { stage: number; step: number; step_guid?: string }, answers: readonly MetricAnswer[]) {
-    return this.withProjectLock(projectDir, async (projectId) => {
+    return this.withProjectLock(projectDir, async (projectId, project) => {
       for (const metricAnswer of answers) {
-        await this.appendEvent(projectId, { type: 'metric_recorded', work_item_id: workItemId, ...position, ...metricAnswer, by: 'drillmaster' })
+        await this.appendEvent(project, { type: 'metric_recorded', work_item_id: workItemId, ...position, ...metricAnswer, by: 'drillmaster' })
       }
     })
   }
@@ -913,10 +867,10 @@ export class Drillmaster {
       const reason = error instanceof Error ? error.message : String(error)
       postMortem = { keep: [], change: [{ refs: [], text: `Drillmaster could not write its post mortem: ${reason}` }], experiment_reflections: [] }
     }
-    await this.withProjectLock(projectDir, async (projectId) => {
+    await this.withProjectLock(projectDir, async (projectId, project) => {
       const currentItem = foldState(await this.ports.store.read(projectId)).workItems[workItemId]
       if (currentItem?.post_mortems.includes('drillmaster')) return
-      await this.appendEvent(projectId, { type: 'post_mortem_written', work_item_id: workItemId, author: 'drillmaster', ...postMortem })
+      await this.appendEvent(project, { type: 'post_mortem_written', work_item_id: workItemId, author: 'drillmaster', ...postMortem })
     })
   }
 
@@ -933,8 +887,8 @@ export class Drillmaster {
         throw new UserError(`Drillmaster could not carry out the retrospective: ${error instanceof Error ? error.message : String(error)}`)
       })
     const retroResult = readRetroAnswer(state.workflow, answer, TOOL_NAMES)
-    return this.withProjectLock(projectDir, async (projectId) => {
-      const storedEvent = await this.appendEvent(projectId, {
+    return this.withProjectLock(projectDir, async (projectId, project) => {
+      const storedEvent = await this.appendEvent(project, {
         type: 'retrospective_ran',
         retro_id: this.ports.ids.next('retro'),
         work_items: reviewedItems.map((item) => item.work_item_id),
@@ -953,7 +907,7 @@ export class Drillmaster {
   }
 
   private applyApprovedProposals(projectDir: string, onlyProposalId: number | undefined) {
-    return this.withProjectLock(projectDir, async (projectId) => {
+    return this.withProjectLock(projectDir, async (projectId, project) => {
       const events = await this.ports.store.read(projectId)
       const state = foldState(events)
       const retro = state.latestRetroId ? state.retros[state.latestRetroId] : undefined
@@ -972,7 +926,8 @@ export class Drillmaster {
           throw new UserError(`Proposal ${proposalId} builds on proposal ${unappliedDependencies.join(', ')}, which is not applied. Owner must approve ${unappliedDependencies.length > 1 ? 'those' : 'it'} too.`, 409)
         }
         const changed = applyProposal(workflow, proposal, measureDeliveredItems(events), this.ports.clock.now().slice(0, 10))
-        await this.appendEvent(projectId, { type: 'workflow_changed', workflow: changed.workflow, reason: proposal.change, level: changed.level, retro_id: retro.retro_id, proposal: proposalId })
+        await this.pushWorkflowFirst(project, workflow, changed.workflow, `workflow ${changed.workflow.version}: ${proposal.change}`, applied.length)
+        await this.appendEvent(project, { type: 'workflow_changed', workflow: changed.workflow, reason: proposal.change, level: changed.level, retro_id: retro.retro_id, proposal: proposalId })
         const openedExperiment = changed.workflow.experiments.find((experiment) => !workflow.experiments.some((earlier) => earlier.id === experiment.id))
         applied.push({ proposal: proposalId, workflow_version: changed.workflow.version, level: changed.level, change: proposal.change, experiment: openedExperiment ?? null })
         appliedIds.push(proposalId)
@@ -984,9 +939,17 @@ export class Drillmaster {
         workflow_version: workflow.version,
         ...(openItems.length ? { note: `Open work items (${openItems.join(', ')}) stay on their workflow version; each moves to ${workflow.version} at the next step that allows an update.` } : {}),
       }
-    }).then(async (result) => {
-      await this.writeWorkFolderMirror(projectDir, await this.state(projectDir))
-      return result
+    })
+  }
+
+  /** A workflow change applies only once main of the Drillmaster repository has it. */
+  private async pushWorkflowFirst(project: ProjectRef, current: WorkflowDocument, next: WorkflowDocument, message: string, appliedSoFar: number) {
+    const publisher = this.publisherFor(project)
+    if (!publisher) return
+    await this.inRepositoryChain(project, () => publisher.pushWorkflow(current, next, message)).catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      const applied = appliedSoFar ? ` The ${appliedSoFar} change${appliedSoFar > 1 ? 's' : ''} before it applied.` : ''
+      throw new UserError(`The Drillmaster repository didn't take workflow ${next.version}, so it doesn't apply: ${reason}.${applied} Run the retrospective again.`, 409)
     })
   }
 
@@ -1005,14 +968,14 @@ export class Drillmaster {
       judgement = { error: error instanceof Error ? error.message : String(error) }
     }
 
-    return this.withProjectLock(projectDir, async (projectId) => {
+    return this.withProjectLock(projectDir, async (projectId, project) => {
       const currentItem = foldState(await this.ports.store.read(projectId)).workItems[item.work_item_id]
       const stillPending =
         currentItem?.pending_gate?.gate === 'drillmaster' && currentItem.pending_gate.stage === submission.stage && currentItem.pending_gate.step === submission.step
       if (!stillPending) return { verdict: 'superseded', note: 'This gate was decided while Drillmaster was judging it. Check work_status.' }
       const gatePosition = { work_item_id: item.work_item_id, ...work.atStep(workflow, submission.stage, submission.step) }
       if ('error' in judgement) {
-        await this.appendEvent(projectId, { type: 'review_failed', ...gatePosition, error: judgement.error })
+        await this.appendEvent(project, { type: 'review_failed', ...gatePosition, error: judgement.error })
         return {
           verdict: 'pending',
           gate: 'drillmaster',
@@ -1021,12 +984,12 @@ export class Drillmaster {
         }
       }
       for (const metricAnswer of judgement.metrics) {
-        await this.appendEvent(projectId, { type: 'metric_recorded', ...gatePosition, ...metricAnswer, by: 'drillmaster' })
+        await this.appendEvent(project, { type: 'metric_recorded', ...gatePosition, ...metricAnswer, by: 'drillmaster' })
       }
       const { verdict } = judgement
-      await this.appendEvent(projectId, { type: 'gate_verdict', ...gatePosition, by: 'drillmaster', ...verdict })
+      await this.appendEvent(project, { type: 'gate_verdict', ...gatePosition, by: 'drillmaster', ...verdict })
       const update = verdict.accepted ? updateOnReaching(foldState(await this.ports.store.read(projectId)), currentItem, workflow, verdict.next, [gatePosition.step_guid!]) : undefined
-      if (update) await this.appendEvent(projectId, update.event)
+      if (update) await this.appendEvent(project, update.event)
       return {
         verdict: verdict.accepted ? 'accepted' : 'rejected',
         by: 'drillmaster',
@@ -1101,20 +1064,6 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolArgs: unknown): T {
   const parsed = schema.safeParse(toolArgs ?? {})
   if (!parsed.success) throw new UserError(z.prettifyError(parsed.error))
   return parsed.data
-}
-
-function readLinks(linksFile: string | undefined): Record<string, string> {
-  if (!linksFile) return {}
-  try {
-    return JSON.parse(readFileSync(linksFile, 'utf8')) as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-
-function writeLinks(linksFile: string, projectByLinkedFolder: Map<string, string>) {
-  mkdirSync(path.dirname(linksFile), { recursive: true })
-  writeFileSync(linksFile, JSON.stringify(Object.fromEntries(projectByLinkedFolder), null, 2) + '\n')
 }
 
 const jsonResult = (value: unknown): ToolResult => ({

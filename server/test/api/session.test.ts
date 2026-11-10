@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { OBJECTIVE, testPorts, workToolCall } from '../helpers.js'
+import { OBJECTIVE, TEST_REPOSITORY, testPorts, workToolCall } from '../helpers.js'
 
 let server: RunningServer
 const PROJECT = '/projects/session'
@@ -35,7 +35,7 @@ describe('a session working one item on workflow_0', () => {
   let token: string
 
   it('briefs Agent at SessionStart', async () => {
-    await post('/projects/init', { project: PROJECT, objective: OBJECTIVE })
+    await post('/projects/init', { project: PROJECT, drillmaster_repository: TEST_REPOSITORY, objective: OBJECTIVE })
     const { body } = await hook('SessionStart', { source: 'startup' })
     expect(body.output.hookSpecificOutput.additionalContext).toMatch(/Drillmaster runs this project/)
   })

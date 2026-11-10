@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
-import { projectId } from '../../src/env.js'
+import { folderKey as projectId } from '../../src/adapters/projects.js'
 import { seedWorkflow, testPorts, WORKFLOW_3, workToolCall } from '../helpers.js'
 
 let server: RunningServer

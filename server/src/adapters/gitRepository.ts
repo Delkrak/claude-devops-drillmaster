@@ -19,10 +19,10 @@ interface GitRun {
 }
 
 /**
- * A store repo, written through its own bare clone with git plumbing: any number of branches are
- * written side by side, and nothing is ever checked out.
+ * A Drillmaster repository, written through its own bare clone with git plumbing: any number of
+ * branches are written side by side, and nothing is ever checked out.
  */
-export class GitStore {
+export class GitRepository {
   constructor(
     private readonly cloneDir: string,
     private readonly remote: string,
@@ -163,6 +163,24 @@ export class GitStore {
       }
     }
     return texts
+  }
+
+  /** A file's text on a ref, or undefined when the ref or the file doesn't exist. */
+  async readFile(ref: string, filePath: string): Promise<string | undefined> {
+    const { ok, stdout } = await this.git({ args: ['cat-file', 'blob', `${ref}:${filePath}`], allowFailure: true })
+    return ok ? stdout : undefined
+  }
+
+  /** Moves the local branch up to the fetched remote one, when the local one has nothing of its own. */
+  async adoptRemote(branch: string) {
+    const remoteTip = await this.tip(`refs/remotes/origin/${branch}`)
+    if (!remoteTip) return
+    const localTip = await this.tip(`refs/heads/${branch}`)
+    if (localTip) {
+      const behind = await this.git({ args: ['merge-base', '--is-ancestor', localTip, remoteTip], allowFailure: true })
+      if (!behind.ok) return
+    }
+    await this.git({ args: ['update-ref', `refs/heads/${branch}`, remoteTip] })
   }
 
   async hasPath(ref: string, filePath: string) {

@@ -14,8 +14,8 @@ export interface Check {
 export interface RunFacts {
   ownerMessages: number
   ownerQuestions?: number
-  /** The commit subjects on the git store's main branch, when the run used one. */
-  storeCommits?: string[]
+  /** The commit subjects on the Drillmaster repository's main branch. */
+  repositoryCommits?: string[]
   issues: number
   retros: number
 }
@@ -84,11 +84,11 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     const recorded = events.filter((event) => event.type === 'metric_recorded')
     checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded; ${new Set(takeableMetrics).size} metrics were due at steps work items passed` })
   }
-  if (facts.storeCommits) {
+  if (facts.repositoryCommits) {
     const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)
-    const squashed = facts.storeCommits.filter((subject) => /^wi_\w+ \(/.test(subject))
+    const squashed = facts.repositoryCommits.filter((subject) => /^wi_\w+ \(/.test(subject))
     checks.push({
-      name: 'the store holds one squash commit per complete work item',
+      name: 'the Drillmaster repository holds one squash commit per complete work item',
       ok: squashed.length === complete.length && complete.every((workItem) => squashed.some((subject) => subject.startsWith(`${workItem.work_item_id} `))),
       detail: `${squashed.length} squash commits for ${complete.length} complete work items`,
     })

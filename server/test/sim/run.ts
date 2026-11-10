@@ -7,7 +7,7 @@ import type { DrillmasterEvent } from '../../src/core/events.js'
 import { extractFirstJsonObject } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { compareVersions } from '../../src/core/versions.js'
-import { projectId } from '../../src/env.js'
+import { projectKey } from '../../src/adapters/projects.js'
 import { VERSION } from '../../src/version.js'
 import { checkRun } from './assertions.js'
 import { claudeTurn } from './claude.js'
@@ -53,25 +53,26 @@ const AGENT_TOOLS = [
   'Bash(cat:*)',
 ]
 
-/** A seeded project starts from a given workflow: its first event is written before the server starts. */
-function seedWorkflow(home: string, project: string, scenario: Scenario, storeRepo: string) {
-  const projectFolder = path.join(home, 'projects', projectId(project))
+/**
+ * A seeded project starts from a given workflow: its .drillmaster names the Drillmaster repository,
+ * and its first event is written before the server starts.
+ */
+function seedWorkflow(home: string, project: string, scenario: Scenario, drillmasterRepository: string) {
+  const place = { url: drillmasterRepository, folder: 'project' }
+  writeFileSync(path.join(project, '.drillmaster'), JSON.stringify({ drillmaster_repository: place.url, folder: place.folder }, null, 2) + '\n')
+  const projectFolder = path.join(home, 'projects', projectKey(place))
   mkdirSync(projectFolder, { recursive: true })
-  const workflow = {
-    ...scenario.seed_workflow,
-    objective: { text: scenario.objective, measures: scenario.measures },
-    storage: { repo: storeRepo, path: projectId(project), branch: { pattern: 'drillmaster/{work_item_id}' } },
-  }
+  const workflow = { ...scenario.seed_workflow, objective: { text: scenario.objective, measures: scenario.measures } }
   const init = { id: 'ev_seed', at: new Date().toISOString(), drillmaster_version: VERSION, type: 'project_initialized', dir: project, workflow }
   writeFileSync(path.join(projectFolder, 'events.jsonl'), JSON.stringify(init) + '\n')
 }
 
-const usesStore = (scenario: Scenario) => scenario.seed_workflow !== undefined || (scenario.scripted.setup ?? '').includes('{store}')
+const usesDrillmasterRepository = (scenario: Scenario) => scenario.seed_workflow !== undefined || (scenario.scripted.setup ?? '').includes('{drillmaster_repository}')
 
-/** The subject of every commit on the store's main branch. */
-function storeCommitSubjects(storeRepo: string) {
+/** The subject of every commit on the Drillmaster repository's main branch. */
+function mainCommitSubjects(drillmasterRepository: string) {
   try {
-    return execFileSync('git', ['log', '--format=%s', 'main'], { cwd: storeRepo, encoding: 'utf8' }).split('\n').filter(Boolean)
+    return execFileSync('git', ['log', '--format=%s', 'main'], { cwd: drillmasterRepository, encoding: 'utf8' }).split('\n').filter(Boolean)
   } catch {
     return []
   }
@@ -86,8 +87,8 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   git('add', '-A')
   git('-c', 'user.name=sim', '-c', 'user.email=sim@example.invalid', 'commit', '-q', '-m', 'initial')
   git('branch', '-M', 'main')
-  const storeRepo = path.join(home, 'store.git')
-  execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', storeRepo])
+  const drillmasterRepository = path.join(home, 'drillmaster.git')
+  execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', drillmasterRepository])
   if (scenario.origin) {
     const origin = path.join(home, 'origin.git')
     execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', origin])
@@ -102,7 +103,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
       git('checkout', '-q', 'main')
     }
   }
-  if (scenario.seed_workflow) seedWorkflow(home, project, scenario, storeRepo)
+  if (scenario.seed_workflow) seedWorkflow(home, project, scenario, drillmasterRepository)
 
   const env: NodeJS.ProcessEnv = { ...process.env, DRILLMASTER_HOME: home }
   delete env.DRILLMASTER_CLOCK
@@ -199,7 +200,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   }
 
   try {
-    if (!scenario.seed_workflow) await agent((scenario.scripted.setup ?? '').replace('{store}', storeRepo), false)
+    if (!scenario.seed_workflow) await agent((scenario.scripted.setup ?? '').replace('{drillmaster_repository}', drillmasterRepository), false)
 
     for (const [i, issue] of scenario.issues.entries()) {
       const lines = scenario.scripted.issues[i] ?? []
@@ -249,7 +250,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     ownerQuestions,
     issues: scenario.issues.length,
     retros,
-    storeCommits: usesStore(scenario) ? storeCommitSubjects(storeRepo) : undefined,
+    repositoryCommits: usesDrillmasterRepository(scenario) ? mainCommitSubjects(drillmasterRepository) : undefined,
   })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)
   const passed = runFailingChecks.every((check) => check.ok)

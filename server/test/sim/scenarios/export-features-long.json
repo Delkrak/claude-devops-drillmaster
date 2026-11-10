@@ -16,7 +16,7 @@
   "retro_after": [2, 4],
   "max_turns_per_issue": 6,
   "scripted": {
-    "setup": "Please set up Drillmaster for this project with the drillmaster setup skill. My objective: ship features without Owner stepping in. Measure it by owner_corrections_per_item. Keep the work traces in the git store at {store}.",
+    "setup": "Please set up Drillmaster for this project with the drillmaster setup skill. My objective: ship features without Owner stepping in. Measure it by owner_corrections_per_item. Keep the project in the Drillmaster repository at {drillmaster_repository}.",
     "issues": [
       ["Please do issue #1 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "You didn't add a test for it. Every new function needs its own test file, and run npm test.", "Also add a line to CHANGES.md saying what changed.", "Looks good."],
       ["Please do issue #2 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Add a line to CHANGES.md, like last time.", "Looks good."],

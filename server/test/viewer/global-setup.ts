@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ownerAnswers, workToolCall } from '../helpers.js'
+import { ownerAnswers, TEST_REPOSITORY, workToolCall } from '../helpers.js'
 import { VIEWER_PORT } from './port.js'
 
 const dist = (file: string) => import(pathToFileURL(path.resolve(import.meta.dirname, '../../dist', file)).href)
@@ -18,7 +18,7 @@ export default async function setup() {
   const { systemClock, sequentialIds } = await dist('adapters/clocks.js')
   const { ScriptedReviewer } = await dist('adapters/reviewers.js')
   const { listen } = await dist('daemon/http.js')
-  const { projectId } = await dist('env.js')
+  const { folderKey: projectId, FolderResolver } = await dist('adapters/projects.js')
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dm-viewer-'))
   rmSync(DEMO_DIR, { recursive: true, force: true })
@@ -26,7 +26,7 @@ export default async function setup() {
   writeFileSync(path.join(DEMO_DIR, 'after.png'), Buffer.from(PNG_1X1, 'base64'))
   const store = new JsonlStore(path.join(home, 'projects'))
 
-  // The recorded simulation run, as the store keeps it.
+  // The recorded simulation run, as the local event log keeps it.
   const run = JSON.parse(readFileSync(path.join(import.meta.dirname, 'fixtures', 'sim-run.json'), 'utf8')) as { type: string; dir?: string }[]
   const runDir = run.find((e) => e.type === 'project_initialized')!.dir!
   mkdirSync(path.join(home, 'projects', projectId(runDir)), { recursive: true })
@@ -37,8 +37,8 @@ export default async function setup() {
     gate: [{ accepted: false, rule: 'pr 1.1', why: 'The PR description does not say what changed.', back_to: { stage: 1, step: 1 } }],
     post_mortem: [{ keep: 'Small PRs', change: 'Ask for CHANGES.md in a rule', experiment_reflections: 'none running', free_text: '' }],
   })
-  const app = new Drillmaster({ store, artifacts: new FileArtifactStore(path.join(home, 'projects')), clock: systemClock, ids: sequentialIds(), reviewer })
-  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', objective: 'every change is documented', measures: ['owner_corrections_per_item'] })
+  const app = new Drillmaster({ store, artifacts: new FileArtifactStore(path.join(home, 'projects')), clock: systemClock, ids: sequentialIds(), reviewer, projects: new FolderResolver() })
+  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'every change is documented', measures: ['owner_corrections_per_item'] })
   const workflow = {
     version: 1,
     objective: { text: 'every change is documented', measures: ['owner_corrections_per_item'] },
