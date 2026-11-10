@@ -37,6 +37,15 @@ describe('viewer API', () => {
     expect(await get(`/api/projects/${projectId('/projects/other')}`)).toMatchObject({ status: 404, body: { error: expect.stringMatching(/serves project/) } })
   })
 
+  it("follows a component of the workflow by its GUID: its versions and what happened at it", async () => {
+    const guid = WORKFLOW_3.stages[0]!.steps[0]!.guid
+    const { body } = await get(`/api/projects/${ID}/history/${guid}`)
+    expect(body).toMatchObject({ kind: 'step', current: { ref: 'step 1.1', title: 'run the tests' } })
+    expect(body.versions.map((version: any) => [version.version, version.change])).toEqual([['3.0.0', 'added']])
+    expect(body.activity.map((entry: any) => entry.text)).toEqual(['impediment: no fixtures', 'accepted by agent: Self check passed.'])
+    expect((await get(`/api/projects/${ID}/history/nothing`)).status).toBe(404)
+  })
+
   it("gives a project's full status", async () => {
     const { body } = await get(`/api/projects/${ID}`)
     expect(body.workflow.version).toBe('3.0.0')

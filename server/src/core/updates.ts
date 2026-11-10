@@ -25,7 +25,7 @@ function findStep(workflow: WorkflowDocument, guid: string): { stage: WorkStage;
 }
 
 /** JSON with keys in one order, so two documents compare equal however their keys were written. */
-const canonicalJson = (value: unknown): string =>
+export const canonicalJson = (value: unknown): string =>
   JSON.stringify(value, (_key, field: unknown) =>
     field && typeof field === 'object' && !Array.isArray(field) ? Object.fromEntries(Object.entries(field).sort(([a], [b]) => a.localeCompare(b))) : field,
   )

@@ -18,6 +18,8 @@ export interface WorkStep {
   gate: GateKind
   rules: string[]
   report: string[]
+  skippable?: 'self' | 'drillmaster' | 'owner'
+  update?: 'patch' | 'minor' | 'major' | 'none'
 }
 
 export interface WorkStage {
@@ -70,7 +72,7 @@ export interface Workflow {
   version: string
   objective: { text: string; measures: string[] }
   stages: WorkStage[]
-  policies: { name: string; rules: PolicyRule[] }[]
+  policies: { guid: string; name: string; rules: PolicyRule[] }[]
   metrics?: Metric[]
   experiments: Experiment[]
 }
@@ -125,6 +127,23 @@ export interface DrillmasterFeedback {
   work_item_id: string | null
 }
 
+export interface HistoryEntry {
+  id: string
+  at: string
+  type: string
+  work_item_id: string | null
+  text: string
+}
+
+export interface ComponentHistory {
+  guid: string
+  kind: 'step' | 'stage' | 'rule' | 'policy' | 'metric'
+  current: { ref: string; title: string } | null
+  versions: { version: string; at: string; reason: string; name: string | null; definition: Record<string, unknown> | null; change: 'added' | 'changed' | 'same' | 'removed' }[]
+  feedback: HistoryEntry[]
+  activity: HistoryEntry[]
+}
+
 export interface Retrospective {
   retro_id: string
   at: string
@@ -135,6 +154,7 @@ export interface Retrospective {
 }
 
 export interface ProjectView {
+  drillmaster_feedback?: DrillmasterFeedback[]
   summary: ProjectSummary
   workflow: Workflow
   versions: { version: string; at: string; reason: string; workflow: Workflow }[]

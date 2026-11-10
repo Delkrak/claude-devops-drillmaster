@@ -34,8 +34,8 @@ export const Code = ({ children }: { children: ReactNode }) => <code {...stylex.
 
 export const Pre = ({ children }: { children: ReactNode }) => <pre {...stylex.props(styles.pre)}>{children}</pre>
 
-export const Link = ({ href, children }: { href: string; children: ReactNode }) => (
-  <a href={href} {...stylex.props(styles.link)}>
+export const Link = ({ href, children, testId }: { href: string; children: ReactNode; testId?: string }) => (
+  <a href={href} {...stylex.props(styles.link)} data-testid={testId}>
     {children}
   </a>
 )

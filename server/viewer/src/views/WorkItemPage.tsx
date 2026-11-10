@@ -13,12 +13,12 @@ import { Loading } from '../ui/Loading'
 import { Chip, SearchField } from '../ui/Select'
 import { Stat } from '../ui/Stat'
 import { Heading, Link, Muted } from '../ui/Text'
-import { Timeline, TimelineEntry } from '../ui/Timeline'
+import { StepBar, Timeline, TimelineEntry } from '../ui/Timeline'
 import { FeedbackList } from './FeedbackList'
 import { describeTimelineEvent, GROUPS, type Group } from './describe'
 import { StatusBadge } from './WorkItemsView'
 
-export function WorkItemPage({ id, item }: { id: string; item: string }) {
+export function WorkItemPage({ id, item, highlightedEvent = null }: { id: string; item: string; highlightedEvent?: string | null }) {
   const loaded = usePolled(() => api.workItem(id, item), `item:${id}:${item}`)
   return (
     <Layout
@@ -28,12 +28,12 @@ export function WorkItemPage({ id, item }: { id: string; item: string }) {
         </>
       }
     >
-      <Loading loaded={loaded}>{(view) => <WorkItem view={view} projectId={id} />}</Loading>
+      <Loading loaded={loaded}>{(view) => <WorkItem view={view} projectId={id} highlightedEvent={highlightedEvent} />}</Loading>
     </Layout>
   )
 }
 
-function WorkItem({ view, projectId }: { view: WorkItemView; projectId: string }) {
+function WorkItem({ view, projectId, highlightedEvent }: { view: WorkItemView; projectId: string; highlightedEvent: string | null }) {
   const { item } = view
   return (
     <>
@@ -75,9 +75,9 @@ function WorkItem({ view, projectId }: { view: WorkItemView; projectId: string }
         {view.measures && <Stat label={measureLabel('owner_corrections_per_item')} value={formatNumber(view.measures.owner_corrections_per_item)} />}
         {view.measures && <Stat label="Minutes" value={formatNumber(view.measures.minutes_per_item)} />}
       </Grid>
-      <PostMortems events={view.post_mortems} />
+      <PostMortems events={view.post_mortems} projectId={projectId} />
       <Card title="Timeline" subtitle="Everything recorded for this work item, oldest first">
-        <FilteredTimeline events={view.timeline} />
+        <FilteredTimeline view={view} projectId={projectId} highlightedEvent={highlightedEvent} />
       </Card>
     </>
   )
@@ -126,7 +126,7 @@ function Story({ view, projectId }: { view: WorkItemView; projectId: string }) {
   )
 }
 
-function PostMortems({ events }: { events: TimelineEvent[] }) {
+function PostMortems({ events, projectId }: { events: TimelineEvent[]; projectId: string }) {
   if (events.length === 0) return null
   return (
     <Grid>
@@ -140,7 +140,7 @@ function PostMortems({ events }: { events: TimelineEvent[] }) {
           ).map(([label, entries]) => (
             <Stack key={label} tight>
               <Muted>{label}</Muted>
-              <FeedbackList entries={entries} />
+              <FeedbackList entries={entries} projectId={projectId} />
             </Stack>
           ))}
           {Array.isArray(postMortem.experiment_reflections) && postMortem.experiment_reflections.length > 0 && (
@@ -160,7 +160,16 @@ function PostMortems({ events }: { events: TimelineEvent[] }) {
   )
 }
 
-function FilteredTimeline({ events }: { events: TimelineEvent[] }) {
+/** The work step an event was at, as "1.2 name", named as the work item's workflow names that step now. */
+function stepOf(event: TimelineEvent, view: WorkItemView) {
+  if (typeof event.stage !== 'number' || typeof event.step !== 'number') return null
+  const steps = view.workflow?.stages.flatMap((stage) => stage.steps.map((step) => ({ stage: stage.n, step }))) ?? []
+  const named = steps.find(({ step }) => step.guid === event.step_guid) ?? steps.find(({ stage, step }) => stage === event.stage && step.n === event.step)
+  return `${event.stage}.${event.step}${named ? ` ${named.step.name}` : ''}`
+}
+
+function FilteredTimeline({ view, projectId, highlightedEvent }: { view: WorkItemView; projectId: string; highlightedEvent: string | null }) {
+  const events = view.timeline
   const [hidden, setHidden] = useState<Set<Group>>(new Set())
   const [query, setQuery] = useState('')
   const described = events.map((event) => ({ event, description: describeTimelineEvent(event) }))
@@ -182,11 +191,19 @@ function FilteredTimeline({ events }: { events: TimelineEvent[] }) {
         <Empty>Nothing matches.</Empty>
       ) : (
         <Timeline>
-          {shown.map(({ event, description }) => (
-            <TimelineEntry key={event.id} time={formatClockTime(event.at)} tone={description.tone} kind={event.type}>
-              {description.body}
-            </TimelineEntry>
-          ))}
+          {shown.flatMap(({ event, description }, index) => {
+            const step = stepOf(event, view)
+            const earlierStep = shown
+              .slice(0, index)
+              .map((earlier) => stepOf(earlier.event, view))
+              .findLast((label) => label !== null)
+            const entry = (
+              <TimelineEntry key={event.id} time={formatClockTime(event.at)} tone={description.tone} kind={event.type} link={href.event(projectId, view.item.work_item_id, event.id)} highlighted={event.id === highlightedEvent}>
+                {description.body}
+              </TimelineEntry>
+            )
+            return step && step !== earlierStep ? [<StepBar key={`bar-${event.id}`}>Step {step}</StepBar>, entry] : [entry]
+          })}
         </Timeline>
       )}
     </Stack>

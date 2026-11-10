@@ -8,7 +8,8 @@ import { Checklist, ChecklistItem } from '../ui/Checklist'
 import { Empty } from '../ui/Empty'
 import { Flow, FlowStage, FlowStep } from '../ui/Flow'
 import { Select } from '../ui/Select'
-import { Code, Heading, Muted, Strong } from '../ui/Text'
+import { href } from '../router'
+import { Code, Heading, Link, Muted, Strong } from '../ui/Text'
 
 export function WorkflowView({ project }: { project: ProjectView }) {
   const [version, setVersion] = useState(project.workflow.version)
@@ -29,14 +30,16 @@ export function WorkflowView({ project }: { project: ProjectView }) {
         </Select>
       }
     >
-      <WorkflowBody workflow={shown.workflow} verdicts={shown.version === project.workflow.version ? project.experiment_verdicts : []} />
+      <WorkflowBody workflow={shown.workflow} verdicts={shown.version === project.workflow.version ? project.experiment_verdicts : []} projectId={project.summary.id} />
     </Card>
   )
 }
 
 const verdictTone = { running: 'neutral', keep: 'ok', rethink: 'bad' } as const
 
-function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: ExperimentVerdict[] }) {
+/** Every component links to its history across versions. */
+function WorkflowBody({ workflow, verdicts, projectId }: { workflow: Workflow; verdicts: ExperimentVerdict[]; projectId: string }) {
+  const historyOf = (guid: string) => href.history(projectId, guid)
   const rulesByRef = new Map<string, PolicyRule>(workflow.policies.flatMap((policy) => policy.rules.map((rule) => [`${policy.name} ${rule.id}`, rule] as const)))
   const definitionOfDone = (stage: WorkStage) => [...new Set(stage.steps.flatMap((step) => step.rules))]
   const metrics = workflow.metrics ?? []
@@ -55,7 +58,9 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
           {workflow.stages.map((stage) => (
             <FlowStage key={stage.n}>
               <Heading level={3}>
-                {stage.n}. {stage.name}
+                <Link href={historyOf(stage.guid)}>
+                  {stage.n}. {stage.name}
+                </Link>
               </Heading>
               {stage.purpose ? <Muted>{stage.purpose}</Muted> : <Badge tone="warn">no purpose yet</Badge>}
               <Stack tight>
@@ -66,7 +71,10 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
                   <Checklist testId="definition-of-done">
                     {definitionOfDone(stage).map((ref) => (
                       <ChecklistItem key={ref}>
-                        <Code>{ref}</Code> {rulesByRef.get(ref)?.rule}
+                        <Link href={historyOf(rulesByRef.get(ref)?.guid ?? '')}>
+                          <Code>{ref}</Code>
+                        </Link>{' '}
+                        {rulesByRef.get(ref)?.rule}
                       </ChecklistItem>
                     ))}
                   </Checklist>
@@ -78,10 +86,22 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
                     <Strong>
                       {stage.n}.{step.n}
                     </Strong>
-                    {step.name}
+                    <Link href={historyOf(step.guid)} testId="step-history">
+                      {step.name}
+                    </Link>
                   </Row>
                   <Row>
                     <Badge tone={gateTone[step.gate]}>{gateLabel[step.gate]}</Badge>
+                    {step.skippable && (
+                      <Badge tone="info" testId="skippable">
+                        skippable: {step.skippable} decides
+                      </Badge>
+                    )}
+                    {step.update && step.update !== 'none' && (
+                      <Badge tone="accent" testId="update-step">
+                        updates first on a {step.update} change
+                      </Badge>
+                    )}
                     {metrics
                       .filter((metric) => metric.at_step === `${stage.n}.${step.n}`)
                       .map((metric) => (
@@ -109,12 +129,16 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
       ) : (
         workflow.policies.map((policy) => (
           <Stack key={policy.name} tight>
-            <Strong>{policy.name} work policy</Strong>
+            <Link href={historyOf(policy.guid)}>
+              <Strong>{policy.name} work policy</Strong>
+            </Link>
             {policy.rules.map((rule) => (
               <Muted key={rule.id}>
-                <Code>
-                  {policy.name} {rule.id}
-                </Code>{' '}
+                <Link href={historyOf(rule.guid)}>
+                  <Code>
+                    {policy.name} {rule.id}
+                  </Code>
+                </Link>{' '}
                 {rule.rule}. Verified by {rule.verified_by}.
               </Muted>
             ))}
@@ -128,7 +152,9 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
         metrics.map((metric) => (
           <Stack key={metric.name} tight testId="metric">
             <Row>
-              <Strong>{metric.name}</Strong>
+              <Link href={historyOf(metric.guid)}>
+                <Strong>{metric.name}</Strong>
+              </Link>
               <Muted>
                 taken by {metric.by} at step {metric.at_step}
               </Muted>

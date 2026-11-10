@@ -51,7 +51,7 @@ export function OverviewView({ project }: { project: ProjectView }) {
         {lastRetro ? (
           <Stack tight>
             <Muted>{formatDateTime(lastRetro.at)}</Muted>
-            <FeedbackList entries={lastRetro.findings.improve} />
+            <FeedbackList entries={lastRetro.findings.improve} projectId={project.summary.id} />
             <Row>
               {lastRetro.proposals.map((proposal) => (
                 <Badge key={proposal.id} tone={proposalTone[proposal.status]}>
@@ -63,6 +63,22 @@ export function OverviewView({ project }: { project: ProjectView }) {
           </Stack>
         ) : (
           <Muted>None yet.</Muted>
+        )}
+      </Card>
+      <Card title="Feedback on Drillmaster" subtitle="Post mortems and retrospectives that name one of Drillmaster's own tools: what the workflow can't change" testId="drillmaster-feedback">
+        {(project.drillmaster_feedback ?? []).length === 0 ? (
+          <Muted>None yet.</Muted>
+        ) : (
+          (project.drillmaster_feedback ?? []).map((feedback, index) => (
+            <Row key={index}>
+              <Badge tone="accent">tool {feedback.tool}</Badge>
+              <span>{feedback.text}</span>
+              <Muted>
+                {feedback.from}
+                {feedback.work_item_id ? ` on ${feedback.work_item_id}` : ''}, {formatDateTime(feedback.at)}
+              </Muted>
+            </Row>
+          ))
         )}
       </Card>
     </Stack>

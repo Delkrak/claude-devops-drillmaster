@@ -52,6 +52,7 @@ import {
   type ProjectState,
   type RetroState,
 } from './core/state.js'
+import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
 import { Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
@@ -514,6 +515,12 @@ export class Drillmaster {
     const view = views.workItemView(await this.ports.store.read(projectId), workItemId)
     if (!view) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
     return view
+  }
+
+  async componentHistory(projectId: string, guid: string) {
+    const history = componentHistory(await this.ports.store.read(projectId), guid)
+    if (!history) throw new UserError(`No workflow component ${guid} in project ${projectId}`, 404)
+    return history
   }
 
   async artifact(projectId: string, workItemId: string, name: string) {

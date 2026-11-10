@@ -193,7 +193,7 @@ OK.
    - push first, then apply, for workflow changes and pins;
    - remove `storage`, the mirror and the link record;
    - rename "store" everywhere.
-7. **One server per project:**
+7. **One server per project:** (done: a8624cd)
    - per-project `daemon.json`, with the shim and hooks routing by `.drillmaster`;
    - reading the pin from main before starting the server, then starting the pinned version (the
      plugin's own build, or npx);

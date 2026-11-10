@@ -26,13 +26,13 @@ export function RetrospectivesView({ project }: { project: ProjectView }) {
   return (
     <Stack testId="retrospectives">
       {project.retrospectives.map((retro) => (
-        <RetrospectiveCard key={retro.retro_id} retro={retro} />
+        <RetrospectiveCard key={retro.retro_id} retro={retro} projectId={project.summary.id} />
       ))}
     </Stack>
   )
 }
 
-function RetrospectiveCard({ retro }: { retro: Retrospective }) {
+function RetrospectiveCard({ retro, projectId }: { retro: Retrospective; projectId: string }) {
   return (
     <Card title={`Retrospective ${retro.retro_id}`} subtitle={`${formatDateTime(retro.at)}, on ${retro.work_items.join(', ') || 'no delivered work items'}`}>
       {FINDINGS.filter(([key]) => retro.findings[key]).map(([key, label]) => (
@@ -44,7 +44,7 @@ function RetrospectiveCard({ retro }: { retro: Retrospective }) {
       {FEEDBACK_FINDINGS.map(([key, label]) => (
         <Stack key={key} tight>
           <Muted>{label}</Muted>
-          <FeedbackList entries={retro.findings[key]} testId={`findings-${key}`} />
+          <FeedbackList entries={retro.findings[key]} testId={`findings-${key}`} projectId={projectId} />
         </Stack>
       ))}
       <Heading level={3}>Proposals</Heading>

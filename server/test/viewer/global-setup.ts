@@ -56,7 +56,7 @@ export default async function setup() {
         n: 2,
         name: 'review',
         purpose: 'Owner accepts the change',
-        steps: [{ n: 1, name: 'Owner approves', instruction: 'Show Owner the PR and ask for approval.', gate: 'owner', rules: ['pr 1.1'], report: ['what to look at'] }],
+        steps: [{ n: 1, name: 'Owner approves', instruction: 'Show Owner the PR and ask for approval.', gate: 'owner', rules: ['pr 1.1'], report: ['what to look at'], skippable: 'owner', update: 'minor' }],
       },
     ],
     metrics: [

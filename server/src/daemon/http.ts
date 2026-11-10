@@ -7,6 +7,7 @@ import { serveViewer } from './static.js'
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
 const VIEWER_API_ROUTE = /^GET \/api\/projects\/([\w-]+)(?:\/items\/([\w-]+))?$/
+const HISTORY_ROUTE = /^GET \/api\/projects\/([\w-]+)\/history\/([\w-]+)$/
 const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -60,6 +61,11 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
         const artifact = await app.artifact(artifactMatch[1]!, artifactMatch[2]!, artifactMatch[3]!)
         response.writeHead(200, { 'content-type': artifact.mediaType, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", 'x-content-type-options': 'nosniff' })
         return response.end(artifact.bytes)
+      }
+      const historyMatch = HISTORY_ROUTE.exec(route)
+      if (historyMatch) {
+        refuseOtherProject(historyMatch[1]!)
+        return sendJson(response, 200, await app.componentHistory(historyMatch[1]!, historyMatch[2]!))
       }
       const viewerApiMatch = VIEWER_API_ROUTE.exec(route)
       if (viewerApiMatch) {

@@ -100,6 +100,39 @@ test('follows a live session: a new work item appears without reloading', async 
   await expect(page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#3 live' })).toBeVisible({ timeout: 10_000 })
 })
 
+test('marks each work step in the timeline, and links to a single entry', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Work items' }).click()
+  await page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#1 CSV export' }).click()
+  const bars = page.getByTestId('step-bar')
+  await expect(bars.first()).toHaveText('Step 1.1 run the tests')
+  await expect(bars.filter({ hasText: 'Step 2.1 Owner approves' })).toHaveCount(1)
+  const rejection = page.getByTestId('timeline-entry').filter({ hasText: 'rejected by drillmaster' })
+  await rejection.getByTitle('Link to this entry').click()
+  await expect(page).toHaveURL(/\?event=/)
+  await page.reload()
+  await expect(page.locator('[data-highlighted]')).toContainText('rejected by drillmaster')
+})
+
+test("follows a step through the versions, with the feedback that names it and what happened at it", async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Workflow' }).click()
+  await expect(page.getByTestId('skippable')).toContainText('skippable: owner decides')
+  await expect(page.getByTestId('update-step')).toContainText('updates first on a minor change')
+  await page.getByTestId('step-history').filter({ hasText: 'run the tests' }).click()
+  await expect(page.getByTestId('history-title')).toHaveText('step 1.1')
+  await expect(page.getByTestId('history-version').first()).toContainText('added')
+  await expect(page.getByTestId('history-feedback')).toContainText("agent's post mortem: the gates")
+  await expect(page.getByTestId('history-activity')).toContainText('accepted by agent')
+  await page.getByTestId('history-activity').getByRole('link').first().click()
+  await expect(page.locator('[data-highlighted]')).toBeVisible()
+})
+
+test('collects the feedback on Drillmaster itself', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('drillmaster-feedback')).toContainText('tool work_delivertake more file types')
+})
+
 test('follows the dark theme from the tokens', async ({ browser }) => {
   const background = async (colorScheme: 'light' | 'dark') => {
     const page = await browser.newPage({ colorScheme })
