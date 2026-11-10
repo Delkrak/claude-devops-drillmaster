@@ -57,7 +57,7 @@ describe('a late start', () => {
   })
 
   it("asks Owner before skipping Owner's gate, and moves on once Owner approves", async () => {
-    const workflow = { ...WORKFLOW_3, stages: [...WORKFLOW_3.stages, { n: 3, name: 'ship', purpose: 'it is out', steps: [{ n: 1, name: 'release', instruction: 'Tag it.', gate: 'self' as const, rules: [], report: [] }] }] }
+    const workflow = { ...WORKFLOW_3, stages: [...WORKFLOW_3.stages, { guid: 'guid-ship', n: 3, name: 'ship', purpose: 'it is out', steps: [{ guid: 'guid-release', n: 1, name: 'release', instruction: 'Tag it.', gate: 'self' as const, rules: [], report: [] }] }] }
     const ports = testPorts({ late_start: [{ accepted: true, rule: null, why: 'All met.' }] })
     await seedWorkflow(ports, '/projects/late-owner', workflow)
     const app = new Drillmaster(ports)
@@ -91,12 +91,12 @@ describe('a new workflow version', () => {
       late_start: [{ accepted: true, rule: null, why: 'Lint and tests ran before the restart.' }],
     })
     const { token, workItemId } = await start()
-    await app.callTool('/projects/major', 'work_gate', { token, stage: 1, step: 1, self_check: check('test 1.1'), text: 'green' })
+    await app.callTool('/projects/major', 'work_gate', { token, step: '1.1', self_check: check('test 1.1'), text: 'green' })
     const applied = await applyApproved(app, '/projects/major')
     expect(applied).toMatchObject({ workflow_version: '4.0.0', restarted: [workItemId] })
     expect(await item(workItemId)).toMatchObject({ workflow_version: '4.0.0', stage: 1, step: 1, restarted: { from_version: '3.0.0', to_version: '4.0.0' } })
 
-    const refused = await app.callTool('/projects/major', 'work_gate', { token, stage: 1, step: 2, self_check: check('pr 1.1'), text: 'old position' })
+    const refused = await app.callTool('/projects/major', 'work_gate', { token, step: '1.2', self_check: check('pr 1.1'), text: 'old position' })
     expect(refused.isError).toBe(true)
     expect(textOf(refused)).toContain('Workflow 3.0.0 became 4.0.0, a major change, so this work item starts over')
     expect(textOf(refused)).toContain('- new: work step 1.1 "lint" (self gate)')
@@ -113,7 +113,7 @@ describe('a new workflow version', () => {
     const { token, workItemId } = await start()
     const applied = await applyApproved(app, '/projects/minor')
     expect(applied).toMatchObject({ workflow_version: '3.1.0', restarted: [] })
-    const passed = await app.callTool('/projects/minor', 'work_gate', { token, stage: 1, step: 1, self_check: check('test 1.1'), text: 'green' })
+    const passed = await app.callTool('/projects/minor', 'work_gate', { token, step: '1.1', self_check: check('test 1.1'), text: 'green' })
     expect(textOf(passed)).toContain('Write the PR description with a What and a Why.')
     expect(await item(workItemId)).toMatchObject({ workflow_version: '3.0.0', stage: 1, step: 2, restarted: null })
   })

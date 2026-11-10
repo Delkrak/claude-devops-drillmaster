@@ -29,7 +29,7 @@ test("navigates from a project's overview through every tab", async ({ page }) =
   await expect(page.getByTestId('definition-of-done').first()).toContainText('test 1.1 the tests run green before a PR')
   await expect(page.getByTestId('definition-of-done').first()).toContainText('pr 1.1 the PR says what it changes')
   await expect(page.getByTestId('instruction').first()).toContainText('Write a test for the change')
-  await expect(page.getByTestId('metric')).toContainText('taken by agent at work step 1.1')
+  await expect(page.getByTestId('metric')).toContainText('taken by agent at step 1.1')
   await expect(page.getByTestId('metric-category')).toHaveCount(2)
   await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0.0.0')
   await expect(page.getByTestId('workflow')).toContainText('No work stages yet')

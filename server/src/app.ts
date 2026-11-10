@@ -26,6 +26,7 @@ import {
 } from './core/retro.js'
 import { buildLateStartPrompt, describeWorkflowChange, LATE_START_REVIEW_KIND, readLateStartAnswer, requestLateStart } from './core/lateStart.js'
 import { askUserQuestionInput, pendingOwnerQuestions } from './core/questions.js'
+import { InvalidReference, parseRef, resolveRef, stepPosition } from './core/refs.js'
 import * as render from './core/render.js'
 import {
   buildGatePrompt,
@@ -101,9 +102,12 @@ export interface DrillmasterOptions {
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
+const StageRefArg = z.union([z.string().min(1), z.number().int().positive()]).transform(String)
+const StepRefArg = z.string().min(1)
+
 const WorkflowGetArgs = z
   .object({
-    stage: z.number().int().positive().optional(),
+    stage: StageRefArg.optional(),
     full: z.boolean().optional(),
     version: z.union([z.string(), z.number().int().nonnegative()]).optional(),
   })
@@ -124,8 +128,7 @@ const WorkReportArgs = z
     token: tokenField,
     kind: z.enum(REPORT_KINDS),
     text: textField,
-    stage: z.number().int().positive().optional(),
-    step: z.number().int().positive().optional(),
+    step: StepRefArg.optional(),
     chosen: z.string().optional(),
     by: z.string().optional(),
     why: z.string().optional(),
@@ -136,8 +139,7 @@ const WorkReportArgs = z
 const WorkGateArgs = z
   .object({
     token: tokenField,
-    stage: z.number().int().positive(),
-    step: z.number().int().positive(),
+    step: StepRefArg,
     self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()),
     text: textField,
     metrics: z.array(MetricAnswerArgs).optional(),
@@ -163,8 +165,8 @@ const WorkStatusArgs = z
   .object({
     token: tokenField,
     last: z.number().int().positive().max(MAX_LAST_REPORTS).optional(),
-    stage: z.number().int().positive().optional(),
-    step: z.number().int().positive().optional(),
+    stage: StageRefArg.optional(),
+    step: StepRefArg.optional(),
   })
   .strict()
 
@@ -197,7 +199,7 @@ export const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        stage: { type: 'integer', minimum: 1, description: 'The work stage number.' },
+        stage: { type: 'string', description: 'The work stage, by number, e.g. "1".' },
         full: { type: 'boolean', description: 'Return the whole workflow.' },
         version: { type: 'string', description: 'An earlier workflow version (major.minor.patch); 0.0.0 is the first.' },
       },
@@ -232,7 +234,7 @@ export const TOOLS: ToolDefinition[] = [
     description: [
       'Report to Drillmaster in real time, while you work.',
       'kind: impediment | better_way | decision (+ chosen, by, why) | question (+ asked, answer) | assumption | required | added_step (+ why).',
-      'stage/step default to where the work item is.',
+      'step: the work step it is about, e.g. "1.2"; it defaults to where the work item is.',
       "added_step is the only report after delivery: a fix Owner asked for and chose to have done right away. text: what you did; why: Owner's correction.",
     ].join('\n'),
     inputSchema: {
@@ -241,8 +243,7 @@ export const TOOLS: ToolDefinition[] = [
         ...tokenProperty,
         kind: { type: 'string', enum: [...REPORT_KINDS] },
         text: { type: 'string' },
-        stage: { type: 'integer', minimum: 1 },
-        step: { type: 'integer', minimum: 1 },
+        step: { type: 'string', description: 'The work step, e.g. "1.2".' },
         chosen: { type: 'string' },
         by: { type: 'string' },
         why: { type: 'string' },
@@ -255,13 +256,12 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_gate',
     description:
-      "Hands in the work gate of the current work step, once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; metrics answers the metrics that are yours to take at this step. Returns the verdict and the next work step in full.",
+      "Hands in the work gate of the current work step (step, e.g. \"1.2\"), once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; metrics answers the metrics that are yours to take at this step. Returns the verdict and the next work step in full.",
     inputSchema: {
       type: 'object',
       properties: {
         ...tokenProperty,
-        stage: { type: 'integer', minimum: 1 },
-        step: { type: 'integer', minimum: 1 },
+        step: { type: 'string', description: 'The work step, e.g. "1.2".' },
         self_check: selfCheckProperty,
         text: { type: 'string' },
         metrics: {
@@ -269,7 +269,7 @@ export const TOOLS: ToolDefinition[] = [
           items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' }, explanation: { type: 'string' } }, required: ['name', 'value'] },
         },
       },
-      required: ['token', 'stage', 'step', 'self_check', 'text'],
+      required: ['token', 'step', 'self_check', 'text'],
     },
   },
   {
@@ -324,14 +324,14 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_status',
     description:
-      'Where a work item is: its work stage, work step and pending work gate. With `last`: also the last n work reports. With `stage` and `step`: also the work reports and work traces captured at that work step.',
+      'Where a work item is: its work stage, work step and pending work gate. With `last`: also the last n work reports. With `step` (e.g. "1.2") or `stage` (e.g. "1"): also the work reports and work traces captured there.',
     inputSchema: {
       type: 'object',
       properties: {
         ...tokenProperty,
         last: { type: 'integer', minimum: 1, maximum: MAX_LAST_REPORTS },
-        stage: { type: 'integer', minimum: 1 },
-        step: { type: 'integer', minimum: 1 },
+        stage: { type: 'string', description: 'A work stage, e.g. "1".' },
+        step: { type: 'string', description: 'A work step, e.g. "1.2".' },
       },
       required: ['token'],
     },
@@ -628,7 +628,8 @@ export class Drillmaster {
         error instanceof work.Refused ||
         error instanceof InvalidChange ||
         error instanceof InvalidAnswer ||
-        error instanceof InvalidArtifact
+        error instanceof InvalidArtifact ||
+        error instanceof InvalidReference
       if (isCallersMistake) return { content: [{ type: 'text', text: error.message }], isError: true }
       throw error
     }
@@ -637,7 +638,7 @@ export class Drillmaster {
   private async describeWorkflow(projectDir: string, query: z.infer<typeof WorkflowGetArgs>) {
     const events = await this.events(projectDir)
     const state = foldState(events)
-    const view = viewWorkflow(state, { ...query, version: query.version === undefined ? undefined : toSemver(query.version) })
+    const view = viewWorkflow(state, { ...query, stage: query.stage === undefined ? undefined : Number(parseRef(query.stage, 'stage').name), version: query.version === undefined ? undefined : toSemver(query.version) })
     if (view.kind !== 'overview') return view
     const deliveredItems = measureDeliveredItems(events)
     const measures = Object.fromEntries(
@@ -727,22 +728,25 @@ export class Drillmaster {
     const outcome = await this.withProjectLock(projectDir, async (projectId) => {
       const state = foldState(await this.ports.store.read(projectId))
       if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
-      const { token, ...actionArgs } = toolArgs as { token?: unknown }
+      const { token, ...postMortemArgs } = toolArgs as { token?: unknown }
       const item = typeof token === 'string' ? findWorkItemByTokenHash(state, hashToken(token)) : undefined
       const restartNotice = item ? this.restartNotice(state, item) : undefined
       if (restartNotice && toolName === 'work_gate') throw new work.Refused(restartNotice)
       let decision: work.Decision
       switch (toolName) {
-        case 'work_report':
-          parseToolArgs(WorkReportArgs, toolArgs)
+        case 'work_report': {
+          const { token: _token, step: stepRef, ...reportArgs } = parseToolArgs(WorkReportArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          decision = work.recordReport(item, actionArgs as work.ReportArgs)
+          const workflow = work.workflowOfWorkItem(state, item)
+          decision = work.recordReport(workflow, item, { ...reportArgs, ...(stepRef === undefined ? {} : stepOfRef(workflow, stepRef)) })
           break
-        case 'work_gate':
-          parseToolArgs(WorkGateArgs, toolArgs)
+        }
+        case 'work_gate': {
+          const { token: _token, step: stepRef, ...gateArgs } = parseToolArgs(WorkGateArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          decision = work.handInGate(state, item, actionArgs as work.GateArgs)
+          decision = work.handInGate(state, item, { ...gateArgs, ...stepOfRef(work.workflowOfWorkItem(state, item), stepRef) })
           break
+        }
         case 'work_deliver': {
           const { pr, summary } = parseToolArgs(WorkDeliverArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
@@ -754,7 +758,7 @@ export class Drillmaster {
         default:
           parseToolArgs(WorkPostMortemArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          decision = work.recordPostMortem(item, actionArgs as work.PostMortemArgs)
+          decision = work.recordPostMortem(item, postMortemArgs as work.PostMortemArgs)
       }
       let gateSubmissionToJudge: string | undefined
       for (const newEvent of decision.events) {
@@ -809,15 +813,15 @@ export class Drillmaster {
         const metrics = dueDrillmasterMetrics(workflow, stage, step)
         if (metrics.length === 0 || passedStep?.gate === 'drillmaster') return
         const { answer } = await this.ports.reviewer.review({ kind: METRIC_REVIEW_KIND, prompt: buildMetricPrompt(workflow, item, stage, step, events) })
-        await this.recordMetricAnswers(projectDir, workItemId, stage, step, readMetricAnswers(metrics, answer))
+        await this.recordMetricAnswers(projectDir, workItemId, work.atStep(workflow, stage, step), readMetricAnswers(metrics, answer))
       })(),
     )
   }
 
-  private recordMetricAnswers(projectDir: string, workItemId: string, stage: number, step: number, answers: readonly MetricAnswer[]) {
+  private recordMetricAnswers(projectDir: string, workItemId: string, position: { stage: number; step: number; step_guid?: string }, answers: readonly MetricAnswer[]) {
     return this.withProjectLock(projectDir, async (projectId) => {
       for (const metricAnswer of answers) {
-        await this.appendEvent(projectId, { type: 'metric_recorded', work_item_id: workItemId, stage, step, ...metricAnswer, by: 'drillmaster' })
+        await this.appendEvent(projectId, { type: 'metric_recorded', work_item_id: workItemId, ...position, ...metricAnswer, by: 'drillmaster' })
       }
     })
   }
@@ -938,7 +942,7 @@ export class Drillmaster {
       const stillPending =
         currentItem?.pending_gate?.gate === 'drillmaster' && currentItem.pending_gate.stage === submission.stage && currentItem.pending_gate.step === submission.step
       if (!stillPending) return { verdict: 'superseded', note: 'This gate was decided while Drillmaster was judging it. Check work_status.' }
-      const gatePosition = { work_item_id: item.work_item_id, stage: submission.stage, step: submission.step }
+      const gatePosition = { work_item_id: item.work_item_id, ...work.atStep(workflow, submission.stage, submission.step) }
       if ('error' in judgement) {
         await this.appendEvent(projectId, { type: 'review_failed', ...gatePosition, error: judgement.error })
         return {
@@ -989,7 +993,7 @@ export class Drillmaster {
     if (ownerQuestions.length) status.ask_owner = askUserQuestionInput(ownerQuestions)
     if (args.last !== undefined) status.last_reports = workReportsOf(events, item.work_item_id).slice(-args.last)
     if (args.stage !== undefined || args.step !== undefined) {
-      const atStep = { stage: args.stage, step: args.step }
+      const atStep = args.step !== undefined ? stepPosition(parseRef(args.step, 'step').name) ?? {} : { stage: Number(parseRef(args.stage!, 'stage').name) }
       status.captured = {
         reports: workReportsOf(events, item.work_item_id, atStep),
         traces: workTracesOf(events, item.work_item_id, atStep).map(({ raw: _raw, ...trace }) => trace),
@@ -997,6 +1001,11 @@ export class Drillmaster {
     }
     return status
   }
+}
+
+/** A work step reference, resolved in the work item's workflow. */
+function stepOfRef(workflow: WorkflowDocument, stepRef: string) {
+  return stepPosition(resolveRef(workflow, stepRef, { impliedKind: 'step' }).name)!
 }
 
 function parseToolArgs<T>(schema: z.ZodType<T>, toolArgs: unknown): T {

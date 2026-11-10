@@ -41,22 +41,22 @@ describe('a work item through build and review', () => {
   })
 
   it('sends a failed self check back, then moves on when it passes', async () => {
-    const failed = await r({ action: 'gate', stage: 1, step: 1, self_check: [{ rule: 'test 1.1', accepted: false, evidence: '2 tests red' }], text: 'red' })
+    const failed = await r({ action: 'gate', step: '1.1', self_check: [{ rule: 'test 1.1', accepted: false, evidence: '2 tests red' }], text: 'red' })
     expect(failed.value).toMatchObject({ verdict: 'rejected', next: { stage: 1, step: 1 } })
-    const passed = await r({ action: 'gate', stage: 1, step: 1, self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'all green' }], text: 'green' })
+    const passed = await r({ action: 'gate', step: '1.1', self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'all green' }], text: 'green' })
     expect(passed.value).toMatchObject({ verdict: 'accepted', next: { stage: 1, step: 2 } })
-    const step2 = await r({ action: 'gate', stage: 1, step: 2, self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR body has What' }], text: 'adds CSV export' })
+    const step2 = await r({ action: 'gate', step: '1.2', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR body has What' }], text: 'adds CSV export' })
     expect(step2.value).toMatchObject({ verdict: 'accepted', next: { stage: 2, step: 1 } })
   })
 
   it('waits at the Owner gate and refuses delivery meanwhile', async () => {
-    const owner = await r({ action: 'gate', stage: 2, step: 1, self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
+    const owner = await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
     expect(owner.value).toMatchObject({ verdict: 'pending', gate: 'owner' })
     expect((await r({ action: 'deliver', pr: '#40' })).value).toMatch(/pending/)
   })
 
   it('shows status, the last reports, and what was captured at a step', async () => {
-    const status = await tool('work_status', { token, last: 2, stage: 1, step: 1 })
+    const status = await tool('work_status', { token, last: 2, step: '1.1' })
     expect(status.value).toMatchObject({
       status: 'active',
       stage: 2,

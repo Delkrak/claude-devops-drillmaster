@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MEASURE_NAMES } from './measures.js'
+import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
 
 export { bumpVersion, compareVersions, isMajorChange, toSemver } from './versions.js'
@@ -14,7 +15,11 @@ export const SEMVER = /^\d+\.\d+\.\d+$/
 export const WorkflowVersion = z.string().regex(SEMVER, 'a workflow version is major.minor.patch')
 export type { VersionLevel } from './versions.js'
 
+const Guid = z.string().min(1)
+const StepName = z.string().regex(/^\d+\.\d+$/, 'a work step is written <stage>.<step>, e.g. "1.2"')
+
 export const WorkStep = z.object({
+  guid: Guid,
   n: z.number().int().positive(),
   name: z.string().min(1),
   instruction: z.string(),
@@ -24,6 +29,7 @@ export const WorkStep = z.object({
 })
 
 export const WorkStage = z.object({
+  guid: Guid,
   n: z.number().int().positive(),
   name: z.string().min(1),
   purpose: z.string(),
@@ -31,12 +37,14 @@ export const WorkStage = z.object({
 })
 
 export const PolicyRule = z.object({
+  guid: Guid,
   id: z.string().min(1),
   rule: z.string().min(1),
   verified_by: z.string().min(1),
 })
 
 export const WorkPolicy = z.object({
+  guid: Guid,
   name: z.string().regex(/^\S+$/, 'a work policy name has no spaces'),
   rules: z.array(PolicyRule),
 })
@@ -44,9 +52,10 @@ export const WorkPolicy = z.object({
 export const MetricCategory = z.object({ value: z.string().min(1), description: z.string().min(1) })
 
 export const WorkflowMetric = z.object({
+  guid: Guid,
   name: z.string().regex(/^\S+$/, 'a metric name has no spaces'),
   categories: z.array(MetricCategory).min(2),
-  at: z.object({ stage: z.number().int().positive(), step: z.number().int().positive() }),
+  at_step: StepName,
   by: MetricTaker,
   instruction: z.string().min(1),
 })
@@ -102,18 +111,29 @@ export const WorkflowDocument = z
     for (const metric of workflow.metrics) {
       if (metricNames.has(metric.name)) issue(`metric "${metric.name}" is defined twice`)
       metricNames.add(metric.name)
-      if (!workflow.stages[metric.at.stage - 1]?.steps[metric.at.step - 1]) {
-        issue(`metric "${metric.name}" is taken at work step ${metric.at.stage}.${metric.at.step}, which does not exist`)
+      const at = stepPosition(metric.at_step)
+      if (!at || !workflow.stages[at.stage - 1]?.steps[at.step - 1]) {
+        issue(`metric "${metric.name}" is taken at work step ${metric.at_step}, which does not exist`)
       }
       const values = metric.categories.map((category) => category.value)
       if (new Set(values).size !== values.length) issue(`metric "${metric.name}" repeats a category value`)
       if (metric.by === 'owner' && values.length > MAX_OWNER_CHOICES) issue(`metric "${metric.name}" is Owner's to take, so it has at most ${MAX_OWNER_CHOICES} categories`)
     }
+    const guids = guidsOf(workflow)
+    const repeated = guids.find((guid, index) => guids.indexOf(guid) !== index)
+    if (repeated) issue(`GUID ${repeated} is used twice`)
   })
+
+const guidsOf = (workflow: Pick<WorkflowDocument, 'stages' | 'policies' | 'metrics'>) => [
+  ...workflow.stages.flatMap((stage) => [stage.guid, ...stage.steps.map((step) => step.guid)]),
+  ...workflow.policies.flatMap((policy) => [policy.guid, ...policy.rules.map((rule) => rule.guid)]),
+  ...workflow.metrics.map((metric) => metric.guid),
+]
 
 export type WorkflowDocument = z.infer<typeof WorkflowDocument>
 export type WorkStage = z.infer<typeof WorkStage>
 export type WorkStep = z.infer<typeof WorkStep>
+export type WorkPolicy = z.infer<typeof WorkPolicy>
 export type PolicyRule = z.infer<typeof PolicyRule>
 export type Objective = z.infer<typeof Objective>
 export type WorkflowMetric = z.infer<typeof WorkflowMetric>
@@ -134,21 +154,51 @@ export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: 
 
 /**
  * Reads a workflow document written by any earlier Drillmaster. Missing text becomes an empty
- * string, which the retrospective is asked to fill in.
+ * string, which the retrospective is asked to fill in. A component without a GUID takes the GUID
+ * of the component with its name in `previous`, the version before it, so it is followed across
+ * versions; a new one gets a GUID made from its name.
  */
-export function migrateWorkflow(raw: unknown): WorkflowDocument {
+export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): WorkflowDocument {
   const document = structuredClone(raw) as Record<string, any>
   const version = toSemver(document.version)
+  const used = new Set<string>()
+  const guidFor = (existing: unknown, earlier: string | undefined, seed: string) => {
+    let guid = typeof existing === 'string' && existing ? existing : earlier && !used.has(earlier) ? earlier : guidFromSeed(seed)
+    for (let attempt = 1; used.has(guid); attempt++) guid = guidFromSeed(`${seed}#${attempt}`)
+    used.add(guid)
+    return guid
+  }
+  const earlierStage = (name: string) => previous?.stages.find((stage) => stage.name === name)
+  const earlierStep = (stageName: string, name: string) =>
+    earlierStage(stageName)?.steps.find((step) => step.name === name) ?? previous?.stages.flatMap((stage) => stage.steps).find((step) => step.name === name)
+  const earlierPolicy = (name: string) => previous?.policies.find((policy) => policy.name === name)
   return {
     ...document,
     version,
     stages: (document.stages ?? []).map((stage: Record<string, any>) => ({
       ...stage,
+      guid: guidFor(stage.guid, earlierStage(stage.name)?.guid, `stage:${stage.name}`),
       purpose: stage.purpose ?? '',
-      steps: (stage.steps ?? []).map((step: Record<string, any>) => ({ ...step, instruction: step.instruction ?? '' })),
+      steps: (stage.steps ?? []).map((step: Record<string, any>) => ({
+        ...step,
+        guid: guidFor(step.guid, earlierStep(stage.name, step.name)?.guid, `step:${stage.name}/${step.name}`),
+        instruction: step.instruction ?? '',
+        rules: (step.rules ?? []).map((ruleRef: string) => ruleRef.replace(/^rule\s+/, '')),
+      })),
     })),
-    policies: document.policies ?? [],
-    metrics: document.metrics ?? [],
+    policies: (document.policies ?? []).map((policy: Record<string, any>) => ({
+      ...policy,
+      guid: guidFor(policy.guid, earlierPolicy(policy.name)?.guid, `policy:${policy.name}`),
+      rules: (policy.rules ?? []).map((rule: Record<string, any>) => ({
+        ...rule,
+        guid: guidFor(rule.guid, earlierPolicy(policy.name)?.rules.find((candidate) => candidate.id === rule.id)?.guid, `rule:${policy.name} ${rule.id}`),
+      })),
+    })),
+    metrics: (document.metrics ?? []).map(({ at, ...metric }: Record<string, any>) => ({
+      ...metric,
+      guid: guidFor(metric.guid, previous?.metrics.find((candidate) => candidate.name === metric.name)?.guid, `metric:${metric.name}`),
+      at_step: metric.at_step ?? (at ? `${at.stage}.${at.step}` : ''),
+    })),
     experiments: (document.experiments ?? []).map((experiment: Record<string, any>) => ({
       hypothesis: '',
       null_hypothesis: '',

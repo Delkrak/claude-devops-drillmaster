@@ -88,7 +88,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       }
       case 'workflow_changed': {
-        const workflow = migrateWorkflow(event.workflow)
+        const workflow = migrateWorkflow(event.workflow, state.workflow)
         state.workflow = workflow
         state.versions.push(workflow)
         if (event.retro_id && event.proposal !== undefined) state.retros[event.retro_id]?.applied.push(event.proposal)

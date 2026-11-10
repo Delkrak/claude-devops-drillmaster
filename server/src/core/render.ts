@@ -1,4 +1,5 @@
 import type { Position } from './events.js'
+import { stepName } from './refs.js'
 import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
 
 const quoteBlock = (text: string) => text.split('\n').map((line) => `> ${line}`).join('\n')
@@ -16,12 +17,11 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     const rule = findRule(workflow, ruleRef)!
     return `- \`${ruleRef}\`: ${rule.rule}. Verified by: ${rule.verified_by}.`
   })
-  const metrics = workflow.metrics.filter((metric) => metric.at.stage === stageNumber && metric.at.step === stepNumber)
+  const metrics = workflow.metrics.filter((metric) => metric.at_step === stepName(stageNumber, stepNumber))
   const agentMetrics = metrics.filter((metric) => metric.by === 'agent')
   const gateArgs = {
     token: '<your agent_token>',
-    stage: stageNumber,
-    step: stepNumber,
+    step: stepName(stageNumber, stepNumber),
     self_check: step.rules.map((ruleRef) => ({ rule: ruleRef, accepted: true, evidence: '<what shows it, e.g. a command and its output>' })),
     text: step.report.length ? `<${step.report.join('; ')}>` : '<what you did>',
     ...(agentMetrics.length ? { metrics: agentMetrics.map((metric) => ({ name: metric.name, value: metric.categories.map((category) => category.value).join('|'), explanation: '<why>' })) } : {}),

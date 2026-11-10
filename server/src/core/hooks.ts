@@ -2,6 +2,7 @@ import type { NewEvent } from './events.js'
 import { decideProposals } from './owner.js'
 import { decideOwnerAnswers, decideOwnerQuestion, pendingOwnerQuestions, type AnswerOutcome } from './questions.js'
 import type { ProjectState, WorkItemState } from './state.js'
+import { atStep, workflowOfWorkItem } from './work.js'
 
 export interface HookPayload {
   session_id?: string
@@ -139,8 +140,7 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     type: 'work_trace',
     session_id: sessionId,
     work_item_id: workItemId,
-    stage: item?.stage ?? null,
-    step: item?.step ?? null,
+    ...(item ? atStep(workflowOfWorkItem(state, item), item.stage, item.step) : { stage: null, step: null }),
     hook: hookEvent,
   }
   if (payload.tool_name) {

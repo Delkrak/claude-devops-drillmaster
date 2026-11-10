@@ -38,8 +38,8 @@ afterAll(() => server.close())
 describe('a work item through a Drillmaster gate and an Owner gate', () => {
   let token: string
   const r = (args: Record<string, unknown>) => tool('work_report', { token, ...args })
-  const gate11 = () => r({ action: 'gate', stage: 1, step: 1, self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'green' }], text: 'green' })
-  const gate12 = () => r({ action: 'gate', stage: 1, step: 2, self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40 body' }], text: 'adds CSV export' })
+  const gate11 = () => r({ action: 'gate', step: '1.1', self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'green' }], text: 'green' })
+  const gate12 = () => r({ action: 'gate', step: '1.2', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40 body' }], text: 'adds CSV export' })
 
   it('starts and binds the session', async () => {
     await hook('SessionStart', { source: 'startup' })
@@ -64,7 +64,7 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
   })
 
   it("waits at the Owner gate until Owner's own words decide it", async () => {
-    const owner = await r({ action: 'gate', stage: 2, step: 1, self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
+    const owner = await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
     expect(owner).toMatchObject({ verdict: 'pending', gate: 'owner' })
 
     const unclear = await hook('UserPromptSubmit', { prompt: 'what does it export?' })
@@ -72,7 +72,7 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
     const rejected = await hook('UserPromptSubmit', { prompt: 'no, the header row is missing' })
     expect(rejected.output.hookSpecificOutput.additionalContext).toMatch(/rejected/)
 
-    expect(await r({ action: 'gate', stage: 2, step: 1, self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'header added' }], text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
+    expect(await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'header added' }], text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
     const approved = await hook('UserPromptSubmit', { prompt: 'looks good, ship it' })
     expect(approved.output.hookSpecificOutput.additionalContext).toMatch(/approved.*deliver/)
 

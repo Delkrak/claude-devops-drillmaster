@@ -83,7 +83,7 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
                   <Row>
                     <Badge tone={gateTone[step.gate]}>{gateLabel[step.gate]}</Badge>
                     {metrics
-                      .filter((metric) => metric.at.stage === stage.n && metric.at.step === step.n)
+                      .filter((metric) => metric.at_step === `${stage.n}.${step.n}`)
                       .map((metric) => (
                         <Badge key={metric.name} tone="info">
                           metric {metric.name}
@@ -130,7 +130,7 @@ function WorkflowBody({ workflow, verdicts }: { workflow: Workflow; verdicts: Ex
             <Row>
               <Strong>{metric.name}</Strong>
               <Muted>
-                taken by {metric.by} at work step {metric.at.stage}.{metric.at.step}
+                taken by {metric.by} at step {metric.at_step}
               </Muted>
             </Row>
             <Muted>{metric.instruction}</Muted>

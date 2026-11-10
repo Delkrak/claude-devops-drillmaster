@@ -105,12 +105,12 @@ export default async function setup() {
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'mcp__x__work_start', tool_input: { issue: '#1 CSV export' }, tool_response: { work_item_id: one.work_item_id } })
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
   await call({ token: one.agent_token, action: 'report', kind: 'assumption', text: 'CSV uses ; as separator' })
-  await call({ token: one.agent_token, action: 'gate', stage: 1, step: 1, self_check: check('test 1.1'), text: 'green', metrics: size })
-  await call({ token: one.agent_token, action: 'gate', stage: 1, step: 2, self_check: check('pr 1.1'), text: 'adds CSV export' })
-  await call({ token: one.agent_token, action: 'gate', stage: 1, step: 1, self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export' })
+  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'The PR says what it changes.' })
-  await call({ token: one.agent_token, action: 'gate', stage: 1, step: 2, self_check: check('pr 1.1'), text: 'adds CSV export, with a What section' })
-  await call({ token: one.agent_token, action: 'gate', stage: 2, step: 1, self_check: check('pr 1.1'), text: 'look at src/csv.js' })
+  await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export, with a What section' })
+  await call({ token: one.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/csv.js' })
   await app.hook(DEMO_DIR, 'UserPromptSubmit', { session_id: 'demo', prompt: 'looks good, ship it' })
   await call({ token: one.agent_token, action: 'deliver', pr: '#40', summary: 'CSV export with a header line; the test checks the header.', artifacts: ['after.png'] })
   await call({ token: one.agent_token, action: 'post_mortem', keep: 'the gates', change: 'nothing', experiment_reflections: 'experiment 1 helped', free_text: '' })
@@ -121,10 +121,10 @@ export default async function setup() {
 
   // Item 2: waiting at the Owner gate.
   const two = await call({ action: 'start', issue: '#2 JSON export' })
-  await call({ token: two.agent_token, action: 'gate', stage: 1, step: 1, self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: two.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'ok' })
-  await call({ token: two.agent_token, action: 'gate', stage: 1, step: 2, self_check: check('pr 1.1'), text: 'adds JSON export' })
-  await call({ token: two.agent_token, action: 'gate', stage: 2, step: 1, self_check: check('pr 1.1'), text: 'look at src/json.js' })
+  await call({ token: two.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds JSON export' })
+  await call({ token: two.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/json.js' })
 
   const server = await listen(app, VIEWER_PORT)
   process.env.DRILLMASTER_VIEWER_HOME = home

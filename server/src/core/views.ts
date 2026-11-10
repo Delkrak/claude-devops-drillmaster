@@ -67,11 +67,11 @@ export function projectView(projectId: string, events: readonly DrillmasterEvent
     workflow,
     versions: events
       .filter((event): event is Extract<DrillmasterEvent, { type: 'project_initialized' | 'workflow_changed' }> => event.type === 'project_initialized' || event.type === 'workflow_changed')
-      .map((event) => ({
-        version: event.workflow.version,
+      .map((event, index) => ({
+        version: state.versions[index]!.version,
         at: event.at,
         reason: event.type === 'workflow_changed' ? event.reason : "Owner's objective (workflow 0.0.0)",
-        workflow: event.workflow,
+        workflow: state.versions[index]!,
       })),
     measures: workflow.objective.measures.map((measure) => ({
       name: measure,

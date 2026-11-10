@@ -1,4 +1,5 @@
 import type { Artifact, MetricAnswer, NewEvent, Position, ReportKind, SelfCheck } from './events.js'
+import { stepGuidAt, stepName } from './refs.js'
 import { findVersion, type ProjectState, type WorkItemState } from './state.js'
 import { compareVersions, isMajorChange, type WorkflowDocument, type WorkflowMetric, type WorkStep } from './workflow.js'
 
@@ -45,10 +46,16 @@ export function nextPosition(workflow: WorkflowDocument, stage: number, step: nu
   return { next: { stage: null, step: null }, done: true }
 }
 
+/** A work step's position with its GUID, as events record it. */
+export function atStep<Stage extends number | null, Step extends number | null>(workflow: WorkflowDocument, stage: Stage, step: Step) {
+  const guid = stage !== null && step !== null ? stepGuidAt(workflow, stage, step) : undefined
+  return { stage, step, ...(guid ? { step_guid: guid } : {}) }
+}
+
 const describePosition = (position: Position) => (position.stage === null ? 'past the last work stage' : `work step ${position.stage}.${position.step}`)
 
 export const dueMetrics = (workflow: WorkflowDocument, stage: number, step: number, by?: WorkflowMetric['by']) =>
-  workflow.metrics.filter((metric) => metric.at.stage === stage && metric.at.step === step && (by === undefined || metric.by === by))
+  workflow.metrics.filter((metric) => metric.at_step === stepName(stage, step) && (by === undefined || metric.by === by))
 
 function recordAgentMetrics(workflow: WorkflowDocument, item: WorkItemState, args: GateArgs): NewEvent[] {
   const due = dueMetrics(workflow, args.stage, args.step, 'agent')
@@ -64,8 +71,7 @@ function recordAgentMetrics(workflow: WorkflowDocument, item: WorkItemState, arg
     return {
       type: 'metric_recorded',
       work_item_id: item.work_item_id,
-      stage: args.stage,
-      step: args.step,
+      ...atStep(workflow, args.stage, args.step),
       name: metric.name,
       value: answer.value,
       ...(answer.explanation ? { explanation: answer.explanation } : {}),
@@ -78,7 +84,7 @@ function refuseIfDelivered(item: WorkItemState) {
   if (item.status === 'delivered') throw new Refused(`Work item ${item.work_item_id} is delivered. Only its post mortem remains.`)
 }
 
-export function recordReport(item: WorkItemState, args: ReportArgs): Decision {
+export function recordReport(workflow: WorkflowDocument, item: WorkItemState, args: ReportArgs): Decision {
   if (args.kind === 'added_step') {
     if (item.status !== 'delivered') throw new Refused('An added step is a fix to delivered work. Before delivery, the work steps cover it.')
     if (!args.why) throw new Refused("An added step needs `why`: Owner's correction that asked for it.")
@@ -95,8 +101,7 @@ export function recordReport(item: WorkItemState, args: ReportArgs): Decision {
   const event: NewEvent = {
     type: 'work_reported',
     work_item_id: item.work_item_id,
-    stage: args.stage ?? item.stage,
-    step: args.step ?? item.step,
+    ...atStep(workflow, args.stage ?? item.stage, args.step ?? item.step),
     kind,
     text,
     ...(kind === 'decision' ? { chosen, by, why } : {}),
@@ -143,8 +148,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   const submitted: NewEvent = {
     type: 'gate_submitted',
     work_item_id: item.work_item_id,
-    stage: args.stage,
-    step: args.step,
+    ...atStep(workflow, args.stage, args.step),
     gate: step.gate,
     self_check: args.self_check,
     text: args.text,
@@ -166,8 +170,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   const verdict: NewEvent = {
     type: 'gate_verdict',
     work_item_id: item.work_item_id,
-    stage: args.stage,
-    step: args.step,
+    ...atStep(workflow, args.stage, args.step),
     accepted: !failedCheck,
     by: 'agent',
     why: failedCheck ? `Self check failed: ${failedCheck.evidence}` : 'Self check passed.',

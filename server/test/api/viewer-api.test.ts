@@ -26,7 +26,7 @@ beforeAll(async () => {
   const token = started.agent_token
   await app.hook(DIR, 'UserPromptSubmit', { session_id: 's1', prompt: 'do #9' })
   await call({ token, action: 'report', kind: 'impediment', text: 'no fixtures' })
-  await call({ token, action: 'gate', stage: 1, step: 1, self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'green' }], text: 'green' })
+  await call({ token, action: 'gate', step: '1.1', self_check: [{ rule: 'test 1.1', accepted: true, evidence: 'green' }], text: 'green' })
 })
 afterAll(() => server.close())
 

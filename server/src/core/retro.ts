@@ -3,6 +3,7 @@ import type { DrillmasterEvent, Proposal, RetrospectiveRan } from './events.js'
 import { judgeExperiments } from './experiments.js'
 import { averageMeasure, BASELINE_WINDOW, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, type ItemMeasures, type MeasureName } from './measures.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
+import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
 
@@ -16,48 +17,101 @@ const MAX_ANSWER_IN_ERROR = 300
 const StepInput = z
   .object({ name: z.string().min(1), instruction: z.string().min(1), gate: GateKind, rules: z.array(z.string()), report: z.array(z.string()) })
   .strict()
+const RuleInput = PolicyRule.omit({ guid: true }).strict()
+const MetricInput = WorkflowMetric.omit({ guid: true }).strict()
 
-const stagePosition = { stage: z.number().int().positive() }
-const stepPosition = { stage: z.number().int().positive(), step: z.number().int().positive() }
+const StageRef = z.union([z.string().min(1), z.number().int().nonnegative()]).transform(String)
+const Ref = z.string().min(1)
 
-export const WorkflowOp = z.discriminatedUnion('op', [
-  z
-    .object({ op: z.literal('add_stage'), name: z.string().min(1), purpose: z.string().min(1), after: z.number().int().nonnegative().optional(), steps: z.array(StepInput).min(1) })
-    .strict(),
-  z.object({ op: z.literal('change_stage'), ...stagePosition, name: z.string().min(1).optional(), purpose: z.string().min(1).optional() }).strict(),
-  z.object({ op: z.literal('remove_stage'), ...stagePosition }).strict(),
-  z.object({ op: z.literal('add_step'), ...stagePosition, after: z.number().int().nonnegative().optional(), step: StepInput }).strict(),
-  z
-    .object({
-      op: z.literal('change_step'),
-      ...stepPosition,
-      name: z.string().min(1).optional(),
-      instruction: z.string().min(1).optional(),
-      gate: GateKind.optional(),
-      rules: z.array(z.string()).optional(),
-      report: z.array(z.string()).optional(),
-    })
-    .strict(),
-  z.object({ op: z.literal('remove_step'), ...stepPosition }).strict(),
-  z.object({ op: z.literal('add_policy'), name: z.string().regex(/^\S+$/), rules: z.array(PolicyRule) }).strict(),
-  z.object({ op: z.literal('add_rule'), policy: z.string().min(1), rule: PolicyRule }).strict(),
-  z.object({ op: z.literal('change_rule'), ref: z.string().min(1), rule: z.string().min(1).optional(), verified_by: z.string().min(1).optional() }).strict(),
-  z.object({ op: z.literal('remove_rule'), ref: z.string().min(1) }).strict(),
-  z.object({ op: z.literal('add_metric'), metric: WorkflowMetric }).strict(),
-  z
-    .object({
-      op: z.literal('change_metric'),
-      name: z.string().min(1),
-      categories: z.array(MetricCategory).min(2).optional(),
-      at: z.object(stepPosition).optional(),
-      by: MetricTaker.optional(),
-      instruction: z.string().min(1).optional(),
-    })
-    .strict(),
-  z.object({ op: z.literal('remove_metric'), name: z.string().min(1) }).strict(),
-  z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
-  z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
-])
+/** Operations written before references: positions as numbers, and rules and metrics by other keys. */
+function upgradeLegacyOp(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const op = { ...(raw as Record<string, any>) }
+  const position = (at: { stage: number; step: number }) => `${at.stage}.${at.step}`
+  switch (op.op) {
+    case 'add_step':
+      if (typeof op.after === 'number') op.after = op.after === 0 ? '0' : `${op.stage}.${op.after}`
+      break
+    case 'change_step':
+    case 'remove_step':
+      if (typeof op.stage === 'number' && typeof op.step === 'number') {
+        op.step = position(op as { stage: number; step: number })
+        delete op.stage
+      }
+      break
+    case 'change_rule':
+      if ('ref' in op) {
+        if (op.rule !== undefined) op.text = op.rule
+        op.rule = op.ref
+        delete op.ref
+      }
+      break
+    case 'remove_rule':
+      if ('ref' in op) {
+        op.rule = op.ref
+        delete op.ref
+      }
+      break
+    case 'add_metric':
+      if (op.metric?.at) {
+        const { at, ...metric } = op.metric
+        op.metric = { ...metric, at_step: position(at) }
+      }
+      break
+    case 'change_metric':
+    case 'remove_metric':
+      if ('name' in op) {
+        op.metric = op.name
+        delete op.name
+      }
+      if (op.at) {
+        op.at_step = position(op.at)
+        delete op.at
+      }
+      break
+  }
+  return op
+}
+
+export const WorkflowOp = z.preprocess(
+  upgradeLegacyOp,
+  z.discriminatedUnion('op', [
+    z.object({ op: z.literal('add_stage'), name: z.string().min(1), purpose: z.string().min(1), after: StageRef.optional(), steps: z.array(StepInput).min(1) }).strict(),
+    z.object({ op: z.literal('change_stage'), stage: StageRef, name: z.string().min(1).optional(), purpose: z.string().min(1).optional() }).strict(),
+    z.object({ op: z.literal('remove_stage'), stage: StageRef }).strict(),
+    z.object({ op: z.literal('add_step'), stage: StageRef, after: Ref.optional(), step: StepInput }).strict(),
+    z
+      .object({
+        op: z.literal('change_step'),
+        step: Ref,
+        name: z.string().min(1).optional(),
+        instruction: z.string().min(1).optional(),
+        gate: GateKind.optional(),
+        rules: z.array(z.string()).optional(),
+        report: z.array(z.string()).optional(),
+      })
+      .strict(),
+    z.object({ op: z.literal('remove_step'), step: Ref }).strict(),
+    z.object({ op: z.literal('add_policy'), name: z.string().regex(/^\S+$/), rules: z.array(RuleInput) }).strict(),
+    z.object({ op: z.literal('add_rule'), policy: z.string().min(1), rule: RuleInput }).strict(),
+    z.object({ op: z.literal('change_rule'), rule: Ref, text: z.string().min(1).optional(), verified_by: z.string().min(1).optional() }).strict(),
+    z.object({ op: z.literal('remove_rule'), rule: Ref }).strict(),
+    z.object({ op: z.literal('add_metric'), metric: MetricInput }).strict(),
+    z
+      .object({
+        op: z.literal('change_metric'),
+        metric: Ref,
+        categories: z.array(MetricCategory).min(2).optional(),
+        at_step: Ref.optional(),
+        by: MetricTaker.optional(),
+        instruction: z.string().min(1).optional(),
+      })
+      .strict(),
+    z.object({ op: z.literal('remove_metric'), metric: Ref }).strict(),
+    z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
+    z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
+  ]),
+)
 export type WorkflowOp = z.infer<typeof WorkflowOp>
 
 export class InvalidChange extends Error {}
@@ -93,99 +147,139 @@ const renumberStagesAndSteps = (workflow: WorkflowDocument): WorkflowDocument =>
   stages: workflow.stages.map((stage, stageIndex) => ({ ...stage, n: stageIndex + 1, steps: stage.steps.map((step, stepIndex) => ({ ...step, n: stepIndex + 1 })) })),
 })
 
-function requireStage(workflow: WorkflowDocument, stageNumber: number) {
-  const stage = workflow.stages.find((candidate) => candidate.n === stageNumber)
-  if (!stage) throw new InvalidChange(`There is no work stage ${stageNumber}.`)
-  return stage
+function resolveForChange(workflow: WorkflowDocument, text: string, kind: RefKind) {
+  try {
+    return resolveRef(workflow, text, { impliedKind: kind })
+  } catch (error) {
+    if (error instanceof InvalidReference) throw new InvalidChange(error.message)
+    throw error
+  }
+}
+
+function requireStage(workflow: WorkflowDocument, stageRef: string) {
+  const { guid } = resolveForChange(workflow, stageRef, 'stage')
+  return workflow.stages.find((stage) => stage.guid === guid)!
+}
+
+function requireStep(workflow: WorkflowDocument, stepRef: string) {
+  const { guid } = resolveForChange(workflow, stepRef, 'step')
+  for (const stage of workflow.stages) {
+    const step = stage.steps.find((candidate) => candidate.guid === guid)
+    if (step) return { stage, step }
+  }
+  throw new InvalidChange(`There is no work step ${stepRef}.`)
 }
 
 function requireRule(workflow: WorkflowDocument, ruleRef: string) {
-  const [policyName, ruleId] = ruleRef.split(' ')
-  const policy = workflow.policies.find((candidate) => candidate.name === policyName)
-  const ruleIndex = policy?.rules.findIndex((candidate) => candidate.id === ruleId) ?? -1
-  if (!policy || ruleIndex < 0) throw new InvalidChange(`There is no rule "${ruleRef}".`)
-  return { policy, ruleIndex }
+  const { guid } = resolveForChange(workflow, ruleRef, 'rule')
+  const policy = workflow.policies.find((candidate) => candidate.rules.some((rule) => rule.guid === guid))!
+  return { policy, ruleIndex: policy.rules.findIndex((rule) => rule.guid === guid) }
 }
 
-function requireMetric(workflow: WorkflowDocument, metricName: string) {
-  const metric = workflow.metrics.find((candidate) => candidate.name === metricName)
-  if (!metric) throw new InvalidChange(`There is no metric "${metricName}".`)
-  return metric
+function requireMetric(workflow: WorkflowDocument, metricRef: string) {
+  const { guid } = resolveForChange(workflow, metricRef, 'metric')
+  return workflow.metrics.find((metric) => metric.guid === guid)!
 }
 
 const withoutUndefined = (fields: Record<string, unknown>) => Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined))
 
-export function applyWorkflowOps(current: WorkflowDocument, ops: readonly WorkflowOp[]): WorkflowDocument {
+const ruleRefsOf = (rules: readonly string[]) => rules.map((ruleRef) => parseRef(ruleRef, 'rule').name)
+
+/**
+ * Applies the operations in order. Stages and steps are renumbered after each one; a metric stays
+ * at its work step, followed by GUID, even when the step's number changes.
+ */
+export function applyWorkflowOps(current: WorkflowDocument, ops: readonly WorkflowOp[], makeGuid: () => string = newGuid): WorkflowDocument {
   let workflow: WorkflowDocument = structuredClone(current)
+  const stepGuidOfMetric = new Map<string, string>()
+  for (const metric of workflow.metrics) {
+    const at = stepPosition(metric.at_step)
+    const stepGuid = at && stepGuidAt(workflow, at.stage, at.step)
+    if (stepGuid) stepGuidOfMetric.set(metric.guid, stepGuid)
+  }
+  const newStep = (step: z.infer<typeof StepInput>) => ({ guid: makeGuid(), n: 0, ...step, rules: ruleRefsOf(step.rules) })
   for (const op of ops) {
     switch (op.op) {
       case 'add_stage': {
-        const insertAt = op.after ?? workflow.stages.length
-        workflow.stages.splice(insertAt, 0, { n: 0, name: op.name, purpose: op.purpose, steps: op.steps.map((step) => ({ n: 0, ...step })) })
+        const insertAt = op.after === undefined ? workflow.stages.length : op.after === '0' ? 0 : requireStage(workflow, op.after).n
+        workflow.stages.splice(insertAt, 0, { guid: makeGuid(), n: 0, name: op.name, purpose: op.purpose, steps: op.steps.map(newStep) })
         break
       }
       case 'change_stage': {
-        const { op: _op, stage: _stage, ...stageChanges } = op
-        Object.assign(requireStage(workflow, op.stage), withoutUndefined(stageChanges))
+        const { op: _op, stage: stageRef, ...stageChanges } = op
+        Object.assign(requireStage(workflow, stageRef), withoutUndefined(stageChanges))
         break
       }
-      case 'remove_stage':
-        requireStage(workflow, op.stage)
-        workflow.stages = workflow.stages.filter((stage) => stage.n !== op.stage)
+      case 'remove_stage': {
+        const removed = requireStage(workflow, op.stage)
+        workflow.stages = workflow.stages.filter((stage) => stage.guid !== removed.guid)
         break
+      }
       case 'add_step': {
         const stage = requireStage(workflow, op.stage)
-        stage.steps.splice(op.after ?? stage.steps.length, 0, { n: 0, ...op.step })
+        let insertAt = stage.steps.length
+        if (op.after === '0') insertAt = 0
+        else if (op.after !== undefined) {
+          const after = requireStep(workflow, op.after)
+          if (after.stage.guid !== stage.guid) throw new InvalidChange(`Work step ${op.after} is not in stage ${stage.n}.`)
+          insertAt = after.step.n
+        }
+        stage.steps.splice(insertAt, 0, newStep(op.step))
         break
       }
       case 'change_step': {
-        const step = requireStage(workflow, op.stage).steps.find((candidate) => candidate.n === op.step)
-        if (!step) throw new InvalidChange(`There is no work step ${op.stage}.${op.step}.`)
-        const { op: _op, stage: _stage, step: _step, ...stepChanges } = op
-        Object.assign(step, withoutUndefined(stepChanges))
+        const { op: _op, step: stepRef, ...stepChanges } = op
+        const { step } = requireStep(workflow, stepRef)
+        Object.assign(step, withoutUndefined({ ...stepChanges, rules: stepChanges.rules && ruleRefsOf(stepChanges.rules) }))
         break
       }
       case 'remove_step': {
-        const stage = requireStage(workflow, op.stage)
-        if (!stage.steps.some((step) => step.n === op.step)) throw new InvalidChange(`There is no work step ${op.stage}.${op.step}.`)
-        stage.steps = stage.steps.filter((step) => step.n !== op.step)
+        const { stage, step: removed } = requireStep(workflow, op.step)
+        stage.steps = stage.steps.filter((step) => step.guid !== removed.guid)
         break
       }
       case 'add_policy':
         if (workflow.policies.some((policy) => policy.name === op.name)) throw new InvalidChange(`Work policy "${op.name}" already exists; add rules to it.`)
-        workflow.policies.push({ name: op.name, rules: op.rules })
+        workflow.policies.push({ guid: makeGuid(), name: op.name, rules: op.rules.map((rule) => ({ guid: makeGuid(), ...rule })) })
         break
       case 'add_rule': {
-        const policy = workflow.policies.find((candidate) => candidate.name === op.policy)
+        const policy = workflow.policies.find((candidate) => candidate.name === parseRef(op.policy, 'policy').name)
         if (!policy) throw new InvalidChange(`There is no work policy "${op.policy}".`)
-        if (policy.rules.some((rule) => rule.id === op.rule.id)) throw new InvalidChange(`Rule "${op.policy} ${op.rule.id}" already exists.`)
-        policy.rules.push(op.rule)
+        if (policy.rules.some((rule) => rule.id === op.rule.id)) throw new InvalidChange(`Rule "${policy.name} ${op.rule.id}" already exists.`)
+        policy.rules.push({ guid: makeGuid(), ...op.rule })
         break
       }
       case 'change_rule': {
-        const { policy, ruleIndex } = requireRule(workflow, op.ref)
+        const { policy, ruleIndex } = requireRule(workflow, op.rule)
         const rule = policy.rules[ruleIndex]!
-        policy.rules[ruleIndex] = { ...rule, ...(op.rule ? { rule: op.rule } : {}), ...(op.verified_by ? { verified_by: op.verified_by } : {}) }
+        policy.rules[ruleIndex] = { ...rule, ...(op.text ? { rule: op.text } : {}), ...(op.verified_by ? { verified_by: op.verified_by } : {}) }
         break
       }
       case 'remove_rule': {
-        const { policy, ruleIndex } = requireRule(workflow, op.ref)
+        const { policy, ruleIndex } = requireRule(workflow, op.rule)
         policy.rules.splice(ruleIndex, 1)
         break
       }
-      case 'add_metric':
+      case 'add_metric': {
         if (workflow.metrics.some((metric) => metric.name === op.metric.name)) throw new InvalidChange(`Metric "${op.metric.name}" already exists; change it instead.`)
-        workflow.metrics.push(op.metric)
-        break
-      case 'change_metric': {
-        const { op: _op, name: _name, ...metricChanges } = op
-        Object.assign(requireMetric(workflow, op.name), withoutUndefined(metricChanges))
+        const { step } = requireStep(workflow, op.metric.at_step)
+        const metric = { guid: makeGuid(), ...op.metric }
+        stepGuidOfMetric.set(metric.guid, step.guid)
+        workflow.metrics.push(metric)
         break
       }
-      case 'remove_metric':
-        requireMetric(workflow, op.name)
-        workflow.metrics = workflow.metrics.filter((metric) => metric.name !== op.name)
+      case 'change_metric': {
+        const { op: _op, metric: metricRef, at_step: atStep, ...metricChanges } = op
+        const metric = requireMetric(workflow, metricRef)
+        if (atStep !== undefined) stepGuidOfMetric.set(metric.guid, requireStep(workflow, atStep).step.guid)
+        Object.assign(metric, withoutUndefined(metricChanges))
         break
+      }
+      case 'remove_metric': {
+        const removed = requireMetric(workflow, op.metric)
+        workflow.metrics = workflow.metrics.filter((metric) => metric.guid !== removed.guid)
+        break
+      }
       case 'set_objective':
         workflow.objective = { text: op.text ?? workflow.objective.text, measures: op.measures ?? workflow.objective.measures }
         break
@@ -195,6 +289,13 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
         break
     }
     workflow = renumberStagesAndSteps(workflow)
+    for (const metric of workflow.metrics) {
+      const stepGuid = stepGuidOfMetric.get(metric.guid)
+      if (!stepGuid) continue
+      const step = refOfGuid(workflow, stepGuid)
+      if (!step) throw new InvalidChange(`Metric "${metric.name}" is taken at work step ${metric.at_step}, which this change removes. Move the metric (change_metric with at_step) or remove it.`)
+      metric.at_step = step.name
+    }
   }
   const parsed = WorkflowDocument.safeParse({ ...workflow, version: bumpVersion(current.version, levelOfOps(ops)) })
   if (!parsed.success) throw new InvalidChange(`The changed workflow is invalid: ${z.prettifyError(parsed.error)}`)
@@ -227,22 +328,25 @@ export function applyProposal(current: WorkflowDocument, proposal: Proposal, del
   return { workflow: WorkflowDocument.parse(next), level: levelOfOps(ops) }
 }
 
+/** The workflow as JSON for a reader: GUIDs are Drillmaster's bookkeeping, references are what readers use. */
+export const workflowForReading = (workflow: WorkflowDocument) => JSON.stringify(workflow, (key, value) => (key === 'guid' ? undefined : value), 2)
+
 const noDifference = (change: string, measure: string) => `"${change}" makes no difference to ${measure}.`
 
-const WORKFLOW_OP_REFERENCE = `Operations (stages and steps are renumbered after each operation; refer to numbers as they are after the previous operation):
-{"op":"add_stage","name":"build","purpose":"<what the stage achieves>","after":0,"steps":[{"name":"write the tests first","instruction":"<the work to do in this step, as an order to Agent>","gate":"self","rules":["test 1.1"],"report":["test result"]}]}   (after: insert after this stage number; omit to append)
-{"op":"change_stage","stage":1,"purpose":"..."}   (any of name, purpose)
-{"op":"remove_stage","stage":2}
-{"op":"add_step","stage":1,"after":1,"step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."]}}
-{"op":"change_step","stage":1,"step":2,"gate":"drillmaster"}   (any of name, instruction, gate, rules, report)
-{"op":"remove_step","stage":1,"step":2}
+const WORKFLOW_OP_REFERENCE = `Operations. They name what they change by reference: a stage by its number ("1"), a step by "<stage>.<step>" ("1.2"), a rule by "<policy> <rule id>" ("pr 1.1"), a metric by its name. Stages and steps are renumbered after each operation; refer to them as they are after the previous operation. A metric stays at its step when the step's number changes.
+{"op":"add_stage","name":"build","purpose":"<what the stage achieves>","after":"1","steps":[{"name":"write the tests first","instruction":"<the work to do in this step, as an order to Agent>","gate":"self","rules":["test 1.1"],"report":["test result"]}]}   (after: the stage it follows, "0" to put it first; omit to append)
+{"op":"change_stage","stage":"1","purpose":"..."}   (any of name, purpose)
+{"op":"remove_stage","stage":"2"}
+{"op":"add_step","stage":"1","after":"1.1","step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."]}}   (after: the step it follows, "0" to put it first; omit to append)
+{"op":"change_step","step":"1.2","gate":"drillmaster"}   (any of name, instruction, gate, rules, report)
+{"op":"remove_step","step":"1.2"}
 {"op":"add_policy","name":"pr","rules":[{"id":"1.1","rule":"the PR says what it changes","verified_by":"reading the PR description"}]}
 {"op":"add_rule","policy":"pr","rule":{"id":"1.2","rule":"...","verified_by":"..."}}
-{"op":"change_rule","ref":"pr 1.1","rule":"...","verified_by":"..."}
-{"op":"remove_rule","ref":"pr 1.1"}
-{"op":"add_metric","metric":{"name":"size","categories":[{"value":"small","description":"one file, under an hour"},{"value":"large","description":"several files or over an hour"}],"at":{"stage":1,"step":1},"by":"agent|drillmaster|owner","instruction":"<how to choose the category>"}}
-{"op":"change_metric","name":"size","instruction":"..."}   (any of categories, at, by, instruction)
-{"op":"remove_metric","name":"size"}
+{"op":"change_rule","rule":"pr 1.1","text":"...","verified_by":"..."}   (any of text, verified_by)
+{"op":"remove_rule","rule":"pr 1.1"}
+{"op":"add_metric","metric":{"name":"size","categories":[{"value":"small","description":"one file, under an hour"},{"value":"large","description":"several files or over an hour"}],"at_step":"1.1","by":"agent|drillmaster|owner","instruction":"<how to choose the category>"}}
+{"op":"change_metric","metric":"size","instruction":"..."}   (any of categories, at_step, by, instruction)
+{"op":"remove_metric","metric":"size"}
 {"op":"set_objective","text":"...","measures":["owner_corrections_per_item"]}
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 
@@ -309,7 +413,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     `Propose at most ${MAX_PROPOSALS} changes: few, small and high-value, so each can be measured. A rule must say how it is verified. A work gate references specific rules. Metrics are categories taken at a work step (for example the size of a work item), so measures can be split by them.`,
     '',
     `Current workflow (version ${workflow.version}):`,
-    JSON.stringify(workflow, null, 2),
+    workflowForReading(workflow),
     '',
     `Measures (Owner's objective: "${workflow.objective.text}"):`,
     ...measureLines,

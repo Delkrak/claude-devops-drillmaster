@@ -9,7 +9,8 @@ const SIZE = {
     { value: 'small', description: 'one file' },
     { value: 'large', description: 'several files' },
   ],
-  at: { stage: 1, step: 1 },
+  guid: 'guid-metric',
+  at_step: '1.1',
   by: 'agent' as const,
   instruction: 'How big is the change?',
 }
@@ -42,8 +43,7 @@ describe('rendering the next work step', () => {
       \`\`\`json
       {
         "token": "<your agent_token>",
-        "stage": 1,
-        "step": 1,
+        "step": "1.1",
         "self_check": [],
         "text": "<test result>",
         "metrics": [

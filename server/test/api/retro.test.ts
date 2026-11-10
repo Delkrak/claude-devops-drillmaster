@@ -89,7 +89,7 @@ describe('the improvement loop', () => {
     const retro = await tool('workflow_retrospective', { action: 'run' })
     expect(retro.value.findings.improve).toBe('add a test step')
     expect(retro.value.proposals.map((p: any) => p.id)).toEqual([1, 2])
-    expect(retro.value.dropped).toEqual([{ change: 'broken', error: 'There is no work stage 9.' }])
+    expect(retro.value.dropped).toEqual([{ change: 'broken', error: 'There is no stage 9 in workflow 0.0.0.' }])
     const prompt = reviewer.requests.find((r) => r.kind === 'retrospective')!.prompt
     expect(prompt).toContain('"you never ran the tests"')
     expect(prompt).toContain('Owner had to ask for the tests')

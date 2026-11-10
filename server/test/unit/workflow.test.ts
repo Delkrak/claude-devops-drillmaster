@@ -35,9 +35,9 @@ describe('workflow document', () => {
   })
 
   it('rejects a metric at a work step that does not exist, or with a repeated category', () => {
-    const metric = { name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at: { stage: 1, step: 1 }, by: 'agent' as const, instruction: 'pick' }
+    const metric = { guid: 'guid-size', name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at_step: '1.1', by: 'agent' as const, instruction: 'pick' }
     expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [metric] })).not.toThrow()
-    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [{ ...metric, at: { stage: 1, step: 9 } }] })).toThrow(/work step 1.9, which does not exist/)
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [{ ...metric, at_step: '1.9' }] })).toThrow(/work step 1.9, which does not exist/)
     expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [{ ...metric, categories: [metric.categories[0], metric.categories[0]] }] })).toThrow(/repeats a category/)
   })
 
@@ -52,6 +52,18 @@ describe('workflow document', () => {
     const migrated = WorkflowDocument.parse(migrateWorkflow(old))
     expect(migrated).toMatchObject({ version: '2.0.0', metrics: [], stages: [{ purpose: '', steps: [{ instruction: '' }] }] })
     expect(migrated.experiments[0]).toMatchObject({ hypothesis: '', baseline_sd: 0, target: null, judge_after: 3, version: '2.0.0' })
+  })
+
+  it('gives an old document GUIDs that follow its components through the versions, by name', () => {
+    const stage = (steps: string[]) => ({ n: 1, name: 'build', steps: steps.map((name, index) => ({ n: index + 1, name, gate: 'self', rules: [], report: [] })) })
+    const first = migrateWorkflow({ version: 1, objective: OBJECTIVE, stages: [stage(['test', 'describe'])], policies: [{ name: 'pr', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] })
+    const second = migrateWorkflow({ version: 2, objective: OBJECTIVE, stages: [stage(['read', 'test', 'describe'])], policies: [{ name: 'pr', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] }, first)
+    expect(second.stages[0]!.steps[1]!.guid).toBe(first.stages[0]!.steps[0]!.guid)
+    expect(second.stages[0]!.steps[2]!.guid).toBe(first.stages[0]!.steps[1]!.guid)
+    expect(second.policies[0]!.rules[0]!.guid).toBe(first.policies[0]!.rules[0]!.guid)
+    expect(new Set(second.stages[0]!.steps.map((step) => step.guid)).size).toBe(3)
+    expect(migrateWorkflow({ version: 1, objective: OBJECTIVE, stages: [stage(['test', 'describe'])], policies: [] })).toEqual(migrateWorkflow({ version: 1, objective: OBJECTIVE, stages: [stage(['test', 'describe'])], policies: [] }))
+    expect(() => WorkflowDocument.parse({ ...second, stages: [{ ...second.stages[0]!, guid: second.stages[0]!.steps[0]!.guid }] })).toThrow(/used twice/)
   })
 
   it('counts versions in semver', () => {

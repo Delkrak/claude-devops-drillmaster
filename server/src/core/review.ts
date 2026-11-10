@@ -1,4 +1,5 @@
 import type { DrillmasterEvent, GateSubmitted, MetricAnswer, Position, WorkTrace } from './events.js'
+import { parseRef, stepName, stepPosition } from './refs.js'
 import type { WorkItemState } from './state.js'
 import { nextPosition, stepAt } from './work.js'
 import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
@@ -11,7 +12,7 @@ export interface GateAnswer {
   accepted: boolean
   why: string
   rule: string | null
-  back_to?: Position
+  back_to?: Position | string
 }
 
 const formatTraceLine = (trace: WorkTrace) =>
@@ -55,14 +56,14 @@ export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState,
     '',
     ...metricQuestionLines(dueDrillmasterMetrics(workflow, submission.stage, submission.step)),
     'Answer with JSON only, no prose around it:',
-    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": {"stage": n, "step": n}, "metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
+    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": "<stage>.<step>", "metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
     'Reject when any referenced rule is not met or the evidence is not backed by the work traces, and cite that rule.',
     'back_to is only for a rejection: the work step the work goes back to (this one or an earlier one).',
   ].join('\n')
 }
 
 export const dueDrillmasterMetrics = (workflow: WorkflowDocument, stage: number, step: number) =>
-  workflow.metrics.filter((metric) => metric.by === 'drillmaster' && metric.at.stage === stage && metric.at.step === step)
+  workflow.metrics.filter((metric) => metric.by === 'drillmaster' && metric.at_step === stepName(stage, step))
 
 function metricQuestionLines(metrics: readonly WorkflowMetric[]) {
   if (metrics.length === 0) return []
@@ -125,13 +126,13 @@ export function readGateAnswer(workflow: WorkflowDocument, submission: GateSubmi
   return { verdict: { accepted: false, why: gateAnswer.why, rule: citedRule, next: backToThisOrEarlierStep(workflow, submission, gateAnswer.back_to), done: false }, metrics }
 }
 
-function backToThisOrEarlierStep(workflow: WorkflowDocument, submission: GateSubmitted, backTo: Position | undefined): Position {
+function backToThisOrEarlierStep(workflow: WorkflowDocument, submission: GateSubmitted, backTo: Position | string | undefined): Position {
   const currentStep = { stage: submission.stage, step: submission.step }
-  if (!backTo || typeof backTo.stage !== 'number') return currentStep
-  const targetStep = typeof backTo.step === 'number' ? backTo.step : 1
-  const targetExists = stepAt(workflow, backTo.stage, targetStep) !== undefined
-  const targetIsNotLater = backTo.stage < currentStep.stage || (backTo.stage === currentStep.stage && targetStep <= currentStep.step)
-  return targetExists && targetIsNotLater ? { stage: backTo.stage, step: targetStep } : currentStep
+  const target = typeof backTo === 'string' ? stepPosition(parseRef(backTo, 'step').name) : backTo && typeof backTo.stage === 'number' ? { stage: backTo.stage, step: typeof backTo.step === 'number' ? backTo.step : 1 } : undefined
+  if (!target) return currentStep
+  const targetExists = stepAt(workflow, target.stage, target.step) !== undefined
+  const targetIsNotLater = target.stage < currentStep.stage || (target.stage === currentStep.stage && target.step <= currentStep.step)
+  return targetExists && targetIsNotLater ? target : currentStep
 }
 
 export function extractFirstJsonObject(text: string): unknown {

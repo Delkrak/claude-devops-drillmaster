@@ -14,7 +14,8 @@ const MOOD: WorkflowDocument['metrics'][number] = {
     { value: 'low', description: 'nice to have' },
     { value: 'high', description: 'Owner needs it' },
   ],
-  at: { stage: 1, step: 1 },
+  guid: 'guid-metric',
+  at_step: '1.1',
   by: 'owner',
   instruction: 'How much is this worth to you?',
 }

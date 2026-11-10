@@ -100,8 +100,8 @@ describe('a project kept in a git store', () => {
   it('keeps each open work item on its own branch, pushed at each stage end', async () => {
     const one = await startItem('#1')
     const two = await startItem('#2')
-    await app.callTool(work, 'work_gate', { token: one.token, stage: 1, step: 1, self_check: check('test 1.1'), text: 'green' })
-    await app.callTool(work, 'work_gate', { token: two.token, stage: 1, step: 1, self_check: check('test 1.1'), text: 'green' })
+    await app.callTool(work, 'work_gate', { token: one.token, step: '1.1', self_check: check('test 1.1'), text: 'green' })
+    await app.callTool(work, 'work_gate', { token: two.token, step: '1.1', self_check: check('test 1.1'), text: 'green' })
     await app.idle()
     expect(branchesOf(storeRepo)).toEqual([`drillmaster/${one.workItemId}`, `drillmaster/${two.workItemId}`, 'main'])
     expect(git(storeRepo, 'show', `drillmaster/${one.workItemId}:${projectId(work)}/items/${one.workItemId}/w_a.jsonl`)).toContain('"gate_verdict"')
@@ -111,7 +111,7 @@ describe('a project kept in a git store', () => {
   it('squash-merges a work item into main once its workflow is complete, and deletes its branch', async () => {
     const item = Object.values((await app.state(work)).workItems).find((candidate) => candidate.issue === '#1')!
     const itemToken = tokenByIssue['#1']!
-    await app.callTool(work, 'work_gate', { token: itemToken, stage: 2, step: 1, self_check: [], text: 'tagged' })
+    await app.callTool(work, 'work_gate', { token: itemToken, step: '2.1', self_check: [], text: 'tagged' })
     await writeFile(path.join(work, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
     await app.callTool(work, 'work_deliver', { token: itemToken, pr: '#40', summary: 'done', artifacts: ['shot.png'] })
     await app.callTool(work, 'work_post_mortem', { token: itemToken, ...postMortem })

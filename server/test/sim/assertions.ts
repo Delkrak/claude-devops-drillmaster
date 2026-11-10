@@ -77,7 +77,7 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   })
   // A metric added by the last retrospective has had no work item to be taken on.
   const takeableMetrics = items.flatMap((workItem) =>
-    workflowOfWorkItem(state, workItem).metrics.filter((metric) => workItem.passed_steps.includes(`${metric.at.stage}.${metric.at.step}`)).map((metric) => metric.name),
+    workflowOfWorkItem(state, workItem).metrics.filter((metric) => workItem.passed_steps.includes(metric.at_step)).map((metric) => metric.name),
   )
   if (takeableMetrics.length > 0) {
     const recorded = events.filter((event) => event.type === 'metric_recorded')

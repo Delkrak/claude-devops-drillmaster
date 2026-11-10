@@ -1,7 +1,8 @@
 import type { NewEvent } from './events.js'
 import { classifyOwnerWords, decideProposals } from './owner.js'
+import { stepPosition } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { nextPosition, stepAt, workflowOfWorkItem } from './work.js'
+import { atStep, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
 import type { WorkflowMetric } from './workflow.js'
 
 /** AskUserQuestion takes at most this many questions per call. */
@@ -94,12 +95,11 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
 function ownerMetricQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
   const workflow = workflowOfWorkItem(state, item)
   return workflow.metrics
-    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && item.passed_steps.includes(`${metric.at.stage}.${metric.at.step}`))
+    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && item.passed_steps.includes(metric.at_step))
     .map((metric: WorkflowMetric) => ({
       kind: 'owner_metric' as const,
       work_item_id: item.work_item_id,
-      stage: metric.at.stage,
-      step: metric.at.step,
+      ...stepPosition(metric.at_step)!,
       metric: metric.name,
       question: `Metric "${metric.name}" for ${item.work_item_id} (${item.issue}): ${metric.instruction}`,
       header: header(metric.name),
@@ -152,8 +152,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
           {
             type: 'gate_verdict',
             work_item_id: question.work_item_id,
-            stage: question.stage,
-            step: question.step,
+            ...atStep(workflow, question.stage, question.step),
             accepted,
             by: 'owner',
             via,
@@ -190,6 +189,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       }
     }
     case 'owner_metric': {
+      const workflow = workflowOfWorkItem(state, state.workItems[question.work_item_id]!)
       const category = question.options.find((option) => option.label === ownerAnswer.answer) ?? question.options.find((option) => new RegExp(`\\b${escapeRegExp(option.label)}\\b`, 'i').test(ownerAnswer.answer))
       if (!category) return unclear
       return {
@@ -197,8 +197,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
           {
             type: 'metric_recorded',
             work_item_id: question.work_item_id,
-            stage: question.stage,
-            step: question.step,
+            ...atStep(workflow, question.stage, question.step),
             name: question.metric,
             value: category.label,
             ...(ownerAnswer.notes ? { explanation: ownerAnswer.notes } : {}),

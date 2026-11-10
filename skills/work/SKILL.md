@@ -42,7 +42,7 @@ Call `work_start({issue, description})` before you touch anything.
    - `added_step`: only after delivery (see below).
 
    If the workflow is missing work you needed to do, that is an `impediment`: say what was missing.
-3. **Hand in the gate** with `work_gate({token, stage, step, self_check, text, metrics})`, filled in
+3. **Hand in the gate** with `work_gate({token, step, self_check, text, metrics})` (step as in "1.2"), filled in
    from the step's answer:
    - `self_check` holds exactly one `{rule, accepted, evidence}` per rule the gate checks. The
      evidence is what you actually checked, such as a command and its output, not a promise.
@@ -114,4 +114,4 @@ A retrospective can change the workflow while a work item is open.
 `work_status({token})` shows where the work item is, any pending gate, and the last verdict.
 
 - Add `last: n` for your last work reports.
-- Add `stage` and `step` for everything captured at that work step.
+- Add `step` (e.g. "1.2") or `stage` (e.g. "1") for everything captured there.

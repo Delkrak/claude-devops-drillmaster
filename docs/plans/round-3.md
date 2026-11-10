@@ -155,7 +155,7 @@ A workflow change is pushed to main first, and applies only once the push succee
 Each phase is one local commit, made when its tests are green. Nothing is pushed without Owner's
 OK.
 
-0. **The plans in the repository.** `docs/plans/` holds every plan, so the decisions are on record
+0. **The plans in the repository.** (done: d733b35) `docs/plans/` holds every plan, so the decisions are on record
    while we work:
    - `docs/plans/README.md`: the list of plans, each with its status and commits.
 

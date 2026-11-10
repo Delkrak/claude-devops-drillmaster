@@ -11,6 +11,7 @@ export interface ProjectSummary {
 }
 
 export interface WorkStep {
+  guid: string
   n: number
   name: string
   instruction?: string
@@ -20,6 +21,7 @@ export interface WorkStep {
 }
 
 export interface WorkStage {
+  guid: string
   n: number
   name: string
   purpose?: string
@@ -27,14 +29,16 @@ export interface WorkStage {
 }
 
 export interface Metric {
+  guid: string
   name: string
   categories: { value: string; description: string }[]
-  at: { stage: number; step: number }
+  at_step: string
   by: 'agent' | 'drillmaster' | 'owner'
   instruction: string
 }
 
 export interface PolicyRule {
+  guid: string
   id: string
   rule: string
   verified_by: string

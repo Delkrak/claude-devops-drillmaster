@@ -5,7 +5,7 @@ import { steppingClock, sequentialIds } from '../src/adapters/clocks.js'
 import { ScriptedReviewer } from '../src/adapters/reviewers.js'
 import { MemoryArtifactStore } from '../src/adapters/artifacts.js'
 import { MemoryStore } from '../src/adapters/stores.js'
-import type { WorkflowDocument } from '../src/core/workflow.js'
+import { migrateWorkflow, type WorkflowDocument } from '../src/core/workflow.js'
 import type { Ports } from '../src/ports.js'
 
 /** Deterministic ports: memory store, fixed clock, sequential ids, scripted reviewer. */
@@ -38,7 +38,7 @@ export function workToolCall(name: string, args: Record<string, unknown>): { nam
 export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] }
 
 /** Two work stages: build (two self gates) and review (an Owner gate). */
-export const WORKFLOW_3: WorkflowDocument = {
+export const WORKFLOW_3: WorkflowDocument = migrateWorkflow({
   version: '3.0.0',
   objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
   stages: [
@@ -64,7 +64,7 @@ export const WORKFLOW_3: WorkflowDocument = {
   ],
   metrics: [],
   experiments: [],
-}
+})
 
 /** WORKFLOW_3 with work step 1.2 judged by Drillmaster instead of Agent. */
 export const WORKFLOW_DM: WorkflowDocument = {
@@ -104,7 +104,7 @@ export const EXPERIMENT_1 = {
 }
 
 /** A workflow after a few retrospectives: one work stage, one work policy, one experiment. */
-export const WORKFLOW_2: WorkflowDocument = {
+export const WORKFLOW_2: WorkflowDocument = migrateWorkflow({
   version: '2.0.0',
   objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
   stages: [
@@ -121,4 +121,4 @@ export const WORKFLOW_2: WorkflowDocument = {
   policies: [{ name: 'pr', rules: [{ id: '1.1', rule: 'the PR says what it changes', verified_by: 'reading the PR description' }] }],
   metrics: [],
   experiments: [EXPERIMENT_1],
-}
+})
