@@ -63,7 +63,7 @@ const RETROSPECTIVE_TIMEOUT_MS = 300_000
 const MAX_LAST_REPORTS = 200
 const MAX_ARTIFACTS = 10
 const NO_WORKFLOW_YET = 'This project has no workflow yet. Owner sets the objective first (setup).'
-const NOT_A_PROJECT = 'This folder is not a Drillmaster project: it has no .drillmaster file. Owner sets it up with /devops-drillmaster:setup, which is the only thing Drillmaster does here until then.'
+export const NOT_A_PROJECT = 'This folder is not a Drillmaster project: it has no .drillmaster file. Owner sets it up with /devops-drillmaster:setup, which is the only thing Drillmaster does here until then.'
 const UNKNOWN_TOKEN = 'Unknown token. Use the agent_token that work_start returned.'
 
 export class UserError extends Error {
@@ -502,12 +502,6 @@ export class Drillmaster {
 
   async state(projectDir: string): Promise<ProjectState> {
     return foldState(await this.events(projectDir))
-  }
-
-  async listProjects() {
-    const projectIds = await this.ports.store.projectIds()
-    const summaries = await Promise.all(projectIds.map(async (projectId) => views.summarizeProject(projectId, await this.ports.store.read(projectId))))
-    return summaries.filter((summary) => summary !== undefined).sort((a, b) => (b.last_activity ?? '').localeCompare(a.last_activity ?? ''))
   }
 
   async projectView(projectId: string) {

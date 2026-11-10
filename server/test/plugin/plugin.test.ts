@@ -8,6 +8,7 @@ import { tempDir } from '../helpers.js'
 import { claudeTurn } from '../sim/claude.js'
 import { defaultAnswers, listenForOwnerQuestions, OWNER_PERMISSION_TOOL, ownerMcpConfig, type AskedQuestion } from '../sim/ownerAnswers.js'
 import { DotDrillmasterResolver } from '../../src/adapters/projects.js'
+import { projectServerInfoFile } from '../../src/projectLocator.js'
 
 const enabled = process.env.DRILLMASTER_PLUGIN_TESTS === '1'
 const REPO = path.resolve(import.meta.dirname, '../../..')
@@ -33,8 +34,10 @@ const turn = async (prompt: string) => {
   session = t.session_id
   return t.result
 }
+/** The project's own server, announced in its folder of the Drillmaster home. */
+const serverInfo = async () => JSON.parse(await readFile(projectServerInfoFile(new DotDrillmasterResolver().resolve(project.dir)!.key, env), 'utf8')) as { url: string; pid: number }
 const events = async () => {
-  const { url } = JSON.parse(await readFile(path.join(home.dir, 'daemon.json'), 'utf8')) as { url: string }
+  const { url } = await serverInfo()
   return ((await (await fetch(`${url}/state?project=${encodeURIComponent(project.dir)}`)).json()) as { events: DrillmasterEvent[] }).events
 }
 
@@ -57,7 +60,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
   afterAll(async () => {
     ownerEndpoint?.close()
     try {
-      process.kill((JSON.parse(await readFile(path.join(home.dir, 'daemon.json'), 'utf8')) as { pid: number }).pid)
+      process.kill((await serverInfo()).pid)
     } catch {
       // Never started.
     }
@@ -65,11 +68,12 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     await home?.remove()
   })
 
-  it('sets up workflow_0 through the setup skill', async () => {
-    const storeRepo = path.join(home.dir, 'store.git')
-    execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', storeRepo])
-    await turn(`Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. Store: the git repo at ${storeRepo}.`)
-    expect(foldState(await events()).workflow).toMatchObject({ version: '0.0.0', stages: [], storage: { repo: storeRepo } })
+  it('sets up workflow_0 through the setup skill, which writes .drillmaster', async () => {
+    const drillmasterRepository = path.join(home.dir, 'drillmaster.git')
+    execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', drillmasterRepository])
+    await turn(`Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. The Drillmaster repository: ${drillmasterRepository}.`)
+    expect(JSON.parse(await readFile(path.join(project.dir, '.drillmaster'), 'utf8'))).toMatchObject({ drillmaster_repository: drillmasterRepository })
+    expect(foldState(await events()).workflow).toMatchObject({ version: '0.0.0', stages: [] })
   }, 600_000)
 
   it('runs a work item from start to both post mortems, with every action traced', async () => {

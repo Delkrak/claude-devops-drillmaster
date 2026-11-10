@@ -7,7 +7,8 @@ import type { DrillmasterEvent } from '../../src/core/events.js'
 import { extractFirstJsonObject } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { compareVersions } from '../../src/core/versions.js'
-import { projectKey } from '../../src/adapters/projects.js'
+import { DotDrillmasterResolver, projectKey } from '../../src/adapters/projects.js'
+import { projectServerInfoFile } from '../../src/projectLocator.js'
 import { VERSION } from '../../src/version.js'
 import { checkRun } from './assertions.js'
 import { claudeTurn } from './claude.js'
@@ -189,9 +190,15 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     return turn.result.trim().replace(/^["']|["']$/g, '') || 'Please continue.'
   }
 
+  /** The project's own server, once .drillmaster names the project. */
+  const projectServer = () => {
+    const key = new DotDrillmasterResolver().resolve(project)!.key
+    return JSON.parse(readFileSync(projectServerInfoFile(key, { DRILLMASTER_HOME: home }), 'utf8')) as { url: string; pid: number }
+  }
+
   const events = async (idle = false): Promise<DrillmasterEvent[]> => {
     try {
-      const { url } = JSON.parse(readFileSync(path.join(home, 'daemon.json'), 'utf8')) as { url: string }
+      const { url } = projectServer()
       const res = await fetch(`${url}/state?${idle ? 'idle=1&' : ''}project=${encodeURIComponent(project)}`)
       return ((await res.json()) as { events: DrillmasterEvent[] }).events
     } catch {
@@ -262,8 +269,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   writeFileSync(path.join(runDir, 'result.json'), JSON.stringify(result, null, 2))
 
   try {
-    const { pid } = JSON.parse(readFileSync(path.join(home, 'daemon.json'), 'utf8')) as { pid: number }
-    process.kill(pid)
+    process.kill(projectServer().pid)
   } catch {
     // No server was started.
   }

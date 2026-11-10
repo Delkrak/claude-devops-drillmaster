@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ProjectSummary, ProjectView, WorkItemView } from './types'
+import type { ProjectView, WorkItemView } from './types'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -9,7 +9,7 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  projects: () => getJson<ProjectSummary[]>('/api/projects'),
+  served: () => getJson<{ project: string | null }>('/api/served'),
   project: (id: string) => getJson<ProjectView>(`/api/projects/${encodeURIComponent(id)}`),
   workItem: (id: string, item: string) => getJson<WorkItemView>(`/api/projects/${encodeURIComponent(id)}/items/${encodeURIComponent(item)}`),
 }

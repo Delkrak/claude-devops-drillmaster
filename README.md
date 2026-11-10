@@ -143,13 +143,28 @@ Drillmaster is built on it.
 - the plugin's MCP server (`drillmaster mcp`) forwards Agent's tool calls to it;
 - the hooks send their traces to its REST endpoints.
 
-It runs as one shared local server and starts on its own the first time it's needed.
+Each project has its own local server, at the Drillmaster version the project pins, so projects
+on different versions run side by side and know nothing of each other.
+
+- The MCP server and the hooks read `.drillmaster`, and find the project's server through
+  `~/.drillmaster/projects/<project>/daemon.json`.
+- When none runs, they start one. First they fetch the Drillmaster repository's main and read the
+  pin. Then they start the plugin's own build if the pin is its version, or
+  `npx -y claude-devops-drillmaster@<pin> daemon` if it isn't. A pin that can't run (not a
+  version, or older than 0.3.0, the first with a server per project) is refused, with a message.
+- `drillmaster upgrade [--to <version>]` pushes a new pin to main first, then stops the running
+  server, so the next session starts the pinned version.
+- In a folder without `.drillmaster`, setup is all Drillmaster does. It runs on the plugin's own
+  version, and writes `.drillmaster`.
+- The REST line between the plugin and the server stays the same across versions. Tool lists and
+  results come from the server, so the skills stay generic.
 
 | MCP tool | What it does |
 |---|---|
 | `workflow_get` | Describes the workflow: the objective, the work stages and work steps, the rules, the metrics and the experiments with their verdicts. |
-| `work_start` | Starts a work item (or starts it late, at a later step). Returns the token and the first step in full. |
-| `work_skip` | Asks to skip ahead on an open work item, with a justification and evidence. |
+| `work_start` | Starts a work item at its first step, for the stages this session works on. Returns the token and the first step in full. |
+| `work_resume` | Takes up an open work item in a later session, for the stages that session works on. Returns a new token and the step to do. |
+| `work_skip` | Skips the current step when the workflow marks it skippable; the step says who decides. |
 | `work_report` | A work report in real time: impediment, better way, decision, question, assumption, required, or an added step after delivery. |
 | `work_gate` | Hands in the current step's gate, with one self check per rule and Agent's metrics. Returns the verdict and the next step in full. |
 | `work_deliver` | Delivers the work item, with a summary and artifacts. |
@@ -223,16 +238,17 @@ claude --plugin-dir <path to this repo>
 The CLI:
 
 ```
-drillmaster open      # the viewer in your browser
+drillmaster open      # this project's viewer in your browser
+drillmaster upgrade [--to <version>]   # pin the project to a Drillmaster version
 drillmaster init --objective "<Owner's objective>" --measure owner_corrections_per_item --repository <git url> [--folder <name>]
 drillmaster inspect [--json]
 ```
 
 ## The viewer
 
-The server also serves a read-only web viewer at its own address: run `drillmaster open`. It shows:
-- every project;
-- for each project, the overview (objective, measures and what is happening now), the workflow at
+Each project's server also serves a read-only web viewer of that project at its own address: run
+`drillmaster open` in the work folder. It shows:
+- the overview (objective, measures and what is happening now), the workflow at
   any version, the work items, the retrospectives with each proposal's status, and the measures per
   work item;
 - for each work item, a timeline you can filter and search (for example for `added_step`), with

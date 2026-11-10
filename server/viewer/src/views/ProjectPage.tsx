@@ -5,7 +5,7 @@ import { Row, Stack } from '../ui/Box'
 import { Layout } from '../ui/Layout'
 import { Loading } from '../ui/Loading'
 import { Tabs } from '../ui/Tabs'
-import { Heading, Link, Muted } from '../ui/Text'
+import { Heading, Muted } from '../ui/Text'
 import { MeasuresView } from './MeasuresView'
 import { OverviewView } from './OverviewView'
 import { RetrospectivesView } from './RetrospectivesView'
@@ -23,7 +23,7 @@ const TABS: readonly { id: ProjectTab; label: string }[] = [
 export function ProjectPage({ id, tab }: { id: string; tab: ProjectTab }) {
   const loaded = usePolled(() => api.project(id), `project:${id}`)
   return (
-    <Layout crumbs={<Link href={href.projects()}>Projects</Link>}>
+    <Layout>
       <Loading loaded={loaded}>
         {(project) => (
           <>

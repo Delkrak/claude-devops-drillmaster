@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export type Route =
-  | { page: 'projects' }
+  | { page: 'home' }
   | { page: 'project'; id: string; tab: ProjectTab }
   | { page: 'item'; id: string; item: string }
 
@@ -16,11 +16,11 @@ export function parseRoute(hash: string): Route {
     const tab = PROJECT_TABS.find((candidate) => candidate === subPage) ?? 'overview'
     return { page: 'project', id: projectId, tab }
   }
-  return { page: 'projects' }
+  return { page: 'home' }
 }
 
 export const href = {
-  projects: () => '#/',
+  home: () => '#/',
   project: (id: string, tab: ProjectTab = 'overview') => `#/p/${encodeURIComponent(id)}/${tab}`,
   item: (id: string, item: string) => `#/p/${encodeURIComponent(id)}/items/${encodeURIComponent(item)}`,
 }

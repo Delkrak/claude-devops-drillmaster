@@ -1,19 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { ClaudeReviewer } from './adapters/claudeReviewer.js'
 import { randomIds, steppingClock, systemClock } from './adapters/clocks.js'
 import { ScriptedReviewer, UnavailableReviewer } from './adapters/reviewers.js'
 import { FileArtifactStore } from './adapters/artifacts.js'
 import { DotDrillmasterResolver } from './adapters/projects.js'
+import { drillmasterHome } from './projectLocator.js'
 import { JsonlStore } from './adapters/stores.js'
 import type { Ports } from './ports.js'
 
-export const drillmasterHome = (env: NodeJS.ProcessEnv = process.env) =>
-  path.resolve(env.DRILLMASTER_HOME ?? path.join(os.homedir(), '.drillmaster'))
 
-export const daemonInfoFile = (env: NodeJS.ProcessEnv = process.env) => path.join(drillmasterHome(env), 'daemon.json')
 
 /** This server's name in Drillmaster repositories: made once per Drillmaster home, so a machine keeps it. */
 export function repositoryOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {

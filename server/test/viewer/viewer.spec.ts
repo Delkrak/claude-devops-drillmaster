@@ -1,20 +1,22 @@
 import { expect, test } from '@playwright/test'
-import { VIEWER_PORT } from './port.js'
+import { RUN_VIEWER_PORT, VIEWER_PORT } from './port.js'
 import { DEMO_DIR } from './global-setup.js'
 
-const projectRow = (page: import('@playwright/test').Page, text: string) => page.getByTestId('projects').locator('tbody tr', { hasText: text })
+const RUN_VIEWER = `http://127.0.0.1:${RUN_VIEWER_PORT}/`
 
-test('lists every project with its objective and workflow version', async ({ page }) => {
+test('opens on the one project its server serves, and no other', async ({ page, request }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
-  await expect(projectRow(page, 'gates-demo')).toContainText('every change is documented')
-  await expect(projectRow(page, 'gates-demo')).toContainText('v1')
-  await expect(projectRow(page, 'dm-sim-node-report')).toContainText('ship features without Owner stepping in')
+  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
+  await expect(page).toHaveURL(/#\/p\/gates-demo-[0-9a-f]+\/overview$/)
+  await page.goto(RUN_VIEWER)
+  await expect(page.getByTestId('project-title')).toContainText('dm-sim-node-report')
+  const runProject = new URL(page.url()).hash.split('/')[2]!
+  expect((await request.get(`/api/projects/${runProject}`)).status()).toBe(404)
 })
 
 test("navigates from a project's overview through every tab", async ({ page }) => {
   await page.goto('/')
-  await projectRow(page, 'gates-demo').click()
+  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
   await expect(page.getByTestId('project-title')).toContainText('gates-demo')
   await expect(page.getByTestId('now')).toContainText('owner gate pending')
 
@@ -48,7 +50,7 @@ test("navigates from a project's overview through every tab", async ({ page }) =
 
 test("a work item's page shows its gates, post mortems and a searchable added step", async ({ page }) => {
   await page.goto('/')
-  await projectRow(page, 'gates-demo').click()
+  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
   await page.getByRole('tab', { name: 'Work items' }).click()
   await page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#1 CSV export' }).click()
 
@@ -80,8 +82,7 @@ test("a work item's page shows its gates, post mortems and a searchable added st
 })
 
 test('shows a real simulated run: its retrospective, applied proposals and measures', async ({ page }) => {
-  await page.goto('/')
-  await projectRow(page, 'dm-sim-node-report').click()
+  await page.goto(RUN_VIEWER)
   await page.getByRole('tab', { name: 'Retrospectives' }).click()
   await expect(page.getByTestId('proposal').first()).toContainText('applied')
   await page.getByRole('tab', { name: 'Work items' }).click()
@@ -92,7 +93,7 @@ test('shows a real simulated run: its retrospective, applied proposals and measu
 
 test('follows a live session: a new work item appears without reloading', async ({ page, request }) => {
   await page.goto('/')
-  await projectRow(page, 'gates-demo').click()
+  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
   await page.getByRole('tab', { name: 'Work items' }).click()
   await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
   await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_start', arguments: { issue: '#3 live', description: 'started while the viewer is open' } } })
@@ -103,7 +104,7 @@ test('follows the dark theme from the tokens', async ({ browser }) => {
   const background = async (colorScheme: 'light' | 'dark') => {
     const page = await browser.newPage({ colorScheme })
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+    await expect(page.getByTestId('project-title')).toBeVisible()
     const color = await page.getByRole('main').evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)
     await page.close()
     return color

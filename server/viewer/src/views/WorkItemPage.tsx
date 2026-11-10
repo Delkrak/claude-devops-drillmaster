@@ -24,7 +24,7 @@ export function WorkItemPage({ id, item }: { id: string; item: string }) {
     <Layout
       crumbs={
         <>
-          <Link href={href.projects()}>Projects</Link>/<Link href={href.project(id, 'items')}>Work items</Link>/<span>{item}</span>
+          <Link href={href.project(id, 'items')}>Work items</Link>/<span>{item}</span>
         </>
       }
     >

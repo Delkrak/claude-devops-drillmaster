@@ -76,9 +76,10 @@ export class RepositoryPublisher {
     await this.git.push(MAIN, this.ownsFileOrMainFile(pinFile(this.place.folder)))
   }
 
-  /** The pin on the remote's main, fetched now. */
+  /** The pin on the remote's main: fetched now, or as last fetched when the remote can't be reached. */
   async readPin(): Promise<string | undefined> {
-    await this.mainAsTheRemoteHasIt()
+    await this.git.ensureClone()
+    await this.git.fetch().catch(() => {})
     const pin = await this.git.readFile(`refs/remotes/origin/${MAIN}`, pinFile(this.place.folder))
     if (!pin) return undefined
     const version = (JSON.parse(pin) as { drillmaster_version?: unknown }).drillmaster_version

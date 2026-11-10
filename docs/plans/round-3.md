@@ -187,7 +187,7 @@ OK.
    - remove the late start and the restart.
 5. **Phases across sessions:** (done: 4194c50) `work_resume`, `stages`, stopping at the end, rotating tokens, and
    binding a resumed session.
-6. **The Drillmaster repository:**
+6. **The Drillmaster repository:** (done: 516ae46)
    - the `.drillmaster` file;
    - `workflow.json` and the pin (`drillmaster.json`) on main;
    - push first, then apply, for workflow changes and pins;

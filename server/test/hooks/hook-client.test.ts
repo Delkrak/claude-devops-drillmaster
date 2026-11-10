@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { projectKey } from '../../src/adapters/projects.js'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
 import { OBJECTIVE, TEST_REPOSITORY, tempDir, testPorts } from '../helpers.js'
@@ -31,7 +32,11 @@ beforeAll(async () => {
   home = await tempDir('hook-home')
   project = await tempDir('hook-project')
   server = await listen(new Drillmaster(testPorts()))
-  await writeFile(path.join(home.dir, 'daemon.json'), JSON.stringify({ port: server.port, pid: process.pid, url: server.url }))
+  // The project's .drillmaster, and its server announced where hook.mjs looks for it.
+  const place = { url: TEST_REPOSITORY, folder: 'hooks' }
+  await writeFile(path.join(project.dir, '.drillmaster'), JSON.stringify({ drillmaster_repository: place.url, folder: place.folder }))
+  await mkdir(path.join(home.dir, 'projects', projectKey(place)), { recursive: true })
+  await writeFile(path.join(home.dir, 'projects', projectKey(place), 'daemon.json'), JSON.stringify({ port: server.port, pid: process.pid, url: server.url }))
   await fetch(`${server.url}/projects/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -65,6 +70,13 @@ describe('hook.mjs', () => {
     expect(code).toBe(0)
     expect(stdout).toBe('')
     expect(ms).toBeLessThan(5000)
+  })
+
+  it('traces nothing in a folder without .drillmaster', async () => {
+    const before = await count()
+    const { code, stdout } = await runHook('SessionStart', { session_id: 'h9', source: 'startup' }, { CLAUDE_PROJECT_DIR: home.dir })
+    expect({ code, stdout }).toEqual({ code: 0, stdout: '' })
+    expect(await count()).toBe(before)
   })
 
   it('stays silent on garbage input', async () => {

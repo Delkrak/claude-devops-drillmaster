@@ -17,7 +17,7 @@ beforeAll(async () => {
   const ports = testPorts()
   await seedWorkflow(ports, DIR, WORKFLOW_3)
   const app = new Drillmaster(ports)
-  server = await listen(app)
+  server = await listen(app, 0, ID)
   const call = (args: Record<string, unknown>) => {
     const { name, arguments: toolArgs } = workToolCall('work_report', args)
     return app.callTool(DIR, name, toolArgs)
@@ -31,9 +31,10 @@ beforeAll(async () => {
 afterAll(() => server.close())
 
 describe('viewer API', () => {
-  it('lists projects with their summary', async () => {
-    const { body } = await get('/api/projects')
-    expect(body).toEqual([expect.objectContaining({ id: ID, dir: DIR, workflow_version: '3.0.0', work_items: 1, active: 1 })])
+  it('serves its one project, with its summary, and no other', async () => {
+    expect((await get('/api/served')).body).toEqual({ project: ID })
+    expect((await get(`/api/projects/${ID}`)).body.summary).toMatchObject({ id: ID, dir: DIR, workflow_version: '3.0.0', work_items: 1, active: 1 })
+    expect(await get(`/api/projects/${projectId('/projects/other')}`)).toMatchObject({ status: 404, body: { error: expect.stringMatching(/serves project/) } })
   })
 
   it("gives a project's full status", async () => {

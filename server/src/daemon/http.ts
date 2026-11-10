@@ -6,7 +6,7 @@ import { serveViewer } from './static.js'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
-const VIEWER_API_ROUTE = /^GET \/api\/projects(?:\/([\w-]+)(?:\/items\/([\w-]+))?)?$/
+const VIEWER_API_ROUTE = /^GET \/api\/projects\/([\w-]+)(?:\/items\/([\w-]+))?$/
 const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -40,7 +40,11 @@ function requireProjectDir(value: unknown) {
 
 const isViewerPath = (pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
 
-export function createRequestHandler(app: Drillmaster) {
+/** `servedProject`: the key of the one project this server serves, whose viewer it shows; any, in tests. */
+export function createRequestHandler(app: Drillmaster, servedProject?: string) {
+  const refuseOtherProject = (projectId: string) => {
+    if (servedProject && projectId !== servedProject) throw new UserError(`This server serves project ${servedProject}, not ${projectId}.`, 404)
+  }
   return async (request: http.IncomingMessage, response: http.ServerResponse) => {
     try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -52,6 +56,7 @@ export function createRequestHandler(app: Drillmaster) {
       }
       const artifactMatch = ARTIFACT_ROUTE.exec(route)
       if (artifactMatch) {
+        refuseOtherProject(artifactMatch[1]!)
         const artifact = await app.artifact(artifactMatch[1]!, artifactMatch[2]!, artifactMatch[3]!)
         response.writeHead(200, { 'content-type': artifact.mediaType, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", 'x-content-type-options': 'nosniff' })
         return response.end(artifact.bytes)
@@ -59,15 +64,17 @@ export function createRequestHandler(app: Drillmaster) {
       const viewerApiMatch = VIEWER_API_ROUTE.exec(route)
       if (viewerApiMatch) {
         const [, projectId, workItemId] = viewerApiMatch
-        if (!projectId) return sendJson(response, 200, await app.listProjects())
-        return sendJson(response, 200, workItemId ? await app.workItemView(projectId, workItemId) : await app.projectView(projectId))
+        refuseOtherProject(projectId!)
+        return sendJson(response, 200, workItemId ? await app.workItemView(projectId!, workItemId) : await app.projectView(projectId!))
       }
       if (request.method === 'GET' && isViewerPath(url.pathname)) {
         return serveViewer(response, url.pathname.startsWith('/assets/') ? url.pathname : '/index.html')
       }
       switch (route) {
         case 'GET /health':
-          return sendJson(response, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid })
+          return sendJson(response, 200, { ok: true, name: 'drillmaster', version: VERSION, pid: process.pid, project: servedProject ?? null })
+        case 'GET /api/served':
+          return sendJson(response, 200, { project: servedProject ?? null })
         case 'GET /state': {
           const projectDir = requireProjectDir(url.searchParams.get('project'))
           if (url.searchParams.get('idle') === '1') await app.idle()
@@ -107,8 +114,8 @@ export interface RunningServer {
   close(): Promise<void>
 }
 
-export async function listen(app: Drillmaster, port = 0): Promise<RunningServer> {
-  const server = http.createServer(createRequestHandler(app))
+export async function listen(app: Drillmaster, port = 0, servedProject?: string): Promise<RunningServer> {
+  const server = http.createServer(createRequestHandler(app, servedProject))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, '127.0.0.1', () => resolve())

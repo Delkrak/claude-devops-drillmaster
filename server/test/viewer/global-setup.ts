@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ownerAnswers, TEST_REPOSITORY, workToolCall } from '../helpers.js'
-import { VIEWER_PORT } from './port.js'
+import { RUN_VIEWER_PORT, VIEWER_PORT } from './port.js'
 
 const dist = (file: string) => import(pathToFileURL(path.resolve(import.meta.dirname, '../../dist', file)).href)
 
@@ -126,9 +126,11 @@ export default async function setup() {
   await call({ token: two.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds JSON export' })
   await call({ token: two.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/json.js' })
 
-  const server = await listen(app, VIEWER_PORT)
+  const server = await listen(app, VIEWER_PORT, projectId(DEMO_DIR))
+  const runServer = await listen(app, RUN_VIEWER_PORT, projectId(runDir))
   process.env.DRILLMASTER_VIEWER_HOME = home
   return async () => {
     await server.close()
+    await runServer.close()
   }
 }

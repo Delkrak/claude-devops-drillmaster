@@ -28,7 +28,7 @@ export function Layout({ crumbs, children }: { crumbs?: ReactNode; children: Rea
   return (
     <div {...stylex.props(styles.root)}>
       <header {...stylex.props(styles.topbar)}>
-        <a href={href.projects()} {...stylex.props(styles.brand)}>
+        <a href={href.home()} {...stylex.props(styles.brand)}>
           <span {...stylex.props(styles.mark)} aria-hidden />
           Drillmaster
         </a>
