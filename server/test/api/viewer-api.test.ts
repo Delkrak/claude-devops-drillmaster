@@ -35,6 +35,9 @@ describe('viewer API', () => {
     expect((await get('/api/served')).body).toEqual({ project: ID })
     expect((await get(`/api/projects/${ID}`)).body.summary).toMatchObject({ id: ID, dir: DIR, workflow_version: '3.0.0', work_items: 1, active: 1 })
     expect(await get(`/api/projects/${projectId('/projects/other')}`)).toMatchObject({ status: 404, body: { error: expect.stringMatching(/serves project/) } })
+    const otherHook = await fetch(`${server.url}/hooks/SessionStart`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project: '/projects/other', payload: { session_id: 'x' } }) })
+    expect(otherHook.status).toBe(409)
+    expect((await get('/health')).body).toMatchObject({ name: 'drillmaster', project: ID })
   })
 
   it("follows a component of the workflow by its GUID: its versions and what happened at it", async () => {

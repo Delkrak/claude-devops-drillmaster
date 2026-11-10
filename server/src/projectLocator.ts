@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { DotDrillmasterResolver, projectKey } from './adapters/projects.js'
-import { isDrillmasterServerAt } from './client.js'
+import { drillmasterServerAt } from './client.js'
 import type { DrillmasterRepositoryPlace } from './ports.js'
 
 /**
@@ -29,9 +29,11 @@ export async function readProjectServerInfo(projectKeyOfServer: string, env: Nod
   }
 }
 
+/** The project's server, when the one its daemon.json names still runs and serves that project. */
 export async function runningProjectServer(projectKeyOfServer: string, env: NodeJS.ProcessEnv = process.env) {
   const info = await readProjectServerInfo(projectKeyOfServer, env)
-  return info && (await isDrillmasterServerAt(info.url)) ? info.url : undefined
+  const health = info && (await drillmasterServerAt(info.url))
+  return health?.project === projectKeyOfServer && health.pid === info!.pid ? info!.url : undefined
 }
 
 export interface ProjectToServe {

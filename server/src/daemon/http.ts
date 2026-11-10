@@ -46,6 +46,13 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
   const refuseOtherProject = (projectId: string) => {
     if (servedProject && projectId !== servedProject) throw new UserError(`This server serves project ${servedProject}, not ${projectId}.`, 404)
   }
+  /** A work folder of another project; one that isn't a project yet may be set up here. */
+  const requireServedProjectDir = (value: unknown) => {
+    const projectDir = requireProjectDir(value)
+    const projectKey = app.projectKeyOf(projectDir)
+    if (servedProject && projectKey && projectKey !== servedProject) throw new UserError(`This server serves project ${servedProject}, not ${projectKey}.`, 409)
+    return projectDir
+  }
   return async (request: http.IncomingMessage, response: http.ServerResponse) => {
     try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -53,7 +60,7 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
       const hookMatch = HOOK_ROUTE.exec(route)
       if (hookMatch) {
         const body = await readJsonBody(request)
-        return sendJson(response, 200, await app.hook(requireProjectDir(body.project), hookMatch[1]!, body.payload))
+        return sendJson(response, 200, await app.hook(requireServedProjectDir(body.project), hookMatch[1]!, body.payload))
       }
       const artifactMatch = ARTIFACT_ROUTE.exec(route)
       if (artifactMatch) {
@@ -82,7 +89,7 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
         case 'GET /api/served':
           return sendJson(response, 200, { project: servedProject ?? null })
         case 'GET /state': {
-          const projectDir = requireProjectDir(url.searchParams.get('project'))
+          const projectDir = requireServedProjectDir(url.searchParams.get('project'))
           if (url.searchParams.get('idle') === '1') await app.idle()
           const events = await app.events(projectDir)
           return sendJson(response, 200, { project: projectDir, events, state: await app.state(projectDir) })
@@ -90,7 +97,7 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
         case 'POST /projects/init': {
           const body = await readJsonBody(request)
           if (typeof body.drillmaster_repository !== 'string' || !body.drillmaster_repository) throw new UserError('`drillmaster_repository` (the git repository that keeps the project) is required')
-          const { workflow, project } = await app.init(requireProjectDir(body.project), body.objective, {
+          const { workflow, project } = await app.init(requireServedProjectDir(body.project), body.objective, {
             url: body.drillmaster_repository,
             ...(typeof body.folder === 'string' ? { folder: body.folder } : {}),
           })
@@ -101,7 +108,7 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
         case 'POST /tools/call': {
           const body = await readJsonBody(request)
           if (typeof body.name !== 'string') throw new UserError('`name` (the tool name) is required')
-          return sendJson(response, 200, await app.callTool(requireProjectDir(body.project), body.name, body.arguments))
+          return sendJson(response, 200, await app.callTool(requireServedProjectDir(body.project), body.name, body.arguments))
         }
         default:
           return sendJson(response, 404, { error: `No route for ${route}` })

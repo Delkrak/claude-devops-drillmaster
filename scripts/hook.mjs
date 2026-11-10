@@ -31,19 +31,24 @@ const forwardHook = async () => {
   if (!hookEvent) return
   const payload = readHookPayload()
   const projectDir = process.env.CLAUDE_PROJECT_DIR ?? payload.cwd ?? process.cwd()
-  const { projectToServe, runningProjectServer } = await buildModule('projectLocator.js')
+  const { projectToServe, readProjectServerInfo } = await buildModule('projectLocator.js')
   // A folder without .drillmaster isn't traced.
   const project = projectToServe(projectDir)
   if (!project) return
+  const body = { project: projectDir, payload }
 
-  let serverUrl = await runningProjectServer(project.key)
-  if (!serverUrl) {
+  let serverAnswer
+  try {
+    // The fast path: the server named in daemon.json, which refuses a folder of another project.
+    const announced = await readProjectServerInfo(project.key)
+    if (!announced) throw new Error('no server')
+    serverAnswer = await postHookEvent(announced.url, hookEvent, body)
+  } catch {
     // Only the session's first hook starts the project's server; later hooks must stay fast.
     if (hookEvent !== 'SessionStart') return
     const { findOrStartProjectServer } = await buildModule('projectServer.js')
-    serverUrl = await findOrStartProjectServer(project)
+    serverAnswer = await postHookEvent(await findOrStartProjectServer(project), hookEvent, body)
   }
-  const serverAnswer = await postHookEvent(serverUrl, hookEvent, { project: projectDir, payload })
   if (serverAnswer?.output) process.stdout.write(JSON.stringify(serverAnswer.output))
 }
 

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rename, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -49,10 +49,19 @@ export class GitRepository {
     })
   }
 
+  /** Clones beside the clone's place and moves it there, so processes that clone at once don't break each other. */
   async ensureClone() {
     if (existsSync(path.join(this.cloneDir, 'HEAD'))) return
     await mkdir(path.dirname(this.cloneDir), { recursive: true })
-    await this.git({ args: ['clone', '--bare', '--quiet', this.remote, this.cloneDir] })
+    const aside = `${this.cloneDir}.${process.pid}-${Math.random().toString(36).slice(2)}`
+    try {
+      await this.git({ args: ['clone', '--bare', '--quiet', this.remote, aside] })
+      await rename(aside, this.cloneDir).catch((error: unknown) => {
+        if (!existsSync(path.join(this.cloneDir, 'HEAD'))) throw error
+      })
+    } finally {
+      await rm(aside, { recursive: true, force: true })
+    }
   }
 
   async tip(ref: string): Promise<string | null> {

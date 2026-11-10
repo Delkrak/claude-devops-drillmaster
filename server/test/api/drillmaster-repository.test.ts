@@ -90,6 +90,8 @@ describe('a project kept in its Drillmaster repository', () => {
     const taken = await app.callTool(other, 'workflow_retrospective', { action: 'setup', objective: 'x', measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'shop' })
     expect(textOf(taken)).toMatch(/Folder "shop" of .* already holds a Drillmaster project/)
     expect(existsSync(path.join(other, '.drillmaster'))).toBe(false)
+    const moved = await app.callTool(work, 'workflow_retrospective', { action: 'setup', objective: 'x', measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'elsewhere' })
+    expect(textOf(moved)).toMatch(/belongs to the project in .* \(folder shop\), as its .drillmaster says/)
   })
 
   it('pushes each workflow change to main before it applies, so main has the workflow history', async () => {

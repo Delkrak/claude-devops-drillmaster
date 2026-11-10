@@ -61,7 +61,7 @@ export class RepositoryPublisher {
    */
   async pushWorkflow(current: WorkflowDocument, next: WorkflowDocument, message: string) {
     await this.mainAsTheRemoteHasIt()
-    const onMain = await this.git.readFile(`refs/heads/${MAIN}`, workflowFile(this.place.folder))
+    const onMain = (await this.git.readFile(`refs/remotes/origin/${MAIN}`, workflowFile(this.place.folder))) ?? (await this.git.readFile(`refs/heads/${MAIN}`, workflowFile(this.place.folder)))
     if (onMain !== undefined && JSON.parse(onMain).version !== current.version) {
       throw new RepositoryConflict(`The workflow on main is version ${JSON.parse(onMain).version}, not ${current.version}: another machine changed it first.`)
     }

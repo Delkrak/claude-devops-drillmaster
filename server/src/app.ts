@@ -377,6 +377,11 @@ export class Drillmaster {
   }
 
   /** The project a work folder belongs to, as its `.drillmaster` file says. */
+  /** The key of the project a work folder belongs to, if it belongs to one. */
+  projectKeyOf(projectDir: string) {
+    return this.ports.projects.resolve(projectDir)?.key
+  }
+
   private projectOf(projectDir: string): ProjectRef {
     const project = this.ports.projects.resolve(projectDir)
     if (!project) throw new UserError(NOT_A_PROJECT, 404)
@@ -539,10 +544,13 @@ export class Drillmaster {
     const parsedObjective = Objective.safeParse(objective)
     if (!parsedObjective.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedObjective.error)}`)
     const existing = this.ports.projects.resolve(projectDir)
+    const place = { url: repository.url, folder: repository.folder ?? existing?.repository?.folder ?? defaultFolderOf(projectDir) }
+    if (existing?.repository && (existing.repository.url !== place.url || existing.repository.folder !== place.folder)) {
+      throw new UserError(`This folder belongs to the project in ${existing.repository.url} (folder ${existing.repository.folder}), as its .drillmaster says. Setup doesn't move it to another one.`, 409)
+    }
     if (existing && foldState(await this.ports.store.read(existing.key)).initialized) {
       throw new UserError('This project already has a workflow. It changes only at a workflow retrospective.', 409)
     }
-    const place = { url: repository.url, folder: repository.folder ?? defaultFolderOf(projectDir) }
     const workflow = workflowZero(parsedObjective.data)
     const candidate: ProjectRef = { key: projectKey(place), repository: place }
     const publisher = this.publisherFor(candidate)

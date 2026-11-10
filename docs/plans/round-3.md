@@ -200,7 +200,7 @@ OK.
    - `drillmaster upgrade`;
    - setup before `.drillmaster` exists;
    - the viewer per project, and `drillmaster open`.
-8. **Viewer:** step bars, trace links (`?event=`), history pages per component, feedback on
+8. **Viewer:** (done: 8d1716b) step bars, trace links (`?event=`), history pages per component, feedback on
    Drillmaster, skips and updates.
 9. **Review, before the simulations.** The build stops here and waits for Owner:
    - a code review of phases 1-8 (`/code-review` on the round's diff), with its findings fixed

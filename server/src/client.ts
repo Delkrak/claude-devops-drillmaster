@@ -1,12 +1,20 @@
 const HEALTH_TIMEOUT_MS = 1500
 
-export async function isDrillmasterServerAt(url: string) {
+export interface ServerHealth {
+  name: string
+  version: string
+  pid: number
+  project: string | null
+}
+
+/** What answers at `url`, when it is a Drillmaster server. */
+export async function drillmasterServerAt(url: string): Promise<ServerHealth | undefined> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
-    const health = (await response.json()) as { name?: string }
-    return response.ok && health.name === 'drillmaster'
+    const health = (await response.json()) as ServerHealth
+    return response.ok && health.name === 'drillmaster' ? health : undefined
   } catch {
-    return false
+    return undefined
   }
 }
 

@@ -33,6 +33,7 @@ export async function runDaemon(projectKeyOfServer: string, env: NodeJS.ProcessE
 
   const stopServer = async () => {
     await server.close()
+    await app.idle()
     try {
       const announcedInfo = JSON.parse(await readFile(infoFile, 'utf8')) as DaemonInfo
       if (announcedInfo.pid === process.pid) await rm(infoFile, { force: true })
@@ -45,8 +46,8 @@ export async function runDaemon(projectKeyOfServer: string, env: NodeJS.ProcessE
   process.on('SIGTERM', stopServer)
 }
 
+/** Only one server announces itself per project: a file left by a server that stopped is taken over. */
 async function claimInfoFile(infoFile: string, ownInfo: DaemonInfo, projectKeyOfServer: string, env: NodeJS.ProcessEnv) {
-  await rm(infoFile, { force: true })
   try {
     const handle = await open(infoFile, 'wx')
     await handle.writeFile(JSON.stringify(ownInfo))
