@@ -234,14 +234,14 @@ One round, pressure-tested with both the scripted and the LLM Owner.
    - `core/logPipeline.ts` (the LogQL subset);
    - the workflow's `tool_captures` rules and their retrospective operations;
    - the gate record links to traces.
-5. 🟩 **The fixes:**
+5. 🟩 **The fixes** (9f3b4e5):
    - `work_resume`'s stage;
    - the outline of the stages;
    - artifact types;
    - experiments (`affects`, refusing a baseline that can't move, exact counts);
    - judged skips;
    - per-rule rejection counts.
-6. 🟧 **The viewer keeps working:** only the renames (work item inputs, Owner inputs, friction),
+6. 🟩 **The viewer keeps working:** only the renames (work item inputs, Owner inputs, friction),
    with no new pages, layouts or wording. The Playwright tests pass as they are, apart from the
    renamed words.
 7. 🟧 **The new scenario:** `pipeline-bugs-and-features.json`, the checks it needs (skipped by
@@ -280,7 +280,7 @@ One round, pressure-tested with both the scripted and the LLM Owner.
   - 🟩 artifact types and the refusal message;
   - 🟩 experiment `affects`, and a refused baseline;
   - 🟩 the friction measure from a post mortem.
-- 🟧 **Playwright:** the existing tests pass with the renames.
+- 🟩 **Playwright:** the existing tests pass with the renames.
 - 🟥 **The plugin in real Claude Code:** an Owner gate whose AskUserQuestion shows the preview.
 - 🟧 **The plugin in real Claude Code:** a Bash trace with tool capture fields.
 - 🟥 **Simulations:** all hard checks pass in `pipeline-bugs-and-features`, with the scripted and

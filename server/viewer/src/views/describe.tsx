@@ -148,6 +148,9 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
             </Row>
             {event.input ? <Pre>{asText(event.input)}</Pre> : null}
             {event.output ? <Pre>{asText(event.output)}</Pre> : null}
+            {Array.isArray(event.captures)
+              ? (event.captures as { name: string; lines: string[] }[]).map((capture) => <Pre key={capture.name}>{`${capture.name}:\n${capture.lines.join('\n')}`}</Pre>)
+              : null}
           </>
         ),
       }
