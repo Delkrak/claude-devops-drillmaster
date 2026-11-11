@@ -65,3 +65,10 @@ describe('tool captures in the workflow', () => {
     expect(problems({ command: 'npm (test' })).toEqual(['tool capture "tests": its command npm (test is not a regular expression'])
   })
 })
+
+describe("Claude Code's note on a command that changed directory", () => {
+  it('is no part of what the command printed', () => {
+    const trace = traceOf('Bash', 'cd /p && npm test', `${NODE_TEST}\nShell cwd was reset to /home/user/project`)
+    expect(trace.captures![0]!.lines).toEqual(['# tests 2', '# pass 1', '# fail 1'])
+  })
+})

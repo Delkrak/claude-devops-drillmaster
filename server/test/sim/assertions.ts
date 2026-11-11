@@ -169,6 +169,15 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     })
   }
   if (facts.retros > 0) {
+    let earlierIds = new Set(state.versions[0]?.experiments.map((experiment) => experiment.id) ?? [])
+    const changeExperiments = changes.map((change) => {
+      const opened = change.workflow.experiments.filter((experiment) => !earlierIds.has(experiment.id))
+      const ended = [...earlierIds].filter((id) => !change.workflow.experiments.some((experiment) => experiment.id === id))
+      earlierIds = new Set(change.workflow.experiments.map((experiment) => experiment.id))
+      const ok = opened.length > 0 ? opened.every((experiment) => typeof experiment.baseline === 'number') : ended.length > 0
+      const detail = `${change.workflow.version}: ${[...opened.map((experiment) => `opened #${experiment.id} on ${experiment.measure}, baseline ${experiment.baseline}`), ...ended.map((id) => `ended #${id}`)].join(', ') || 'no experiment'}`
+      return { ok, detail }
+    })
     checks.push(
       { name: 'workflow retrospective ran', ok: retros.length >= facts.retros, detail: `${retros.length} ran` },
       { name: 'the workflow grew from workflow_0', ok: changes.length > 0, detail: `now version ${state.workflow?.version}` },
@@ -178,12 +187,12 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
         detail: `${facts.ownerQuestions ?? 0} questions asked; ${events.filter((event) => event.type === 'owner_asked').length} recorded as asked`,
       },
       {
-        name: 'each change opened an experiment with a baseline',
-        ok: changes.every((change) => change.workflow.experiments.every((experiment) => typeof experiment.baseline === 'number')) && (state.workflow?.experiments.length ?? 0) > 0,
-        detail: (state.workflow?.experiments ?? []).map((experiment) => `#${experiment.id} ${experiment.measure} baseline ${experiment.baseline}`).join('; '),
+        name: 'each change opened an experiment with a baseline, or only ended experiments',
+        ok: changeExperiments.length > 0 && changeExperiments.every((change) => change.ok),
+        detail: changeExperiments.map((change) => change.detail).join('; '),
       },
       {
-        name: 'Owner corrections per item fell after the retrospective',
+        name: "Owner's friction per item fell after the retrospective",
         ok: correctionsBefore !== null && correctionsAfter !== null && correctionsAfter < correctionsBefore,
         detail: `before ${correctionsBefore ?? 'n/a'} (${deliveredBeforeRetro.length} items), after ${correctionsAfter ?? 'n/a'} (${deliveredAfterRetro.length} items)`,
         doesNotFailRun: true,

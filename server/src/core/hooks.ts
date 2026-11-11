@@ -60,7 +60,13 @@ export function truncateForTrace(value: unknown) {
   return text.length > MAX_TRACED_INPUT_LENGTH ? `${text.slice(0, MAX_TRACED_INPUT_LENGTH)}...` : text
 }
 
-export function toolResponseText(toolResponse: unknown): string | undefined {
+/** What Claude Code appends to a shell command's output when the command changed directory. */
+const CLAUDE_CODE_CWD_NOTE = /\s*Shell cwd was reset to [^\n]*\s*$/
+
+/** What a tool printed, without the notes Claude Code adds to it. */
+export const toolOutputText = (toolResponse: unknown) => toolResponseText(toolResponse)?.replace(CLAUDE_CODE_CWD_NOTE, '')
+
+function toolResponseText(toolResponse: unknown): string | undefined {
   if (toolResponse === undefined || toolResponse === null) return undefined
   if (typeof toolResponse === 'string') return toolResponse
   if (Array.isArray(toolResponse)) {
@@ -152,7 +158,7 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     trace.error = toolResponseIsError(payload.tool_response) || (exitCode !== undefined && exitCode !== 0)
     if (exitCode !== undefined) trace.exit_code = exitCode
     const workflow = item ? workflowOfWorkItem(state, item) : state.workflow
-    const captured = captureToolOutput(workflow, payload.tool_name, payload.tool_input, toolResponseText(payload.tool_response), (text) => redactTokens(text) as string)
+    const captured = captureToolOutput(workflow, payload.tool_name, payload.tool_input, toolOutputText(payload.tool_response), (text) => redactTokens(text) as string)
     if (captured?.captures.length) trace.captures = captured.captures
     if (captured?.foundNothing.length) trace.capture_found_nothing = captured.foundNothing
     if (captured?.mayBeShortened) trace.output_may_be_shortened = true

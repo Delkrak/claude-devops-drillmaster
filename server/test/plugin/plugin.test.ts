@@ -103,7 +103,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
       stages: [{ n: 1, name: 'review', purpose: 'Owner accepts the change', steps: [{ n: 1, name: 'Owner approves', instruction: 'Show the file with cat, then ask Owner for approval.', gate: 'owner', rules: [], report: ['what to look at'] }] }],
       policies: [],
       inputs: [],
-      tool_captures: [{ name: 'file', command: '^cat ', keep: '| line_format `content: {{__line__}}`' }],
+      tool_captures: [{ name: 'file', command: 'cat bye', keep: '| line_format `content: {{__line__}}`' }],
       experiments: [],
     }
     const eventsFile = path.join(home.dir, 'projects', new DotDrillmasterResolver().resolve(project.dir)!.key, 'events.jsonl')
