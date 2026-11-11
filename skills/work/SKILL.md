@@ -12,14 +12,17 @@ Every action you take is already recorded in the work traces. The tools are for 
 say: your work reports.
 
 Every work tool answers with the next thing to do, in full: the work step's instruction, its gate,
-the rules the gate checks and how each is verified, what to report, the metrics to take, and the
-`work_gate` call to fill in. Follow that answer. You rarely need `workflow_get`.
+the rules the gate checks and how each is verified, what to report, the work item inputs to set,
+and the `work_gate` call to fill in. Follow that answer. You rarely need `workflow_get`.
 
 ## 1. Start
 
-Call `work_start({issue, description, stages})` before you touch anything.
+Call `work_start({issue, description, stages, inputs})` before you touch anything.
 
 - `description` says what the work item is about: the problem, and the result Owner expects.
+- `inputs` are the work item inputs that are yours to set at start, such as whether it is a bug or
+  a feature: one of each input's options. `workflow_get` lists them; work can't start without
+  them.
 - `stages` are the work stages Owner asked this session to do, by number (`["1"]`). Owner names
   them in their own words ("capture it", "build and test it"); `workflow_get` lists the stages by
   name. Leave `stages` out only when Owner asks for the whole work item at once.
@@ -31,8 +34,15 @@ Call `work_start({issue, description, stages})` before you touch anything.
   item is. Don't go on into the next stage.
 - If the workflow has no work stages yet, do your best, deliver, and expect Owner to correct you.
   That is how the workflow grows.
-- Every work item starts at the first work step. There is no starting later: the process is the
-  path, and every step is recorded.
+- Every work item starts at the first work step that applies to it. There is no starting later:
+  the process is the path, and every step is recorded.
+- **Steps that apply only to some work items.** A stage or step with an `if` (for example
+  `kind == 'bug'`) applies only to work items whose inputs meet it. Drillmaster skips the others
+  for you, saying why, and the result lists them. A step whose `if` reads an input that isn't set
+  yet waits for it: `work_status` shows who sets it.
+- **An input turns out wrong** (the "feature" is a bug): change it with
+  `work_input({token, name, value, why})`, if it is yours to set. When the change makes a skipped
+  step apply, the work item goes back to it; the steps before it that were done stay done.
 
 ## 2. Each work step
 
@@ -53,12 +63,13 @@ Call `work_start({issue, description, stages})` before you touch anything.
    step you are at can be skipped. The step says who decides: you (skipped at once), Drillmaster,
    or Owner (ask with the AskUserQuestion input the result gives). If the skip is rejected, do the
    step.
-4. **Hand in the gate** with `work_gate({token, step, self_check, text, metrics})` (step as in "1.2"), filled in
-   from the step's answer:
+4. **Hand in the gate** with `work_gate({token, step, self_check, text, inputs})` (step as in "1.2"),
+   filled in from the step's answer:
    - `self_check` holds exactly one `{rule, accepted, evidence}` per rule the gate checks. The
      evidence is what you actually checked, such as a command and its output, not a promise.
    - `text` is what the work step requires reporting.
-   - `metrics` answers each metric that is yours to take at the step: one of its categories, and why.
+   - `inputs` sets each work item input that is yours to set at the step: one of its options, and
+     why.
 
 ## 3. Verdicts
 
@@ -79,7 +90,7 @@ in is refused. Ask from the main conversation, because subagents can't use AskUs
 - Owner either approves or not. Approve with nothing added approves; a note, or an answer Owner
   typed, rejects, with Owner's words as the reason. Drillmaster records it and tells you the outcome
   and what comes next.
-- A metric needs one of its categories. If Owner types something else, it stays open: ask again.
+- An input needs one of its options. If Owner types something else, it stays open: ask again.
 - Owner's chat messages are instructions, never decisions. If one sounds like a decision ("looks
   good", "approve 1"), ask Owner the pending question in AskUserQuestion. When in doubt, ask.
 - `work_status` shows any question still waiting for Owner (`ask_owner`).
@@ -95,7 +106,7 @@ in is refused. Ask from the main conversation, because subagents can't use AskUs
    `work_post_mortem({token, keep, change, experiment_reflections})`. It's about the workflow, not
    the code: lists of what to keep, what to change, and how each running workflow experiment did.
    Each keep and change entry names what it is about in `refs`: `step 1.2`, `stage 1`,
-   `rule pr 1.1`, `policy pr`, `metric size`, or `tool work_deliver` when it is about
+   `rule pr 1.1`, `policy pr`, `input kind`, or `tool work_deliver` when it is about
    Drillmaster itself. Leave `refs` empty for the workflow as a whole.
 3. If the result says a workflow retrospective is due, tell Owner and suggest
    `/devops-drillmaster:retrospective`. Owner decides when.

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { judgeExperiment, judgeExperiments } from '../../src/core/experiments.js'
-import { measureBaselineSd, splitMeasureByMetric, standardDeviation, type ItemMeasures } from '../../src/core/measures.js'
+import { measureBaselineSd, splitMeasureByInput, standardDeviation, type ItemMeasures } from '../../src/core/measures.js'
 import { EXPERIMENT_1, WORKFLOW_2 } from '../helpers.js'
 
-const item = (n: number, corrections: number, version = '2.0.0', metrics: Record<string, string> = {}): ItemMeasures => ({
+const item = (n: number, corrections: number, version = '2.0.0', inputs: Record<string, string> = {}): ItemMeasures => ({
   work_item_id: `wi_${n}`,
   issue: `#${n}`,
   workflow_version: version,
   delivered_at: `2026-11-1${n}T10:00:00Z`,
-  metrics,
+  inputs,
   values: { owner_corrections_per_item: corrections, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: n, tool_calls_per_item: 1 },
 })
 
@@ -46,12 +46,12 @@ describe('measure helpers', () => {
     expect(measureBaselineSd([item(1, 2), item(2, 2)], 'owner_corrections_per_item')).toBe(0)
   })
 
-  it('splits a measure by a metric', () => {
+  it('splits a measure by a work item input', () => {
     const items = [item(1, 2, '2.0.0', { size: 'small' }), item(2, 4, '2.0.0', { size: 'large' }), item(3, 0, '2.0.0', { size: 'small' }), item(4, 1)]
-    expect(splitMeasureByMetric(items, 'owner_corrections_per_item', 'size')).toEqual([
-      { category: 'small', items: 2, mean: 1 },
-      { category: 'large', items: 1, mean: 4 },
-      { category: 'not recorded', items: 1, mean: 1 },
+    expect(splitMeasureByInput(items, 'owner_corrections_per_item', 'size')).toEqual([
+      { option: 'small', items: 2, mean: 1 },
+      { option: 'large', items: 1, mean: 4 },
+      { option: 'not set', items: 1, mean: 1 },
     ])
   })
 })

@@ -32,16 +32,16 @@ function MeasureCard({ measure, project }: { measure: Measure; project: ProjectV
         ))}
       </Grid>
       <Bars label={`${measure.name} per work item`} values={measure.per_item.map((itemValue) => ({ key: itemValue.work_item_id, value: itemValue.value, title: `${itemValue.work_item_id} (${itemValue.issue}): ${itemValue.value}` }))} />
-      {(measure.by_metric ?? []).map((split) => (
-        <Stack key={split.metric} tight testId="measure-by-metric">
-          <Strong>By {split.metric}</Strong>
+      {(measure.by_input ?? []).map((split) => (
+        <Stack key={split.input} tight testId="measure-by-input">
+          <Strong>By {split.input}</Strong>
           <Table
-            rows={split.categories}
-            rowKey={(category) => category.category}
+            rows={split.options}
+            rowKey={(option) => option.option}
             columns={[
-              { header: split.metric, cell: (category) => category.category },
-              { header: 'Work items', cell: (category) => category.items },
-              { header: 'Mean', cell: (category) => formatNumber(category.mean) },
+              { header: split.input, cell: (option) => option.option },
+              { header: 'Work items', cell: (option) => option.items },
+              { header: 'Mean', cell: (option) => formatNumber(option.mean) },
             ]}
           />
         </Stack>

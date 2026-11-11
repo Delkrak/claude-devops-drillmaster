@@ -34,7 +34,7 @@ interface Scenario {
   /** Files added to the project before its first commit, for example code with bugs to fix. */
   files?: Record<string, string>
   /** What a run must show. */
-  expects?: { update?: boolean; skip?: boolean; metric?: string }
+  expects?: { update?: boolean; skip?: boolean; input?: string }
   hidden_rules: string[]
   retro_after: number[]
   max_turns_per_issue: number

@@ -5,8 +5,7 @@ import { InvalidArtifact, readArtifactFromWorkFolder } from './adapters/artifact
 import { defaultFolderOf, projectKey } from './adapters/projects.js'
 import { RepositoryConflict, RepositoryPublisher } from './adapters/repositoryPublisher.js'
 import { isPublishMoment } from './core/repositoryLayout.js'
-import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type MetricAnswer, type NewEvent, type StepSkipRequested } from './core/events.js'
-import { updateOnReaching } from './core/updates.js'
+import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type InputAnswer, type NewEvent, type StepSkipRequested } from './core/events.js'
 import { judgeExperiments } from './core/experiments.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resolveFeedback } from './core/feedback.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
@@ -30,16 +29,15 @@ import { InvalidReference, parseRef, refOfGuid, resolveRef, stepPosition } from 
 import * as render from './core/render.js'
 import {
   buildGatePrompt,
-  buildMetricPrompt,
+  buildInputPrompt,
   buildSkipPrompt,
   readSkipAnswer,
   SKIP_REVIEW_KIND,
-  dueDrillmasterMetrics,
   GATE_REVIEW_KIND,
   InvalidAnswer,
-  METRIC_REVIEW_KIND,
+  INPUT_REVIEW_KIND,
   readGateAnswer,
-  readMetricAnswers,
+  readInputAnswers,
 } from './core/review.js'
 import {
   findVersion,
@@ -55,7 +53,7 @@ import {
 import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
 import * as work from './core/work.js'
-import { Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
+import { AT_START, Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
 import type { Ports, ProjectRef } from './ports.js'
 import { VERSION } from './version.js'
 
@@ -114,9 +112,10 @@ const WorkflowGetArgs = z
 
 const tokenField = z.string().min(1)
 const textField = z.string().min(1)
-const MetricAnswerArgs = z.object({ name: textField, value: textField, explanation: z.string().optional() }).strict()
+const InputAnswerArgs = z.object({ name: textField, value: textField, explanation: z.string().optional() }).strict()
 
-const WorkStartArgs = z.object({ issue: textField, description: textField, stages: z.array(StageRefArg).optional() }).strict()
+const WorkStartArgs = z.object({ issue: textField, description: textField, stages: z.array(StageRefArg).optional(), inputs: z.array(InputAnswerArgs).optional() }).strict()
+const WorkInputArgs = z.object({ token: tokenField, name: textField, value: textField, why: textField }).strict()
 const WorkResumeArgs = z.object({ issue: textField, stages: z.array(StageRefArg).optional() }).strict()
 const WorkSkipArgs = z.object({ token: tokenField, step: StepRefArg, why: textField }).strict()
 const WorkReportArgs = z
@@ -138,7 +137,7 @@ const WorkGateArgs = z
     step: StepRefArg,
     self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()),
     text: textField,
-    metrics: z.array(MetricAnswerArgs).optional(),
+    inputs: z.array(InputAnswerArgs).optional(),
   })
   .strict()
 const WorkDeliverArgs = z.object({ token: tokenField, pr: textField, summary: textField, artifacts: z.array(textField).max(MAX_ARTIFACTS).optional() }).strict()
@@ -173,6 +172,11 @@ const sessionStagesProperty = {
   items: { type: 'string' },
   description: 'The work stages this session works on, by number (workflow_get lists them by name).',
 }
+const inputAnswersProperty = (where: string) => ({
+  type: 'array',
+  description: `The work item inputs that are yours to set ${where}, one option each (workflow_get lists the inputs). Work can't go on without them.`,
+  items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' }, explanation: { type: 'string' } }, required: ['name', 'value'] },
+})
 const feedbackItemSchema = {
   type: 'object',
   properties: { refs: { type: 'array', items: { type: 'string' }, description: 'What it is about, e.g. "step 1.2", "rule pr 1.1", "tool work_deliver".' }, text: { type: 'string' } },
@@ -192,7 +196,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'workflow_get',
     description:
-      "Describes the workflow, which is the same for everyone in the project. With no arguments: Owner's objective and measures, the work stages with their purpose, the metrics, and the running workflow experiments. With `stage`: that work stage's work steps, each with its instruction, its work gate, the full text of the rules it checks, and what to report. With `full`: the whole workflow. With `version`: an earlier workflow version, e.g. \"1.0.0\".",
+      "Describes the workflow, which is the same for everyone in the project. With no arguments: Owner's objective and measures, the work stages with their purpose and when they apply (if), the work item inputs, and the running workflow experiments. With `stage`: that work stage's work steps, each with its instruction, its work gate, the full text of the rules it checks, and what to report. With `full`: the whole workflow. With `version`: an earlier workflow version, e.g. \"1.0.0\".",
     inputSchema: {
       type: 'object',
       properties: {
@@ -205,13 +209,14 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_start',
     description:
-      'Starts a work item at the first work step. Returns its id, your agent_token for every later work tool, and the first work step in full: what to do, the gate, its rules, and what to report. stages: the work stages this session works on, as Owner asked (e.g. ["1"]); the session stops when the last of them is done. Leave it out to work every stage.',
+      'Starts a work item at the first work step that applies to it. Returns its id, your agent_token for every later work tool, and that work step in full: what to do, the gate, its rules, and what to report. stages: the work stages this session works on, as Owner asked (e.g. ["1"]); the session stops when the last of them is done. Leave it out to work every stage. inputs: the work item inputs set at start that are yours to set.',
     inputSchema: {
       type: 'object',
       properties: {
         issue: { type: 'string', description: 'The issue the work item delivers, e.g. "#12".' },
         description: { type: 'string', description: 'What the work item is about, in a few sentences: the problem and the expected result.' },
         stages: sessionStagesProperty,
+        inputs: inputAnswersProperty('at start'),
       },
       required: ['issue', 'description'],
     },
@@ -244,6 +249,21 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: 'work_input',
+    description:
+      "Sets or changes a work item input that is yours to set, once its place has passed: for example when the work shows that a 'feature' is a bug. why: what showed it. When the change makes a step that was skipped by its if apply, the work item goes back to the first such step, keeping the steps before it that were done. Returns where the work item is.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tokenProperty,
+        name: { type: 'string', description: 'The input, e.g. "kind".' },
+        value: { type: 'string', description: 'One of its options.' },
+        why: { type: 'string' },
+      },
+      required: ['token', 'name', 'value', 'why'],
+    },
+  },
+  {
     name: 'work_report',
     description: [
       'Report to Drillmaster in real time, while you work.',
@@ -270,7 +290,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_gate',
     description:
-      "Hands in the work gate of the current work step (step, e.g. \"1.2\"), once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; metrics answers the metrics that are yours to take at this step. Returns the verdict and the next work step in full.",
+      "Hands in the work gate of the current work step (step, e.g. \"1.2\"), once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; inputs sets the work item inputs that are yours to set at this step. Returns the verdict and the next work step in full.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -278,10 +298,7 @@ export const TOOLS: ToolDefinition[] = [
         step: { type: 'string', description: 'The work step, e.g. "1.2".' },
         self_check: selfCheckProperty,
         text: { type: 'string' },
-        metrics: {
-          type: 'array',
-          items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' }, explanation: { type: 'string' } }, required: ['name', 'value'] },
-        },
+        inputs: inputAnswersProperty('at this step'),
       },
       required: ['token', 'step', 'self_check', 'text'],
     },
@@ -595,6 +612,8 @@ export class Drillmaster {
           return await this.resumeWorkItem(projectDir, parseToolArgs(WorkResumeArgs, toolArgs))
         case 'work_skip':
           return await this.skipStep(projectDir, parseToolArgs(WorkSkipArgs, toolArgs))
+        case 'work_input':
+          return await this.changeInput(projectDir, parseToolArgs(WorkInputArgs, toolArgs))
         case 'work_report':
         case 'work_gate':
         case 'work_deliver':
@@ -650,13 +669,14 @@ export class Drillmaster {
     const started = await this.withProjectLock(projectDir, async (projectId, project) => {
       const workflow = foldState(await this.ports.store.read(projectId)).workflow
       if (!workflow) throw new UserError(NO_WORKFLOW_YET)
-      const agentToken = this.ports.ids.secret()
       const firstStage = workflow.stages[0]
       const position = firstStage && firstStage.steps.length > 0 ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
       const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
       if (stageGuids && firstStage && !stageGuids.includes(firstStage.guid)) {
         throw new UserError(`A work item starts at step 1.1, in stage 1 "${firstStage.name}", which isn't among the stages you named. To go on with an open work item, use work_resume.`)
       }
+      work.agentInputEvents(workflow, '', AT_START, args.inputs ?? [], 'in work_start (inputs)')
+      const agentToken = this.ports.ids.secret()
       const workItemId = this.ports.ids.next('wi')
       await this.appendEvent(project, {
         type: 'work_item_started',
@@ -668,11 +688,37 @@ export class Drillmaster {
         ...position,
         ...(stageGuids ? { stage_guids: stageGuids } : {}),
       })
-      const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...position }
+      for (const inputEvent of work.agentInputEvents(workflow, workItemId, AT_START, args.inputs ?? [], 'in work_start (inputs)')) await this.appendEvent(project, inputEvent)
+      const state = foldState(await this.ports.store.read(projectId))
+      const moved = work.moveOn(state, state.workItems[workItemId]!, workflow, { next: position, done: position.stage === null }, { alreadyThere: true })
+      for (const movedEvent of moved.events) await this.appendEvent(project, movedEvent)
+      const move = work.describeMove(moved)
+      const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...moved.next, ...move }
       const sessionStages = stageGuids ? namesOfStages(workflow, stageGuids) : undefined
-      return workResult(render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, position, sessionStages }), answer)
+      return {
+        markdown: render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, move, sessionStages }),
+        answer,
+        workItemId,
+      }
     })
-    return started
+    this.takeDrillmasterInputsInBackground(projectDir, started.workItemId, null, undefined)
+    const askOwner = await this.ownerQuestionsFor(projectDir, started.workItemId)
+    return askOwner ? workResult(`${started.markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...started.answer, ask_owner: askOwner }) : workResult(started.markdown, started.answer)
+  }
+
+  private async changeInput(projectDir: string, args: z.infer<typeof WorkInputArgs>): Promise<ToolResult> {
+    const changed = await this.withProjectLock(projectDir, async (projectId, project) => {
+      const state = foldState(await this.ports.store.read(projectId))
+      const item = findWorkItemByTokenHash(state, hashToken(args.token))
+      if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
+      const decision = work.changeInput(state, item, args)
+      for (const newEvent of decision.events) await this.appendEvent(project, newEvent)
+      const after = foldState(await this.ports.store.read(projectId))
+      return { answer: decision.answer, workflow: work.workflowOfWorkItem(after, after.workItems[item.work_item_id]!), workItemId: item.work_item_id }
+    })
+    const markdown = render.renderInputChanged(changed.workflow, changed.answer as unknown as render.InputChange)
+    const askOwner = await this.ownerQuestionsFor(projectDir, changed.workItemId)
+    return askOwner ? workResult(`${markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...changed.answer, ask_owner: askOwner }) : workResult(markdown, changed.answer)
   }
 
   private async resumeWorkItem(projectDir: string, args: z.infer<typeof WorkResumeArgs>): Promise<ToolResult> {
@@ -687,13 +733,15 @@ export class Drillmaster {
       const agentToken = this.ports.ids.secret()
       await this.appendEvent(project, { type: 'work_item_resumed', work_item_id: item.work_item_id, token_hash: hashToken(agentToken), ...(stageGuids ? { stage_guids: stageGuids } : {}) })
       const resumedItem = foldState(await this.ports.store.read(projectId)).workItems[item.work_item_id]!
-      const canUpdate = resumedItem.status === 'active' && !resumedItem.pending_gate && !resumedItem.pending_skip
-      const update = canUpdate ? updateOnReaching(state, resumedItem, workflow, { stage: item.stage, step: item.step }) : undefined
-      if (update) await this.appendEvent(project, update.event)
+      const canMoveOn = resumedItem.status === 'active' && !resumedItem.pending_gate && !resumedItem.pending_skip && resumedItem.stage !== null
+      const moved = canMoveOn ? work.moveOn(foldState(await this.ports.store.read(projectId)), resumedItem, workflow, { next: { stage: item.stage, step: item.step }, done: item.gates_done }) : undefined
+      for (const movedEvent of moved?.events ?? []) await this.appendEvent(project, movedEvent)
+      const update = moved?.update
       const after = foldState(await this.ports.store.read(projectId))
       const current = after.workItems[item.work_item_id]!
       const currentWorkflow = work.workflowOfWorkItem(after, current)
-      const answer = { work_item_id: current.work_item_id, agent_token: agentToken, workflow_version: current.workflow_version, stage: current.stage, step: current.step, ...(update ? { update: work.describeUpdate(update) } : {}) }
+      const move = moved ? work.describeMove(moved) : { next: { stage: current.stage, step: current.step }, done: current.gates_done, ...waitingForInputsOf(currentWorkflow, current) }
+      const answer = { work_item_id: current.work_item_id, agent_token: agentToken, workflow_version: current.workflow_version, stage: current.stage, step: current.step, ...move }
       const markdown = render.renderResumed({
         workItemId: current.work_item_id,
         agentToken,
@@ -703,6 +751,7 @@ export class Drillmaster {
         sessionStages: work.sessionStagesOf(currentWorkflow, current),
         outsideSession: work.outsideSessionStages(currentWorkflow, current, current),
         update: update && work.describeUpdate(update),
+        move,
       })
       return { markdown, answer, workItemId: current.work_item_id }
     })
@@ -793,7 +842,9 @@ export class Drillmaster {
       for (const newEvent of decision.events) {
         const storedEvent = await this.appendEvent(project, newEvent)
         if (storedEvent.type === 'gate_submitted' && storedEvent.gate === 'drillmaster') gateSubmissionToJudge = storedEvent.id
-        if (storedEvent.type === 'gate_verdict' && storedEvent.accepted) this.takeDrillmasterMetricsInBackground(projectDir, storedEvent)
+        if (storedEvent.type === 'gate_verdict' && storedEvent.accepted && storedEvent.by !== 'drillmaster') {
+          this.takeDrillmasterInputsInBackground(projectDir, storedEvent.work_item_id, { stage: storedEvent.stage, step: storedEvent.step }, storedEvent.workflow_version)
+        }
         if (storedEvent.type === 'work_item_delivered') this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
       }
       const after = foldState(await this.ports.store.read(projectId))
@@ -831,29 +882,31 @@ export class Drillmaster {
     }
   }
 
-  /** Drillmaster's metrics at a step another gate passed, in the workflow version the step was passed on. */
-  private takeDrillmasterMetricsInBackground(projectDir: string, verdict: Extract<DrillmasterEvent, { type: 'gate_verdict' }>) {
-    const { work_item_id: workItemId, stage, step } = verdict
+  /**
+   * Drillmaster's inputs of a work item that started (`at` null), or passed a step another gate
+   * than Drillmaster's decided, in the workflow version it was on then.
+   */
+  private takeDrillmasterInputsInBackground(projectDir: string, workItemId: string, at: { stage: number; step: number } | null, workflowVersion: string | undefined) {
     this.runInBackground(
       (async () => {
         const events = await this.events(projectDir)
         const state = foldState(events)
         const item = state.workItems[workItemId]!
-        const workflow = findVersion(state, verdict.workflow_version ?? item.workflow_version) ?? work.workflowOfWorkItem(state, item)
-        const passedStep = workflow.stages[stage - 1]?.steps[step - 1]
-        const metrics = dueDrillmasterMetrics(workflow, stage, step)
-        if (metrics.length === 0 || passedStep?.gate === 'drillmaster') return
-        const { answer } = await this.ports.reviewer.review({ kind: METRIC_REVIEW_KIND, prompt: buildMetricPrompt(workflow, item, stage, step, events) })
-        await this.recordMetricAnswers(projectDir, workItemId, work.atStep(workflow, stage, step), readMetricAnswers(metrics, answer))
+        const workflow = (workflowVersion && findVersion(state, workflowVersion)) || work.workflowOfWorkItem(state, item)
+        const due = work.inputsSetAt(workflow, at ? `${at.stage}.${at.step}` : AT_START, 'drillmaster')
+        if (due.length === 0) return
+        const { answer } = await this.ports.reviewer.review({ kind: INPUT_REVIEW_KIND, prompt: buildInputPrompt(workflow, item, at, events) })
+        await this.recordDrillmasterInputs(projectDir, workItemId, at, readInputAnswers(due, answer))
       })(),
     )
   }
 
-  private recordMetricAnswers(projectDir: string, workItemId: string, position: { stage: number; step: number; step_guid?: string }, answers: readonly MetricAnswer[]) {
+  private recordDrillmasterInputs(projectDir: string, workItemId: string, at: { stage: number; step: number } | null, answers: readonly InputAnswer[]) {
+    if (answers.length === 0) return Promise.resolve()
     return this.withProjectLock(projectDir, async (projectId, project) => {
-      for (const metricAnswer of answers) {
-        await this.appendEvent(project, { type: 'metric_recorded', work_item_id: workItemId, ...position, ...metricAnswer, by: 'drillmaster' })
-      }
+      const state = foldState(await this.ports.store.read(projectId))
+      const events = work.inputEventsWithMove(state, state.workItems[workItemId]!, at, answers.map((answer) => ({ ...answer, by: 'drillmaster' as const })))
+      for (const newEvent of events) await this.appendEvent(project, newEvent)
     })
   }
 
@@ -990,13 +1043,14 @@ export class Drillmaster {
           note: `Drillmaster could not judge this gate (${judgement.error}). Hand the gate in again, or report the impediment.`,
         }
       }
-      for (const metricAnswer of judgement.metrics) {
-        await this.appendEvent(project, { type: 'metric_recorded', ...gatePosition, ...metricAnswer, by: 'drillmaster' })
+      for (const inputAnswer of judgement.inputs) {
+        await this.appendEvent(project, work.inputSetEvent(workflow, item.work_item_id, submission, { ...inputAnswer, by: 'drillmaster' }))
       }
       const { verdict } = judgement
       await this.appendEvent(project, { type: 'gate_verdict', ...gatePosition, by: 'drillmaster', ...verdict })
-      const update = verdict.accepted ? updateOnReaching(foldState(await this.ports.store.read(projectId)), currentItem, workflow, verdict.next, [gatePosition.step_guid!]) : undefined
-      if (update) await this.appendEvent(project, update.event)
+      const afterVerdict = foldState(await this.ports.store.read(projectId))
+      const moved = verdict.accepted ? work.moveOn(afterVerdict, afterVerdict.workItems[item.work_item_id]!, workflow, verdict, { doneNow: [gatePosition.step_guid!] }) : undefined
+      for (const movedEvent of moved?.events ?? []) await this.appendEvent(project, movedEvent)
       return {
         verdict: verdict.accepted ? 'accepted' : 'rejected',
         by: 'drillmaster',
@@ -1004,10 +1058,7 @@ export class Drillmaster {
         why: verdict.why,
         stage: submission.stage,
         step: submission.step,
-        next: update?.next ?? verdict.next,
-        done: update?.done ?? verdict.done,
-        session_done: verdict.accepted && work.outsideSessionStages(update?.to ?? workflow, currentItem, update?.next ?? verdict.next),
-        ...(update ? { update: work.describeUpdate(update) } : {}),
+        ...(moved ? work.describeMove(moved) : { next: verdict.next, done: verdict.done, session_done: false }),
       }
     })
   }
@@ -1033,7 +1084,8 @@ export class Drillmaster {
       rejections: item.rejections,
       post_mortems: item.post_mortems,
       description: item.description,
-      metrics: item.metrics,
+      inputs: item.inputs,
+      ...waitingForInputsOf(work.workflowOfWorkItem(state, item), item),
       passed_steps: stepNamesOf(work.workflowOfWorkItem(state, item), item.passed_step_guids),
       skipped_steps: stepNamesOf(work.workflowOfWorkItem(state, item), item.skipped_step_guids),
       pending_skip: item.pending_skip,
@@ -1061,6 +1113,12 @@ const namesOfStages = (workflow: WorkflowDocument, guids: readonly string[]) =>
   workflow.stages.filter((stage) => guids.includes(stage.guid)).map((stage) => `stage ${stage.n} "${stage.name}"`).join(', ')
 
 const stepNamesOf = (workflow: WorkflowDocument, guids: readonly string[]) => guids.map((guid) => refOfGuid(workflow, guid)?.name ?? guid)
+
+function waitingForInputsOf(workflow: WorkflowDocument, item: { stage: number | null; step: number | null; status: string; inputs: Record<string, { value: string }> }) {
+  if (item.status !== 'active' || item.stage === null || item.step === null) return {}
+  const applicability = work.applicabilityOf(workflow, item.stage, item.step, Object.fromEntries(Object.entries(item.inputs).map(([name, input]) => [name, input.value])))
+  return applicability.applies === 'unknown' ? { waiting_for_inputs: applicability.missing } : {}
+}
 
 function stepOfRef(workflow: WorkflowDocument, stepRef: string) {
   return stepPosition(resolveRef(workflow, stepRef, { impliedKind: 'step' }).name)!

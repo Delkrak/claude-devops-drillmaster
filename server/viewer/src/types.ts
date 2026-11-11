@@ -30,11 +30,11 @@ export interface WorkStage {
   steps: WorkStep[]
 }
 
-export interface Metric {
+export interface WorkItemInput {
   guid: string
   name: string
-  categories: { value: string; description: string }[]
-  at_step: string
+  options: { value: string; description: string }[]
+  set_at: string
   by: 'agent' | 'drillmaster' | 'owner'
   instruction: string
 }
@@ -73,7 +73,7 @@ export interface Workflow {
   objective: { text: string; measures: string[] }
   stages: WorkStage[]
   policies: { guid: string; name: string; rules: PolicyRule[] }[]
-  metrics?: Metric[]
+  inputs?: WorkItemInput[]
   experiments: Experiment[]
 }
 
@@ -82,7 +82,7 @@ export interface Measure {
   last_5: number | null
   all: number | null
   per_item: { work_item_id: string; issue: string; value: number }[]
-  by_metric?: { metric: string; categories: { category: string; items: number; mean: number | null }[] }[]
+  by_input?: { input: string; options: { option: string; items: number; mean: number | null }[] }[]
 }
 
 export interface WorkItemRow {
@@ -137,7 +137,7 @@ export interface HistoryEntry {
 
 export interface ComponentHistory {
   guid: string
-  kind: 'step' | 'stage' | 'rule' | 'policy' | 'metric'
+  kind: 'step' | 'stage' | 'rule' | 'policy' | 'input'
   current: { ref: string; title: string } | null
   versions: { version: string; at: string; reason: string; name: string | null; definition: Record<string, unknown> | null; change: 'added' | 'changed' | 'same' | 'removed' }[]
   feedback: HistoryEntry[]
@@ -186,7 +186,7 @@ export interface WorkItemView {
     description: string
     summary: string | null
     artifacts: Artifact[]
-    metrics: Record<string, { value: string; by: string; explanation?: string }>
+    inputs: Record<string, { value: string; by: string; explanation?: string }>
     passed_steps: string[]
     skipped_steps: string[]
     pending_skip: { stage: number; step: number; decided_by: string; why: string } | null

@@ -19,7 +19,7 @@ function definitionIn(workflow: WorkflowDocument, guid: string): { kind: RefKind
     case 'rule':
       return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.policies.flatMap((policy) => policy.rules).find((rule) => rule.guid === guid)!) }
     default:
-      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.metrics.find((metric) => metric.guid === guid)!) }
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.inputs.find((input) => input.guid === guid)!) }
   }
 }
 
@@ -75,12 +75,12 @@ export function componentHistory(events: readonly DrillmasterEvent[], guid: stri
             ? `${event.kind}: ${event.text}`
             : event.type === 'step_skip_decided'
               ? `skip ${event.accepted ? 'accepted' : 'rejected'} by ${event.by}: ${event.why}`
-              : event.type === 'metric_recorded'
-                ? `metric ${event.name}: ${event.value}`
+              : event.type === 'input_set'
+                ? `input ${event.name}: ${event.value}`
                 : undefined
       return text && event.type !== 'work_trace' ? [{ id: event.id, at: event.at, type: event.type, work_item_id: event.work_item_id, text }] : []
     }
-    if (kind === 'metric' && event.type === 'metric_recorded' && names.has(event.name)) {
+    if (kind === 'input' && event.type === 'input_set' && names.has(event.name)) {
       return [{ id: event.id, at: event.at, type: event.type, work_item_id: event.work_item_id, text: `${event.value} (by ${event.by})${event.explanation ? `: ${event.explanation}` : ''}` }]
     }
     if (kind === 'rule' && event.type === 'gate_verdict' && event.rule && [...names].some((name) => event.rule!.split(', ').includes(name))) {

@@ -1,9 +1,8 @@
 import type { NewEvent } from './events.js'
 import { resolveRef, stepGuidAt, stepPosition } from './refs.js'
-import { updateOnReaching } from './updates.js'
 import type { ProjectState, WorkItemState } from './state.js'
-import { atStep, decideSkip, describeUpdate, nextPosition, outsideSessionStages, stepAt, workflowOfWorkItem } from './work.js'
-import type { WorkflowMetric } from './workflow.js'
+import { atStep, decideSkip, describeMove, describeUpdate, inputEventsWithMove, moveOn, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
+import { AT_START, type WorkItemInput } from './workflow.js'
 
 /** AskUserQuestion takes at most this many questions per call. */
 export const MAX_QUESTIONS_PER_ASK = 4
@@ -27,7 +26,7 @@ export type OwnerQuestion = {
 } & (
   | { kind: 'owner_gate'; work_item_id: string; stage: number; step: number }
   | { kind: 'proposal'; retro_id: string; proposal: number }
-  | { kind: 'owner_metric'; work_item_id: string; stage: number; step: number; metric: string }
+  | { kind: 'owner_input'; work_item_id: string; stage: number | null; step: number | null; input: string }
   | { kind: 'step_skip'; work_item_id: string; stage: number; step: number }
 )
 
@@ -94,19 +93,21 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
     }))
 }
 
-function ownerMetricQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
+/** Owner's inputs of a work item that are due, set at work_start or at a step it passed, and not set yet. */
+function ownerInputQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
   const workflow = workflowOfWorkItem(state, item)
-  const passed = new Set(item.passed_step_guids)
-  return workflow.metrics
-    .filter((metric) => metric.by === 'owner' && !item.metrics[metric.name] && passed.has(resolveRef(workflow, metric.at_step, { impliedKind: 'step' }).guid!))
-    .map((metric: WorkflowMetric) => ({
-      kind: 'owner_metric' as const,
+  const done = new Set([...item.passed_step_guids, ...item.skipped_step_guids])
+  const isDue = (input: WorkItemInput) => input.set_at === AT_START || done.has(resolveRef(workflow, input.set_at, { impliedKind: 'step' }).guid!)
+  return workflow.inputs
+    .filter((input) => input.by === 'owner' && !item.inputs[input.name] && isDue(input))
+    .map((input) => ({
+      kind: 'owner_input' as const,
       work_item_id: item.work_item_id,
-      ...stepPosition(metric.at_step)!,
-      metric: metric.name,
-      question: `Metric "${metric.name}" for ${item.work_item_id} (${item.issue}): ${metric.instruction}`,
-      header: header(metric.name),
-      options: metric.categories.map((category) => ({ label: category.value, description: category.description })),
+      ...(input.set_at === AT_START ? { stage: null, step: null } : stepPosition(input.set_at)!),
+      input: input.name,
+      question: `Input "${input.name}" for ${item.work_item_id} (${item.issue}): ${input.instruction}`,
+      header: header(input.name),
+      options: input.options.map((option) => ({ label: option.value, description: option.description })),
       multiSelect: false as const,
     }))
 }
@@ -116,7 +117,7 @@ export function pendingOwnerQuestions(state: ProjectState): OwnerQuestion[] {
   return [
     ...items.flatMap((item) => ownerGateQuestion(state, item) ?? []),
     ...items.flatMap((item) => stepSkipQuestion(state, item) ?? []),
-    ...items.flatMap((item) => ownerMetricQuestions(state, item)),
+    ...items.flatMap((item) => (item.status === 'active' ? ownerInputQuestions(state, item) : [])),
     ...proposalQuestions(state),
   ]
 }
@@ -156,9 +157,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       const item = state.workItems[question.work_item_id]!
       const workflow = workflowOfWorkItem(state, item)
       const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
-      const update = accepted ? updateOnReaching(state, item, workflow, passed.next, [stepGuidAt(workflow, question.stage, question.step)!]) : undefined
-      const position = update ? { next: update.next, done: update.done } : passed
-      const sessionDone = accepted && outsideSessionStages(update?.to ?? workflow, item, position.next)
+      const moved = accepted ? moveOn(state, item, workflow, passed, { doneNow: [stepGuidAt(workflow, question.stage, question.step)!] }) : undefined
       const rules = stepAt(workflow, question.stage, question.step)?.rules ?? []
       const stepLabel = `step ${question.stage}.${question.step}`
       return {
@@ -174,11 +173,11 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
             rule: rules.length ? rules.join(', ') : null,
             ...passed,
           },
-          ...(update ? [update.event] : []),
+          ...(moved?.events ?? []),
         ],
         lines: [
-          accepted
-            ? `Owner approved the Owner gate of ${stepLabel}. ${update ? `${updateLine(describeUpdate(update))} ` : ''}${nextLine(position, sessionDone)}`
+          moved
+            ? `Owner approved the Owner gate of ${stepLabel}. ${moved.update ? `${updateLine(describeUpdate(moved.update))} ` : ''}${nextLine(describeMove(moved))}`
             : `Owner rejected the Owner gate of ${stepLabel}${reason ? `: "${quote(reason)}"` : ''}. Do what Owner asks, report the impediment, and hand the gate in again.`,
         ],
       }
@@ -204,46 +203,40 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       const { approved: accepted, reason } = readApproval(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const decided = decideSkip(state, item, { accepted, by: 'owner', via: 'question', why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}` })
-      const { next, done, update, session_done: sessionDone } = decided.answer as { next: { stage: number | null; step: number | null }; done: boolean; session_done: boolean; update?: Parameters<typeof updateLine>[0] }
+      const move = decided.answer as MoveAnswer
       return {
         events: decided.events,
         lines: [
           accepted
-            ? `Owner approved skipping step ${question.stage}.${question.step}. ${update ? `${updateLine(update)} ` : ''}${nextLine({ next, done }, sessionDone)}`
+            ? `Owner approved skipping step ${question.stage}.${question.step}. ${move.update ? `${updateLine(move.update)} ` : ''}${nextLine(move)}`
             : `Owner rejected skipping step ${question.stage}.${question.step}${reason ? `: "${quote(reason)}"` : ''}. Do the step.`,
         ],
       }
     }
-    case 'owner_metric': {
-      const category = question.options.find((option) => option.label === ownerAnswer.answer)
-      if (!category) {
-        return { events: [], lines: [`Owner typed "${quote(ownerAnswer.answer)}" for metric "${question.metric}", which is none of its categories, so it stays open. Ask again with the same question.`] }
+    case 'owner_input': {
+      const option = question.options.find((candidate) => candidate.label === ownerAnswer.answer)
+      if (!option) {
+        return { events: [], lines: [`Owner typed "${quote(ownerAnswer.answer)}" for input "${question.input}", which is none of its options, so it stays open. Ask again with the same question.`] }
       }
-      const workflow = workflowOfWorkItem(state, state.workItems[question.work_item_id]!)
-      return {
-        events: [
-          {
-            type: 'metric_recorded',
-            work_item_id: question.work_item_id,
-            ...atStep(workflow, question.stage, question.step),
-            name: question.metric,
-            value: category.label,
-            ...(ownerAnswer.notes ? { explanation: ownerAnswer.notes } : {}),
-            by: 'owner',
-          },
-        ],
-        lines: [`Owner recorded metric "${question.metric}": ${category.label}.`],
-      }
+      const at = question.stage === null || question.step === null ? null : { stage: question.stage, step: question.step }
+      const events = inputEventsWithMove(state, state.workItems[question.work_item_id]!, at, [
+        { name: question.input, value: option.label, ...(ownerAnswer.notes ? { explanation: ownerAnswer.notes } : {}), by: 'owner' },
+      ])
+      return { events, lines: [`Owner set input "${question.input}": ${option.label}.`] }
     }
   }
 }
 
-const nextLine = (position: { next: { stage: number | null; step: number | null }; done: boolean }, sessionDone: boolean) =>
-  position.done
+type MoveAnswer = ReturnType<typeof describeMove> & { update?: Parameters<typeof updateLine>[0] }
+
+const nextLine = (move: Pick<MoveAnswer, 'next' | 'done' | 'session_done' | 'waiting_for_inputs'>) =>
+  move.done
     ? 'Every work gate has passed: deliver the work item.'
-    : sessionDone
-      ? `This session's stages are done: the work item waits at step ${position.next.stage}.${position.next.step}. Stop, and tell Owner; a later session takes it up with work_resume.`
-      : `Next: step ${position.next.stage}.${position.next.step} (work_status shows it).`
+    : move.session_done
+      ? `This session's stages are done: the work item waits at step ${move.next.stage}.${move.next.step}. Stop, and tell Owner; a later session takes it up with work_resume.`
+      : move.waiting_for_inputs
+        ? `Next: step ${move.next.stage}.${move.next.step}, which waits for input ${move.waiting_for_inputs.join(', ')} (work_status shows who sets it).`
+        : `Next: step ${move.next.stage}.${move.next.step} (work_status shows it).`
 
 const updateLine = (update: { from_version: string; to_version: string; kept: string[] }) =>
   `The work item updated from workflow ${update.from_version} to ${update.to_version}, keeping ${update.kept.length ? `step ${update.kept.join(', ')}` : 'no step'} as done.`

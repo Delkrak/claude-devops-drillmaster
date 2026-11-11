@@ -42,7 +42,7 @@ function WorkflowBody({ workflow, verdicts, projectId }: { workflow: Workflow; v
   const historyOf = (guid: string) => href.history(projectId, guid)
   const rulesByRef = new Map<string, PolicyRule>(workflow.policies.flatMap((policy) => policy.rules.map((rule) => [`${policy.name} ${rule.id}`, rule] as const)))
   const definitionOfDone = (stage: WorkStage) => [...new Set(stage.steps.flatMap((step) => step.rules))]
-  const metrics = workflow.metrics ?? []
+  const inputs = workflow.inputs ?? []
   return (
     <Stack>
       <Row>
@@ -102,11 +102,11 @@ function WorkflowBody({ workflow, verdicts, projectId }: { workflow: Workflow; v
                         updates first on a {step.update} change
                       </Badge>
                     )}
-                    {metrics
-                      .filter((metric) => metric.at_step === `${stage.n}.${step.n}`)
-                      .map((metric) => (
-                        <Badge key={metric.name} tone="info">
-                          metric {metric.name}
+                    {inputs
+                      .filter((input) => input.set_at === `${stage.n}.${step.n}`)
+                      .map((input) => (
+                        <Badge key={input.name} tone="info">
+                          sets {input.name}
                         </Badge>
                       ))}
                   </Row>
@@ -145,25 +145,25 @@ function WorkflowBody({ workflow, verdicts, projectId }: { workflow: Workflow; v
           </Stack>
         ))
       )}
-      <Heading level={3}>Metrics</Heading>
-      {metrics.length === 0 ? (
-        <Empty>No metrics yet.</Empty>
+      <Heading level={3}>Work item inputs</Heading>
+      {inputs.length === 0 ? (
+        <Empty>No work item inputs yet.</Empty>
       ) : (
-        metrics.map((metric) => (
-          <Stack key={metric.name} tight testId="metric">
+        inputs.map((input) => (
+          <Stack key={input.name} tight testId="input">
             <Row>
-              <Link href={historyOf(metric.guid)}>
-                <Strong>{metric.name}</Strong>
+              <Link href={historyOf(input.guid)}>
+                <Strong>{input.name}</Strong>
               </Link>
               <Muted>
-                taken by {metric.by} at step {metric.at_step}
+                set by {input.by} {input.set_at === 'start' ? 'at the start' : `at step ${input.set_at}`}
               </Muted>
             </Row>
-            <Muted>{metric.instruction}</Muted>
+            <Muted>{input.instruction}</Muted>
             <Row>
-              {metric.categories.map((category) => (
-                <Badge key={category.value} testId="metric-category">
-                  {category.value}: {category.description}
+              {input.options.map((option) => (
+                <Badge key={option.value} testId="input-option">
+                  {option.value}: {option.description}
                 </Badge>
               ))}
             </Row>

@@ -53,7 +53,7 @@ describe('REST API', () => {
   })
 
   it('lists the tools and answers workflow_get', async () => {
-    expect((await call('GET', '/tools')).body.tools.map((t: { name: string }) => t.name)).toEqual(['workflow_get', 'work_start', 'work_resume', 'work_skip', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
+    expect((await call('GET', '/tools')).body.tools.map((t: { name: string }) => t.name)).toEqual(['workflow_get', 'work_start', 'work_resume', 'work_skip', 'work_input', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
     const { body } = await call('POST', '/tools/call', { project: PROJECT, name: 'workflow_get', arguments: {} })
     expect(body.structuredContent).toMatchObject({ kind: 'overview', version: '0.0.0', objective: OBJECTIVE, stages: [] })
   })

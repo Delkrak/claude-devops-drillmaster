@@ -43,7 +43,7 @@ describe('workflow_get views', () => {
       version: '2.0.0',
       objective: WORKFLOW_2.objective,
       stages: [{ n: 1, name: 'build', purpose: 'the change works and is described', steps: 2 }],
-      metrics: [],
+      inputs: [],
       experiments: WORKFLOW_2.experiments,
     })
   })

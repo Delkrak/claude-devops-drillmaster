@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { comparisonsOf, InvalidCondition, parseCondition } from './conditions.js'
 import { MEASURE_NAMES } from './measures.js'
 import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
@@ -13,7 +14,7 @@ export const GateKind = z.enum(['self', 'drillmaster', 'owner'])
 export const SkipDecider = z.enum(['self', 'drillmaster', 'owner'])
 /** How big a newer workflow version must be for a work item to update to it before this step. */
 export const UpdateLevel = z.enum(['patch', 'minor', 'major', 'none'])
-export const MetricTaker = z.enum(['agent', 'drillmaster', 'owner'])
+export const InputSetter = z.enum(['agent', 'drillmaster', 'owner'])
 
 export const SEMVER = /^\d+\.\d+\.\d+$/
 export const WorkflowVersion = z.string().regex(SEMVER, 'a workflow version is major.minor.patch')
@@ -21,6 +22,8 @@ export type { VersionLevel } from './versions.js'
 
 const Guid = z.string().min(1)
 const StepName = z.string().regex(/^\d+\.\d+$/, 'a work step is written <stage>.<step>, e.g. "1.2"')
+/** The set_at of a work item input given in work_start. */
+export const AT_START = 'start'
 
 export const WorkStep = z.object({
   guid: Guid,
@@ -32,6 +35,7 @@ export const WorkStep = z.object({
   report: z.array(z.string()),
   skippable: SkipDecider.optional(),
   update: UpdateLevel.optional(),
+  if: z.string().min(1).optional(),
 })
 
 export const WorkStage = z.object({
@@ -39,6 +43,7 @@ export const WorkStage = z.object({
   n: z.number().int().positive(),
   name: z.string().min(1),
   purpose: z.string(),
+  if: z.string().min(1).optional(),
   steps: z.array(WorkStep),
 })
 
@@ -55,14 +60,14 @@ export const WorkPolicy = z.object({
   rules: z.array(PolicyRule),
 })
 
-export const MetricCategory = z.object({ value: z.string().min(1), description: z.string().min(1) })
+export const InputOption = z.object({ value: z.string().min(1), description: z.string().min(1) })
 
-export const WorkflowMetric = z.object({
+export const WorkItemInput = z.object({
   guid: Guid,
-  name: z.string().regex(/^\S+$/, 'a metric name has no spaces'),
-  categories: z.array(MetricCategory).min(2),
-  at_step: StepName,
-  by: MetricTaker,
+  name: z.string().regex(/^[A-Za-z_][\w-]*$/, 'a work item input is named with letters, digits, _ and -, starting with a letter or _'),
+  options: z.array(InputOption).min(2),
+  set_at: z.union([z.literal(AT_START), StepName]),
+  by: InputSetter,
   instruction: z.string().min(1),
 })
 
@@ -92,7 +97,7 @@ export const WorkflowDocument = z
     objective: Objective,
     stages: z.array(WorkStage),
     policies: z.array(WorkPolicy),
-    metrics: z.array(WorkflowMetric),
+    inputs: z.array(WorkItemInput),
     experiments: z.array(WorkflowExperiment),
   })
   .superRefine((workflow, refinement) => {
@@ -106,27 +111,60 @@ export const WorkflowDocument = z
         }
       })
     })
-    const metricNames = new Set<string>()
-    for (const metric of workflow.metrics) {
-      if (metricNames.has(metric.name)) issue(`metric "${metric.name}" is defined twice`)
-      metricNames.add(metric.name)
-      const at = stepPosition(metric.at_step)
-      if (!at || !workflow.stages[at.stage - 1]?.steps[at.step - 1]) {
-        issue(`metric "${metric.name}" is taken at work step ${metric.at_step}, which does not exist`)
+    const inputNames = new Set<string>()
+    for (const input of workflow.inputs) {
+      if (inputNames.has(input.name)) issue(`input "${input.name}" is defined twice`)
+      inputNames.add(input.name)
+      if (input.set_at !== AT_START) {
+        const at = stepPosition(input.set_at)
+        if (!at || !workflow.stages[at.stage - 1]?.steps[at.step - 1]) issue(`input "${input.name}" is set at work step ${input.set_at}, which does not exist`)
       }
-      const values = metric.categories.map((category) => category.value)
-      if (new Set(values).size !== values.length) issue(`metric "${metric.name}" repeats a category value`)
-      if (metric.by === 'owner' && values.length > MAX_OWNER_CHOICES) issue(`metric "${metric.name}" is Owner's to take, so it has at most ${MAX_OWNER_CHOICES} categories`)
+      const values = input.options.map((option) => option.value)
+      if (new Set(values).size !== values.length) issue(`input "${input.name}" repeats an option`)
+      if (input.by === 'owner' && values.length > MAX_OWNER_CHOICES) issue(`input "${input.name}" is Owner's to set, so it has at most ${MAX_OWNER_CHOICES} options`)
+    }
+    for (const stage of workflow.stages) {
+      if (stage.if) for (const problem of conditionProblems(workflow, stage.if, { stage: stage.n, step: 0 })) issue(`the if of work stage ${stage.n}: ${problem}`)
+      for (const step of stage.steps) {
+        if (step.if) for (const problem of conditionProblems(workflow, step.if, { stage: stage.n, step: step.n })) issue(`the if of work step ${stage.n}.${step.n}: ${problem}`)
+      }
     }
     const guids = guidsOf(workflow)
     const repeated = guids.find((guid, index) => guids.indexOf(guid) !== index)
     if (repeated) issue(`GUID ${repeated} is used twice`)
   })
 
-const guidsOf = (workflow: Pick<WorkflowDocument, 'stages' | 'policies' | 'metrics'>) => [
+/**
+ * What is wrong with a condition at `at` (step 0 for a stage's): it may read only known inputs and
+ * their options, set before it.
+ */
+function conditionProblems(workflow: Pick<WorkflowDocument, 'inputs'>, text: string, at: { stage: number; step: number }): string[] {
+  let condition
+  try {
+    condition = parseCondition(text)
+  } catch (error) {
+    if (error instanceof InvalidCondition) return [error.message]
+    throw error
+  }
+  return comparisonsOf(condition).flatMap((comparison) => {
+    const input = workflow.inputs.find((candidate) => candidate.name === comparison.input)
+    if (!input) return [`it reads input "${comparison.input}", which does not exist`]
+    const options = input.options.map((option) => option.value)
+    const problems = comparison.values
+      .filter((value) => !options.includes(value))
+      .map((value) => `input "${input.name}" has no option "${value}"; its options are ${options.join(', ')}`)
+    if (input.set_at !== AT_START && !isSetBefore(stepPosition(input.set_at), at)) problems.push(`it reads input "${input.name}", which is set at work step ${input.set_at}, not before`)
+    return problems
+  })
+}
+
+const isSetBefore = (setAt: { stage: number; step: number } | undefined, at: { stage: number; step: number }) =>
+  setAt !== undefined && (setAt.stage < at.stage || (setAt.stage === at.stage && setAt.step < at.step))
+
+const guidsOf = (workflow: Pick<WorkflowDocument, 'stages' | 'policies' | 'inputs'>) => [
   ...workflow.stages.flatMap((stage) => [stage.guid, ...stage.steps.map((step) => step.guid)]),
   ...workflow.policies.flatMap((policy) => [policy.guid, ...policy.rules.map((rule) => rule.guid)]),
-  ...workflow.metrics.map((metric) => metric.guid),
+  ...workflow.inputs.map((input) => input.guid),
 ]
 
 export type WorkflowDocument = z.infer<typeof WorkflowDocument>
@@ -135,13 +173,13 @@ export type WorkStep = z.infer<typeof WorkStep>
 export type WorkPolicy = z.infer<typeof WorkPolicy>
 export type PolicyRule = z.infer<typeof PolicyRule>
 export type Objective = z.infer<typeof Objective>
-export type WorkflowMetric = z.infer<typeof WorkflowMetric>
+export type WorkItemInput = z.infer<typeof WorkItemInput>
 export type WorkflowExperiment = z.infer<typeof WorkflowExperiment>
 
 export const FIRST_VERSION = '0.0.0'
 
 export const workflowZero = (objective: Objective): WorkflowDocument =>
-  WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], metrics: [], experiments: [] })
+  WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], experiments: [] })
 
 export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: string) {
   const [policyName, ruleId] = ruleRef.split(' ')
@@ -152,13 +190,14 @@ export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: 
 
 
 /**
- * Reads a workflow document written by any earlier Drillmaster. Missing text becomes an empty
+ * Reads a workflow document written by any earlier Drillmaster, also from before work item inputs
+ * were called metrics (with categories, taken at a step). Missing text becomes an empty
  * string, which the retrospective is asked to fill in. A component without a GUID takes the GUID
  * of the component with its name in `previous`, the version before it, so it is followed across
  * versions; a new one gets a GUID made from its name.
  */
 export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): WorkflowDocument {
-  const { storage: _storage, ...document } = structuredClone(raw) as Record<string, any>
+  const { storage: _storage, metrics: oldMetrics, ...document } = structuredClone(raw) as Record<string, any>
   const version = toSemver(document.version)
   const used = new Set<string>()
   const guidFor = (existing: unknown, earlier: string | undefined, seed: string) => {
@@ -193,10 +232,12 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
         guid: guidFor(rule.guid, earlierPolicy(policy.name)?.rules.find((candidate) => candidate.id === rule.id)?.guid, `rule:${policy.name} ${rule.id}`),
       })),
     })),
-    metrics: (document.metrics ?? []).map(({ at, ...metric }: Record<string, any>) => ({
-      ...metric,
-      guid: guidFor(metric.guid, previous?.metrics.find((candidate) => candidate.name === metric.name)?.guid, `metric:${metric.name}`),
-      at_step: metric.at_step ?? (at ? `${at.stage}.${at.step}` : ''),
+    inputs: (document.inputs ?? oldMetrics ?? []).map(({ at, at_step: atStep, categories, ...input }: Record<string, any>) => ({
+      ...input,
+      // Seeded as a metric, so an input keeps the GUID it had as one.
+      guid: guidFor(input.guid, previous?.inputs.find((candidate) => candidate.name === input.name)?.guid, `metric:${input.name}`),
+      options: input.options ?? categories,
+      set_at: input.set_at ?? atStep ?? (at ? `${at.stage}.${at.step}` : ''),
     })),
     experiments: (document.experiments ?? []).map((experiment: Record<string, any>) => ({
       hypothesis: '',

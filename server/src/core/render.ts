@@ -2,13 +2,13 @@ import type { Position } from './events.js'
 import type { WorkItemState } from './state.js'
 import { FEEDBACK_REFS_HELP } from './feedback.js'
 import { stepName } from './refs.js'
-import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
+import { findRule, type WorkflowDocument, type WorkItemInput } from './workflow.js'
 
 const quoteBlock = (text: string) => text.split('\n').map((line) => `> ${line}`).join('\n')
 
-function metricLine(metric: WorkflowMetric) {
-  const categories = metric.categories.map((category) => `\`${category.value}\` (${category.description})`).join(', ')
-  return `- \`${metric.name}\`, by ${metric.by}: ${metric.instruction} Categories: ${categories}.`
+function inputLine(input: WorkItemInput) {
+  const options = input.options.map((option) => `\`${option.value}\` (${option.description})`).join(', ')
+  return `- \`${input.name}\`, by ${input.by}: ${input.instruction} Options: ${options}.`
 }
 
 export function renderStep(workflow: WorkflowDocument, stageNumber: number, stepNumber: number) {
@@ -19,14 +19,14 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     const rule = findRule(workflow, ruleRef)!
     return `- \`${ruleRef}\`: ${rule.rule}. Verified by: ${rule.verified_by}.`
   })
-  const metrics = workflow.metrics.filter((metric) => metric.at_step === stepName(stageNumber, stepNumber))
-  const agentMetrics = metrics.filter((metric) => metric.by === 'agent')
+  const inputs = workflow.inputs.filter((input) => input.set_at === stepName(stageNumber, stepNumber))
+  const agentInputs = inputs.filter((input) => input.by === 'agent')
   const gateArgs = {
     token: '<your agent_token>',
     step: stepName(stageNumber, stepNumber),
     self_check: step.rules.map((ruleRef) => ({ rule: ruleRef, accepted: true, evidence: '<what shows it, e.g. a command and its output>' })),
     text: step.report.length ? `<${step.report.join('; ')}>` : '<what you did>',
-    ...(agentMetrics.length ? { metrics: agentMetrics.map((metric) => ({ name: metric.name, value: metric.categories.map((category) => category.value).join('|'), explanation: '<why>' })) } : {}),
+    ...(agentInputs.length ? { inputs: agentInputs.map((input) => ({ name: input.name, value: input.options.map((option) => option.value).join('|'), explanation: '<why>' })) } : {}),
   }
   const gateWho = { self: 'you judge it yourself', drillmaster: 'Drillmaster judges it from your report and the work traces', owner: 'Owner approves it' }[step.gate]
   const skipWho = { self: 'you decide', drillmaster: 'Drillmaster decides', owner: 'Owner decides' }
@@ -35,6 +35,7 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     '',
     `Stage ${stage.n} "${stage.name}"${stage.purpose ? `: ${stage.purpose}` : ''}`,
     '',
+    ...(stage.if || step.if ? [`Applies only when ${[stage.if, step.if].filter(Boolean).join(' && ')}.`, ''] : []),
     '**Do this:**',
     quoteBlock(step.instruction || 'No instruction yet. Do what the step name says, and report what was missing.'),
     '',
@@ -47,7 +48,7 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
     ...(step.skippable
       ? ['', `**Skippable** (${skipWho[step.skippable]}): if this work item doesn't need the step, call \`work_skip\` with \`{"token": "<your agent_token>", "step": "${stepName(stageNumber, stepNumber)}", "why": "<why this work item doesn't need it>"}\`.`]
       : []),
-    ...(metrics.length ? ['', '**Metrics taken at this step:**', ...metrics.map(metricLine)] : []),
+    ...(inputs.length ? ['', '**Work item inputs set at this step** (work can\'t go on without them):', ...inputs.map(inputLine)] : []),
     ...(workflow.experiments.length
       ? ['', '**Running experiments:**', ...workflow.experiments.map((experiment) => `- #${experiment.id} ${experiment.change}: ${experiment.hypothesis || experiment.purpose}`)]
       : []),
@@ -59,15 +60,39 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
   ].join('\n')
 }
 
-/** What comes next for this session: the next step, or a stop where the session's stages end. */
-export function renderNextInSession(workflow: WorkflowDocument, next: Position, done: boolean, sessionDone: boolean | undefined) {
-  if (!sessionDone || done || next.stage === null) return renderNext(workflow, next, done)
-  const stage = workflow.stages.find((candidate) => candidate.n === next.stage)
-  return [
-    "**This session's stages are done.**",
-    `The work item is at step ${next.stage}.${next.step}, in stage ${next.stage} "${stage?.name ?? ''}", which this session doesn't work on. Stop here, and tell Owner where the work item is and what comes next.`,
-    'A later session takes it up with `work_resume` (the issue, and the stages that session works on).',
-  ].join('\n')
+/** Where a work item moved to, as the tools tell it. */
+export interface Move {
+  next: Position
+  done: boolean
+  session_done?: boolean
+  skipped_by_condition?: { step: string; why: string }[]
+  waiting_for_inputs?: string[]
+}
+
+/** The steps skipped on the way, and what comes next for this session: the next step, or a stop where the session's stages end. */
+export function renderMove(workflow: WorkflowDocument, move: Move) {
+  const skipped = (move.skipped_by_condition ?? []).map((skip) => `- Skipped step ${skip.step}: ${skip.why}`)
+  const next = renderNextInSession(workflow, move)
+  return skipped.length ? ['**Skipped, as the workflow says for this work item:**', ...skipped, '', next].join('\n') : next
+}
+
+function renderNextInSession(workflow: WorkflowDocument, { next, done, session_done: sessionDone, waiting_for_inputs: waitingFor }: Move) {
+  if (sessionDone && !done && next.stage !== null) {
+    const stage = workflow.stages.find((candidate) => candidate.n === next.stage)
+    return [
+      "**This session's stages are done.**",
+      `The work item is at step ${next.stage}.${next.step}, in stage ${next.stage} "${stage?.name ?? ''}", which this session doesn't work on. Stop here, and tell Owner where the work item is and what comes next.`,
+      'A later session takes it up with `work_resume` (the issue, and the stages that session works on).',
+    ].join('\n')
+  }
+  if (waitingFor?.length && next.stage !== null) {
+    return [
+      `**Step ${next.stage}.${next.step} waits for input ${waitingFor.join(', ')}**, which decides whether it applies. Work can't go on until it is set: work_status shows who sets it, and Owner's questions to ask.`,
+      '',
+      renderNext(workflow, next, done),
+    ].join('\n')
+  }
+  return renderNext(workflow, next, done)
 }
 
 export function renderNext(workflow: WorkflowDocument, next: Position, done: boolean) {
@@ -77,7 +102,7 @@ export function renderNext(workflow: WorkflowDocument, next: Position, done: boo
   return renderStep(workflow, next.stage, next.step)
 }
 
-export function renderStarted(args: { workItemId: string; agentToken: string; issue: string; workflow: WorkflowDocument; position: Position; sessionStages?: string }) {
+export function renderStarted(args: { workItemId: string; agentToken: string; issue: string; workflow: WorkflowDocument; move: Move; sessionStages?: string }) {
   const lines = [
     `# Work item ${args.workItemId} started: ${args.issue}`,
     '',
@@ -88,12 +113,26 @@ export function renderStarted(args: { workItemId: string; agentToken: string; is
     `Workflow version ${args.workflow.version}.${args.sessionStages ? ` This session works on ${args.sessionStages}, and stops when the last of them is done.` : ''}`,
     '',
   ]
-  if (args.position.stage === null) {
+  if (args.workflow.stages.length === 0) {
     lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. Deliver with `work_deliver` when the work is done.')
   } else {
-    lines.push(renderStep(args.workflow, args.position.stage, args.position.step!))
+    lines.push(renderMove(args.workflow, args.move))
   }
   return lines.join('\n')
+}
+
+export interface InputChange extends Move {
+  input: string
+  value: string
+  goes_back_to?: string
+}
+
+export function renderInputChanged(workflow: WorkflowDocument, change: InputChange) {
+  return [
+    `**Input ${change.input} is ${change.value} now.**${change.goes_back_to ? ` Step ${change.goes_back_to} applies to the work item now, so it goes back there; the steps before it that were done stay done.` : ''}`,
+    '',
+    renderMove(workflow, change),
+  ].join('\n')
 }
 
 export function renderResumed(args: {
@@ -105,6 +144,7 @@ export function renderResumed(args: {
   sessionStages: string
   outsideSession: boolean
   update?: UpdateSummary
+  move: Move
 }) {
   const { item } = args
   const where = item.pending_gate
@@ -115,7 +155,7 @@ export function renderResumed(args: {
         ? 'The work item is delivered. Only your workflow post mortem remains (work_post_mortem).'
         : args.outsideSession && item.stage !== null
           ? `The work item is at step ${item.stage}.${item.step}, which is not in the stages this session works on. Tell Owner, and don't go on.`
-          : renderNext(args.workflow, { stage: item.stage, step: item.step }, item.gates_done)
+          : renderMove(args.workflow, args.move)
   return [
     `# Work item ${args.workItemId} resumed: ${args.issue}`,
     '',
@@ -130,17 +170,14 @@ export function renderResumed(args: {
   ].join('\n')
 }
 
-export interface GateOutcome {
+export interface GateOutcome extends Partial<Move> {
   update?: UpdateSummary
-  session_done?: boolean
   verdict: 'accepted' | 'rejected' | 'pending' | 'superseded'
   by?: string
   rule?: string | null
   why?: string
   stage?: number
   step?: number
-  next?: Position
-  done?: boolean
   note?: string
 }
 
@@ -152,7 +189,7 @@ export function renderGateOutcome(workflow: WorkflowDocument, outcome: GateOutco
         `**Gate accepted** by ${outcome.by}${at}. ${outcome.why ?? ''}`.trim(),
         ...(outcome.update ? ['', renderUpdate(outcome.update)] : []),
         '',
-        renderNextInSession(workflow, outcome.next!, outcome.done ?? false, outcome.session_done),
+        renderMove(workflow, { ...outcome, next: outcome.next!, done: outcome.done ?? false }),
       ].join('\n')
     case 'rejected':
       return [
@@ -220,17 +257,14 @@ export function renderUpdate(update: UpdateSummary) {
   ].join('\n')
 }
 
-export interface SkipOutcome {
+export interface SkipOutcome extends Partial<Move> {
   skip: 'accepted' | 'rejected' | 'pending'
   by?: string
   decided_by?: string
   why?: string
   stage: number
   step: number
-  next?: Position
-  done?: boolean
   update?: UpdateSummary
-  session_done?: boolean
   note?: string
 }
 
@@ -242,7 +276,7 @@ export function renderSkipOutcome(workflow: WorkflowDocument, outcome: SkipOutco
         `**Skipped** ${at} (${outcome.by}): ${outcome.why}`,
         ...(outcome.update ? ['', renderUpdate(outcome.update)] : []),
         '',
-        renderNextInSession(workflow, outcome.next!, outcome.done ?? false, outcome.session_done),
+        renderMove(workflow, { ...outcome, next: outcome.next!, done: outcome.done ?? false }),
       ].join('\n')
     case 'rejected':
       return [`**Skip rejected** by ${outcome.by}: ${outcome.why}`, '', 'Do the step.', '', renderNext(workflow, outcome.next!, false)].join('\n')

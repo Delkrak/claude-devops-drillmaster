@@ -20,7 +20,7 @@ export interface ItemMeasures {
   workflow_version: string
   delivered_at: string
   values: Record<MeasureName, number>
-  metrics: Record<string, string>
+  inputs: Record<string, string>
 }
 
 const WORK_CHANGING_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/
@@ -37,11 +37,11 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
   const ownerPromptAwaitingChange = new Map<string, boolean>()
   const items = new Map<
     string,
-    { issue: string; workflowVersion: string; startedAt: string; deliveredAt?: string; values: Record<MeasureName, number>; metrics: Record<string, string> }
+    { issue: string; workflowVersion: string; startedAt: string; deliveredAt?: string; values: Record<MeasureName, number>; inputs: Record<string, string> }
   >()
   for (const event of events) {
     if (event.type === 'work_item_started') {
-      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), metrics: {} })
+      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), inputs: {} })
       continue
     }
     if (event.type === 'work_item_updated') {
@@ -49,9 +49,9 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
       if (updated) updated.workflowVersion = event.to_version
       continue
     }
-    if (event.type === 'metric_recorded') {
+    if (event.type === 'input_set') {
       const measured = items.get(event.work_item_id)
-      if (measured) measured.metrics[event.name] = event.value
+      if (measured) measured.inputs[event.name] = event.value
       continue
     }
     if (!('work_item_id' in event) || !event.work_item_id) continue
@@ -93,7 +93,7 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
       workflow_version: item.workflowVersion,
       delivered_at: item.deliveredAt!,
       values: item.values,
-      metrics: item.metrics,
+      inputs: item.inputs,
     }))
     .sort((a, b) => a.delivered_at.localeCompare(b.delivered_at))
 }
@@ -117,11 +117,11 @@ export function standardDeviation(values: readonly number[]) {
 export const measureBaselineSd = (items: readonly ItemMeasures[], measure: MeasureName) =>
   standardDeviation(items.slice(-BASELINE_WINDOW).map((item) => item.values[measure]))
 
-export function splitMeasureByMetric(items: readonly ItemMeasures[], measure: MeasureName, metricName: string) {
-  const itemsByCategory = new Map<string, ItemMeasures[]>()
+export function splitMeasureByInput(items: readonly ItemMeasures[], measure: MeasureName, inputName: string) {
+  const itemsByOption = new Map<string, ItemMeasures[]>()
   for (const item of items) {
-    const category = item.metrics[metricName] ?? 'not recorded'
-    itemsByCategory.set(category, [...(itemsByCategory.get(category) ?? []), item])
+    const option = item.inputs[inputName] ?? 'not set'
+    itemsByOption.set(option, [...(itemsByOption.get(option) ?? []), item])
   }
-  return [...itemsByCategory.entries()].map(([category, categoryItems]) => ({ category, items: categoryItems.length, mean: averageMeasure(categoryItems, measure) }))
+  return [...itemsByOption.entries()].map(([option, optionItems]) => ({ option, items: optionItems.length, mean: averageMeasure(optionItems, measure) }))
 }

@@ -59,14 +59,14 @@ export default async function setup() {
         steps: [{ n: 1, name: 'Owner approves', instruction: 'Show Owner the PR and ask for approval.', gate: 'owner', rules: ['pr 1.1'], report: ['what to look at'], skippable: 'owner', update: 'minor' }],
       },
     ],
-    metrics: [
+    inputs: [
       {
         name: 'size',
-        categories: [
+        options: [
           { value: 'small', description: 'one file' },
           { value: 'large', description: 'several files' },
         ],
-        at: { stage: 1, step: 1 },
+        set_at: '1.1',
         by: 'agent',
         instruction: 'How big is the change?',
       },
@@ -105,9 +105,9 @@ export default async function setup() {
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'mcp__x__work_start', tool_input: { issue: '#1 CSV export' }, tool_response: { work_item_id: one.work_item_id } })
   await app.hook(DEMO_DIR, 'PostToolUse', { session_id: 'demo', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
   await call({ token: one.agent_token, action: 'report', kind: 'assumption', text: 'CSV uses ; as separator' })
-  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: size })
   await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export' })
-  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'The PR says what it changes.' })
   await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export, with a What section' })
   await call({ token: one.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/csv.js' })
@@ -121,7 +121,7 @@ export default async function setup() {
 
   // Item 2: waiting at the Owner gate.
   const two = await call({ action: 'start', issue: '#2 JSON export' })
-  await call({ token: two.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: size })
+  await call({ token: two.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'ok' })
   await call({ token: two.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds JSON export' })
   await call({ token: two.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/json.js' })

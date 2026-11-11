@@ -83,10 +83,10 @@ function WorkItem({ view, projectId, highlightedEvent }: { view: WorkItemView; p
   )
 }
 
-/** What the work item is about, what it delivered, the artifacts that show it, and its metrics. */
+/** What the work item is about, what it delivered, the artifacts that show it, and its inputs. */
 function Story({ view, projectId }: { view: WorkItemView; projectId: string }) {
   const { item } = view
-  const metrics = Object.entries(item.metrics)
+  const inputs = Object.entries(item.inputs)
   const artifactUrl = (name: string) => `/api/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(item.work_item_id)}/artifacts/${encodeURIComponent(name)}`
   return (
     <Card title="The work item" testId="story">
@@ -113,11 +113,11 @@ function Story({ view, projectId }: { view: WorkItemView; projectId: string }) {
           )}
         </Grid>
       )}
-      {metrics.length > 0 && (
-        <Row testId="item-metrics">
-          {metrics.map(([name, metric]) => (
+      {inputs.length > 0 && (
+        <Row testId="item-inputs">
+          {inputs.map(([name, input]) => (
             <Badge key={name} tone="info">
-              {name}: {metric.value} (by {metric.by})
+              {name}: {input.value} (by {input.by})
             </Badge>
           ))}
         </Row>

@@ -23,32 +23,32 @@ wants the user interface changes later.
 ## Decisions
 
 **Work item inputs, and conditions (pipeline style):**
-- 🟥 The workflow's `metrics` become `inputs`, in the same stored shape:
+- 🟩 The workflow's `metrics` become `inputs`, in the same stored shape:
   `{guid, name, options: [{value, description}], set_at: "start" | "<step>", by, instruction}`.
   `set_at: "start"` means it is given in `work_start`; a step means it is set at that step's
   gate, as metrics are today. Measures are still split by inputs.
-- 🟧 Each input's `by` says who sets it (agent, drillmaster or owner), as metrics do today. Work
+- 🟩 Each input's `by` says who sets it (agent, drillmaster or owner), as metrics do today. Work
   can't proceed without it: `work_start` is refused while a `start` input is missing, and a gate
   is refused while an input set at its step is missing. The refusal names the input and its
   options. A retrospective can move `by` when picks go wrong.
-- 🟥 A stage or a step may have `"if": "<expression>"`, for example `"kind == 'bug'"`, or
+- 🟩 A stage or a step may have `"if": "<expression>"`, for example `"kind == 'bug'"`, or
   `"kind == 'feature' || user_visible == 'yes'"`. Operators: `==`, `!=`, `in [...]`, `&&`, `||`,
   `!`, parentheses. A small parser of our own, with no `eval`.
-- 🟧 Conditions name inputs as they are (`kind`, not `inputs.kind` or `${{ }}`). The operators are
+- 🟩 Conditions name inputs as they are (`kind`, not `inputs.kind` or `${{ }}`). The operators are
   those of GitHub's expressions.
-- 🟥 A workflow is refused when an `if` reads an input that's unknown, compares it with a value
+- 🟩 A workflow is refused when an `if` reads an input that's unknown, compares it with a value
   that isn't one of its options, or reads it before it is set (`start`, or a step before the
   condition).
-- 🟥 When an item reaches a stage or step whose `if` isn't met, Drillmaster skips it and logs it as
+- 🟩 When an item reaches a stage or step whose `if` isn't met, Drillmaster skips it and logs it as
   `step_skip_decided {by: "condition", why: "kind is feature"}`. A skipped stage skips all its
   steps. Skipped steps count as done for fast-forward, as in round 3.
-- 🟥 A changed `if` is a major change, since it changes the path, like `skippable`.
-- 🟥 `skippable` and `work_skip` stay, for skips Agent asks for.
-- 🟧 An input can be changed later, with a reason, as a new `input_set`. If a stage or step that
+- 🟩 A changed `if` is a major change, since it changes the path, like `skippable`.
+- 🟩 `skippable` and `work_skip` stay, for skips Agent asks for.
+- 🟩 An input can be changed later, with a reason, as a new `input_set`. If a stage or step that
   was skipped by its condition now applies, the item goes back to the first such one: the same rule
   as a fast-forward stopping at its first discrepancy. Steps that still apply and were passed are
   kept.
-- 🟥 Migration on read: `metrics` become `inputs` (`categories` become `options`, `at_step` becomes
+- 🟩 Migration on read: `metrics` become `inputs` (`categories` become `options`, `at_step` becomes
   `set_at`), and `metric_recorded` events become `input_set`. The retrospective operations
   `add_metric`/`change_metric`/`remove_metric` are renamed to `add_input`/`change_input`/
   `remove_input`, and the old names are still read.
@@ -214,12 +214,12 @@ One round, pressure-tested with both the scripted and the LLM Owner.
      - plan files are ASCII with LF line endings, except for the squares.
 
      The squares in `docs/plans/round-4.md` turn green as phases are built.
-1. 🟥 **Inputs and conditions:**
+1. 🟩 **Inputs and conditions:**
    - `metrics` become `inputs`, with migration;
    - `core/conditions.ts` (parse, validate, evaluate);
    - `if` on stages and steps, skipped by condition, as a major change;
    - `set_at: "start"` in `work_start`;
-   - 🟧 changing an input, and going back;
+   - 🟩 changing an input, and going back;
    - the retrospective operations and their prompt.
 2. 🟥 **Owner inputs and friction:**
    - attribution by the call an input leads to;
@@ -263,19 +263,19 @@ One round, pressure-tested with both the scripted and the LLM Owner.
 ## Verification
 
 - **Unit tests:**
-  - 🟥 conditions: parsing, refusals (unknown input, unknown value, read before set), evaluation;
+  - 🟩 conditions: parsing, refusals (unknown input, unknown value, read before set), evaluation;
   - 🟥 migration of metrics to inputs, and of the old measure;
   - 🟥 attribution of Owner inputs, including the one-item-late case from the runs;
   - 🟧 the LogQL subset: each filter, parser and `line_format`, and refusals of what's outside it;
   - 🟧 tool capture: the default 20 lines, replaced by a rule's yield, and the fallback when it
     yields nothing;
-  - 🟧 changing an input: going back to a step that now applies, keeping passed steps;
+  - 🟩 changing an input: going back to a step that now applies, keeping passed steps;
   - 🟧 the PreToolUse check of an Owner question: unchanged passes, changed is blocked;
   - 🟥 per-rule counts.
 - **API tests:**
-  - 🟥 a feature item skips the bug steps by condition, and the other way round;
-  - 🟥 a stage skipped as a whole;
-  - 🟥 fast-forward over a changed `if`;
+  - 🟩 a feature item skips the bug steps by condition, and the other way round;
+  - 🟩 a stage skipped as a whole;
+  - 🟩 fast-forward over a changed `if`;
   - 🟥 `work_resume` adds its stage;
   - 🟥 artifact types and the refusal message;
   - 🟥 experiment `affects`, and a refused baseline;

@@ -59,24 +59,30 @@ describe('workflow operations', () => {
     expect(() => applyWorkflowOps(w0, [{ op: 'add_stage', name: 'b', purpose: 'p', steps: [{ ...testStep }] }])).toThrow(/unknown rule/)
   })
 
-  it('keeps the GUIDs of what it changes, and keeps a metric at its step when the step moves', () => {
-    const size = { name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at_step: '1.2', by: 'agent' as const, instruction: 'pick' }
-    const withSize = applyWorkflowOps(WORKFLOW_3, [{ op: 'add_metric', metric: size }], sequentialGuids())
+  it('keeps the GUIDs of what it changes, and keeps an input at its step when the step moves', () => {
+    const size = { name: 'size', options: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], set_at: '1.2', by: 'agent' as const, instruction: 'pick' }
+    const withSize = applyWorkflowOps(WORKFLOW_3, [{ op: 'add_input', input: size }], sequentialGuids())
     const next = applyWorkflowOps(withSize, [
       { op: 'add_step', stage: '1', after: '0', step: { name: 'read the issue', instruction: 'Read it.', gate: 'self', rules: [], report: [] } },
       { op: 'change_step', step: 'step 1.3', name: 'describe the pull request' },
     ])
     expect(next.stages[0]!.steps[2]).toMatchObject({ name: 'describe the pull request', guid: WORKFLOW_3.stages[0]!.steps[1]!.guid })
-    expect(next.metrics[0]).toMatchObject({ guid: 'guid-1', at_step: '1.3' })
-    expect(() => applyWorkflowOps(next, [{ op: 'remove_step', step: '1.3' }])).toThrow(/Metric "size" is taken at work step 1.3, which this change removes/)
+    expect(next.inputs[0]).toMatchObject({ guid: 'guid-1', set_at: '1.3' })
+    expect(() => applyWorkflowOps(next, [{ op: 'remove_step', step: '1.3' }])).toThrow(/Input "size" is set at work step 1.3, which this change removes/)
   })
 
   it('reads operations written before references', () => {
     expect(WorkflowOp.parse({ op: 'change_step', stage: 1, step: 2, gate: 'drillmaster' })).toEqual({ op: 'change_step', step: '1.2', gate: 'drillmaster' })
     expect(WorkflowOp.parse({ op: 'add_step', stage: 1, after: 2, step: testStep })).toEqual({ op: 'add_step', stage: '1', after: '1.2', step: testStep })
     expect(WorkflowOp.parse({ op: 'change_rule', ref: 'pr 1.1', rule: 'reworded' })).toEqual({ op: 'change_rule', rule: 'pr 1.1', text: 'reworded' })
-    expect(WorkflowOp.parse({ op: 'remove_metric', name: 'size' })).toEqual({ op: 'remove_metric', metric: 'size' })
-    expect(WorkflowOp.parse({ op: 'add_metric', metric: { name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at: { stage: 1, step: 1 }, by: 'agent', instruction: 'pick' } })).toMatchObject({ metric: { at_step: '1.1' } })
+    expect(WorkflowOp.parse({ op: 'remove_metric', name: 'size' })).toEqual({ op: 'remove_input', input: 'size' })
+    expect(WorkflowOp.parse({ op: 'change_metric', metric: 'size', at_step: '1.2', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }] })).toEqual({
+      op: 'change_input',
+      input: 'size',
+      set_at: '1.2',
+      options: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }],
+    })
+    expect(WorkflowOp.parse({ op: 'add_metric', metric: { name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at: { stage: 1, step: 1 }, by: 'agent', instruction: 'pick' } })).toMatchObject({ op: 'add_input', input: { set_at: '1.1', options: [{ value: 's' }, { value: 'l' }] } })
   })
 })
 
@@ -86,7 +92,7 @@ describe('applying a proposal', () => {
     issue: `#${n}`,
     workflow_version: '0.0.0',
     delivered_at: `2026-11-0${n}T10:00:00Z`,
-    metrics: {},
+    inputs: {},
     values: { owner_corrections_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
   }))
 
@@ -221,7 +227,7 @@ describe('measures', () => {
         issue: '#1',
         workflow_version: '0.0.0',
         delivered_at: at(10),
-        metrics: {},
+        inputs: {},
         values: { owner_corrections_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
       },
     ])

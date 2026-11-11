@@ -11,7 +11,7 @@ describe('references', () => {
     expect(parseRef('step 1.2', 'step')).toEqual({ kind: 'step', name: '1.2' })
     expect(parseRef('pr 1.1', 'rule')).toEqual({ kind: 'rule', name: 'pr 1.1' })
     expect(() => parseRef('1.2')).toThrow(InvalidReference)
-    expect(() => parseRef('experiment 1')).toThrow(/the kinds are step, stage, rule, policy, metric, tool/)
+    expect(() => parseRef('experiment 1')).toThrow(/the kinds are step, stage, rule, policy, input, tool/)
   })
 
   it('resolves every kind to its GUID, and back', () => {

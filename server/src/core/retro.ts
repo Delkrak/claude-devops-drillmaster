@@ -7,7 +7,7 @@ import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import type { PostMortemArgs } from './work.js'
-import { bumpVersion, GateKind, MetricCategory, MetricTaker, PolicyRule, SkipDecider, UpdateLevel, WorkflowDocument, WorkflowMetric, type VersionLevel } from './workflow.js'
+import { AT_START, bumpVersion, GateKind, InputOption, InputSetter, PolicyRule, SkipDecider, UpdateLevel, WorkflowDocument, WorkItemInput, type VersionLevel } from './workflow.js'
 
 export const RETRO_REVIEW_KIND = 'retrospective'
 export const POST_MORTEM_REVIEW_KIND = 'post_mortem'
@@ -25,18 +25,28 @@ const StepInput = z
     report: z.array(z.string()),
     skippable: SkipDecider.optional(),
     update: UpdateLevel.optional(),
+    if: z.string().min(1).optional(),
   })
   .strict()
 const RuleInput = PolicyRule.omit({ guid: true }).strict()
-const MetricInput = WorkflowMetric.omit({ guid: true }).strict()
+const NewInput = WorkItemInput.omit({ guid: true }).strict()
+/** An `if` to set, or "" to remove it. */
+const ChangedCondition = z.string()
 
 const StageRef = z.union([z.string().min(1), z.number().int().nonnegative()]).transform(String)
 const Ref = z.string().min(1)
 
-/** Operations written before references: positions as numbers, and rules and metrics by other keys. */
+/**
+ * Operations written before references (positions as numbers, rules and metrics by other keys), and
+ * before metrics were called work item inputs.
+ */
 function upgradeLegacyOp(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw
   const op = { ...(raw as Record<string, any>) }
+  const asInput = (metric: Record<string, any>) => {
+    const { categories, at_step: atStep, ...input } = metric
+    return { ...input, ...(categories ? { options: categories } : {}), ...(atStep ? { set_at: atStep } : {}) }
+  }
   const position = (at: { stage: number; step: number }) => `${at.stage}.${at.step}`
   switch (op.op) {
     case 'add_step':
@@ -62,23 +72,15 @@ function upgradeLegacyOp(raw: unknown): unknown {
         delete op.ref
       }
       break
-    case 'add_metric':
-      if (op.metric?.at) {
-        const { at, ...metric } = op.metric
-        op.metric = { ...metric, at_step: position(at) }
-      }
-      break
+    case 'add_metric': {
+      const { at, ...metric } = op.metric ?? {}
+      return { op: 'add_input', input: asInput(at ? { ...metric, at_step: position(at) } : metric) }
+    }
     case 'change_metric':
-    case 'remove_metric':
-      if ('name' in op) {
-        op.metric = op.name
-        delete op.name
-      }
-      if (op.at) {
-        op.at_step = position(op.at)
-        delete op.at
-      }
-      break
+    case 'remove_metric': {
+      const { op: legacyOp, name, metric, at, ...changes } = op
+      return { op: legacyOp === 'change_metric' ? 'change_input' : 'remove_input', input: metric ?? name, ...asInput({ ...changes, ...(at ? { at_step: position(at) } : {}) }) }
+    }
   }
   return op
 }
@@ -86,8 +88,8 @@ function upgradeLegacyOp(raw: unknown): unknown {
 export const WorkflowOp = z.preprocess(
   upgradeLegacyOp,
   z.discriminatedUnion('op', [
-    z.object({ op: z.literal('add_stage'), name: z.string().min(1), purpose: z.string().min(1), after: StageRef.optional(), steps: z.array(StepInput).min(1) }).strict(),
-    z.object({ op: z.literal('change_stage'), stage: StageRef, name: z.string().min(1).optional(), purpose: z.string().min(1).optional() }).strict(),
+    z.object({ op: z.literal('add_stage'), name: z.string().min(1), purpose: z.string().min(1), if: z.string().min(1).optional(), after: StageRef.optional(), steps: z.array(StepInput).min(1) }).strict(),
+    z.object({ op: z.literal('change_stage'), stage: StageRef, name: z.string().min(1).optional(), purpose: z.string().min(1).optional(), if: ChangedCondition.optional() }).strict(),
     z.object({ op: z.literal('remove_stage'), stage: StageRef }).strict(),
     z.object({ op: z.literal('add_step'), stage: StageRef, after: Ref.optional(), step: StepInput }).strict(),
     z
@@ -101,6 +103,7 @@ export const WorkflowOp = z.preprocess(
         report: z.array(z.string()).optional(),
         skippable: z.union([SkipDecider, z.literal('no')]).optional(),
         update: UpdateLevel.optional(),
+        if: ChangedCondition.optional(),
       })
       .strict(),
     z.object({ op: z.literal('remove_step'), step: Ref }).strict(),
@@ -108,18 +111,18 @@ export const WorkflowOp = z.preprocess(
     z.object({ op: z.literal('add_rule'), policy: z.string().min(1), rule: RuleInput }).strict(),
     z.object({ op: z.literal('change_rule'), rule: Ref, text: z.string().min(1).optional(), verified_by: z.string().min(1).optional() }).strict(),
     z.object({ op: z.literal('remove_rule'), rule: Ref }).strict(),
-    z.object({ op: z.literal('add_metric'), metric: MetricInput }).strict(),
+    z.object({ op: z.literal('add_input'), input: NewInput }).strict(),
     z
       .object({
-        op: z.literal('change_metric'),
-        metric: Ref,
-        categories: z.array(MetricCategory).min(2).optional(),
-        at_step: Ref.optional(),
-        by: MetricTaker.optional(),
+        op: z.literal('change_input'),
+        input: Ref,
+        options: z.array(InputOption).min(2).optional(),
+        set_at: Ref.optional(),
+        by: InputSetter.optional(),
         instruction: z.string().min(1).optional(),
       })
       .strict(),
-    z.object({ op: z.literal('remove_metric'), metric: Ref }).strict(),
+    z.object({ op: z.literal('remove_input'), input: Ref }).strict(),
     z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
     z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
   ]),
@@ -131,8 +134,9 @@ export class InvalidChange extends Error {}
 const LEVEL_RANK: Record<VersionLevel, number> = { patch: 0, minor: 1, major: 2 }
 
 /**
- * Major: the path or its checks change, including whether a step can be skipped. Minor: what Agent
- * is told changes, including when a work item updates. Patch: nothing Agent does.
+ * Major: the path or its checks change, including whether a step can be skipped and when a stage or
+ * step applies. Minor: what Agent is told changes, including when a work item updates. Patch:
+ * nothing Agent does.
  */
 export function levelOfOp(op: WorkflowOp): VersionLevel {
   switch (op.op) {
@@ -142,7 +146,9 @@ export function levelOfOp(op: WorkflowOp): VersionLevel {
     case 'remove_step':
       return 'major'
     case 'change_step':
-      return op.gate !== undefined || op.rules !== undefined || op.skippable !== undefined ? 'major' : 'minor'
+      return op.gate !== undefined || op.rules !== undefined || op.skippable !== undefined || op.if !== undefined ? 'major' : 'minor'
+    case 'change_stage':
+      return op.if !== undefined ? 'major' : 'minor'
     case 'end_experiment':
       return 'patch'
     default:
@@ -191,9 +197,16 @@ function requireRule(workflow: WorkflowDocument, ruleRef: string) {
   return { policy, ruleIndex: policy.rules.findIndex((rule) => rule.guid === guid) }
 }
 
-function requireMetric(workflow: WorkflowDocument, metricRef: string) {
-  const { guid } = resolveForChange(workflow, metricRef, 'metric')
-  return workflow.metrics.find((metric) => metric.guid === guid)!
+function requireInput(workflow: WorkflowDocument, inputRef: string) {
+  const { guid } = resolveForChange(workflow, inputRef, 'input')
+  return workflow.inputs.find((input) => input.guid === guid)!
+}
+
+/** Sets `if` on a stage or step from a change: "" removes it. */
+function setCondition(component: { if?: string }, condition: string | undefined) {
+  if (condition === undefined) return
+  if (condition.trim() === '') delete component.if
+  else component.if = condition
 }
 
 const withoutUndefined = (fields: Record<string, unknown>) => Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined))
@@ -201,28 +214,32 @@ const withoutUndefined = (fields: Record<string, unknown>) => Object.fromEntries
 const ruleRefsOf = (rules: readonly string[]) => rules.map((ruleRef) => parseRef(ruleRef, 'rule').name)
 
 /**
- * Applies the operations in order. Stages and steps are renumbered after each one; a metric stays
- * at its work step, followed by GUID, even when the step's number changes.
+ * Applies the operations in order. Stages and steps are renumbered after each one; an input set at
+ * a work step stays at it, followed by GUID, even when the step's number changes.
  */
 export function applyWorkflowOps(current: WorkflowDocument, ops: readonly WorkflowOp[], makeGuid: () => string = newGuid): WorkflowDocument {
   let workflow: WorkflowDocument = structuredClone(current)
-  const stepGuidOfMetric = new Map<string, string>()
-  for (const metric of workflow.metrics) {
-    const at = stepPosition(metric.at_step)
+  const stepGuidOfInput = new Map<string, string>()
+  const followStepOf = (input: { guid: string; set_at: string }) => {
+    const at = stepPosition(input.set_at)
     const stepGuid = at && stepGuidAt(workflow, at.stage, at.step)
-    if (stepGuid) stepGuidOfMetric.set(metric.guid, stepGuid)
+    if (stepGuid) stepGuidOfInput.set(input.guid, stepGuid)
+    else stepGuidOfInput.delete(input.guid)
   }
+  for (const input of workflow.inputs) followStepOf(input)
   const newStep = (step: z.infer<typeof StepInput>) => ({ guid: makeGuid(), n: 0, ...step, rules: ruleRefsOf(step.rules) })
   for (const op of ops) {
     switch (op.op) {
       case 'add_stage': {
         const insertAt = op.after === undefined ? workflow.stages.length : op.after === '0' ? 0 : requireStage(workflow, op.after).n
-        workflow.stages.splice(insertAt, 0, { guid: makeGuid(), n: 0, name: op.name, purpose: op.purpose, steps: op.steps.map(newStep) })
+        workflow.stages.splice(insertAt, 0, { guid: makeGuid(), n: 0, name: op.name, purpose: op.purpose, ...(op.if ? { if: op.if } : {}), steps: op.steps.map(newStep) })
         break
       }
       case 'change_stage': {
-        const { op: _op, stage: stageRef, ...stageChanges } = op
-        Object.assign(requireStage(workflow, stageRef), withoutUndefined(stageChanges))
+        const { op: _op, stage: stageRef, if: condition, ...stageChanges } = op
+        const stage = requireStage(workflow, stageRef)
+        Object.assign(stage, withoutUndefined(stageChanges))
+        setCondition(stage, condition)
         break
       }
       case 'remove_stage': {
@@ -245,10 +262,11 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
       case 'change_step': {
         const { op: _op, step: stepRef, ...stepChanges } = op
         const { step } = requireStep(workflow, stepRef)
-        const { skippable, ...otherChanges } = stepChanges
+        const { skippable, if: condition, ...otherChanges } = stepChanges
         Object.assign(step, withoutUndefined({ ...otherChanges, rules: stepChanges.rules && ruleRefsOf(stepChanges.rules) }))
         if (skippable === 'no') delete step.skippable
         else if (skippable !== undefined) step.skippable = skippable
+        setCondition(step, condition)
         break
       }
       case 'remove_step': {
@@ -278,24 +296,27 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
         policy.rules.splice(ruleIndex, 1)
         break
       }
-      case 'add_metric': {
-        if (workflow.metrics.some((metric) => metric.name === op.metric.name)) throw new InvalidChange(`Metric "${op.metric.name}" already exists; change it instead.`)
-        const { step } = requireStep(workflow, op.metric.at_step)
-        const metric = { guid: makeGuid(), ...op.metric }
-        stepGuidOfMetric.set(metric.guid, step.guid)
-        workflow.metrics.push(metric)
+      case 'add_input': {
+        if (workflow.inputs.some((input) => input.name === op.input.name)) throw new InvalidChange(`Input "${op.input.name}" already exists; change it instead.`)
+        const setAt = op.input.set_at === AT_START ? AT_START : requireStep(workflow, op.input.set_at).step
+        const input = { guid: makeGuid(), ...op.input }
+        workflow.inputs.push(input)
+        if (setAt !== AT_START) stepGuidOfInput.set(input.guid, setAt.guid)
         break
       }
-      case 'change_metric': {
-        const { op: _op, metric: metricRef, at_step: atStep, ...metricChanges } = op
-        const metric = requireMetric(workflow, metricRef)
-        if (atStep !== undefined) stepGuidOfMetric.set(metric.guid, requireStep(workflow, atStep).step.guid)
-        Object.assign(metric, withoutUndefined(metricChanges))
+      case 'change_input': {
+        const { op: _op, input: inputRef, set_at: setAt, ...inputChanges } = op
+        const input = requireInput(workflow, inputRef)
+        Object.assign(input, withoutUndefined(inputChanges))
+        if (setAt === AT_START) {
+          input.set_at = AT_START
+          stepGuidOfInput.delete(input.guid)
+        } else if (setAt !== undefined) stepGuidOfInput.set(input.guid, requireStep(workflow, setAt).step.guid)
         break
       }
-      case 'remove_metric': {
-        const removed = requireMetric(workflow, op.metric)
-        workflow.metrics = workflow.metrics.filter((metric) => metric.guid !== removed.guid)
+      case 'remove_input': {
+        const removed = requireInput(workflow, op.input)
+        workflow.inputs = workflow.inputs.filter((input) => input.guid !== removed.guid)
         break
       }
       case 'set_objective':
@@ -307,12 +328,12 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
         break
     }
     workflow = renumberStagesAndSteps(workflow)
-    for (const metric of workflow.metrics) {
-      const stepGuid = stepGuidOfMetric.get(metric.guid)
+    for (const input of workflow.inputs) {
+      const stepGuid = stepGuidOfInput.get(input.guid)
       if (!stepGuid) continue
       const step = refOfGuid(workflow, stepGuid)
-      if (!step) throw new InvalidChange(`Metric "${metric.name}" is taken at work step ${metric.at_step}, which this change removes. Move the metric (change_metric with at_step) or remove it.`)
-      metric.at_step = step.name
+      if (!step) throw new InvalidChange(`Input "${input.name}" is set at work step ${input.set_at}, which this change removes. Move the input (change_input with set_at) or remove it.`)
+      input.set_at = step.name
     }
   }
   const parsed = WorkflowDocument.safeParse({ ...workflow, version: bumpVersion(current.version, levelOfOps(ops)) })
@@ -351,12 +372,13 @@ export const workflowForReading = (workflow: WorkflowDocument) => JSON.stringify
 
 const noDifference = (change: string, measure: string) => `"${change}" makes no difference to ${measure}.`
 
-const WORKFLOW_OP_REFERENCE = `Operations. They name what they change by reference: a stage by its number ("1"), a step by "<stage>.<step>" ("1.2"), a rule by "<policy> <rule id>" ("pr 1.1"), a metric by its name. Stages and steps are renumbered after each operation; refer to them as they are after the previous operation. A metric stays at its step when the step's number changes.
+const WORKFLOW_OP_REFERENCE = `Operations. They name what they change by reference: a stage by its number ("1"), a step by "<stage>.<step>" ("1.2"), a rule by "<policy> <rule id>" ("pr 1.1"), a work item input by its name. Stages and steps are renumbered after each operation; refer to them as they are after the previous operation. An input stays at its step when the step's number changes.
 {"op":"add_stage","name":"build","purpose":"<what the stage achieves>","after":"1","steps":[{"name":"write the tests first","instruction":"<the work to do in this step, as an order to Agent>","gate":"self","rules":["test 1.1"],"report":["test result"]}]}   (after: the stage it follows, "0" to put it first; omit to append)
-{"op":"change_stage","stage":"1","purpose":"..."}   (any of name, purpose)
+{"op":"change_stage","stage":"1","purpose":"..."}   (any of name, purpose, if ("" removes it))
 {"op":"remove_stage","stage":"2"}
-{"op":"add_step","stage":"1","after":"1.1","step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."],"skippable":"self|drillmaster|owner","update":"patch|minor|major|none"}}   (after: the step it follows, "0" to put it first; omit to append. skippable and update are optional, see below)
-{"op":"change_step","step":"1.2","gate":"drillmaster"}   (any of name, instruction, gate, rules, report, skippable ("no" makes it unskippable), update)
+{"op":"add_step","stage":"1","after":"1.1","step":{"name":"...","instruction":"...","gate":"self|drillmaster|owner","rules":["<policy> <rule id>"],"report":["..."],"skippable":"self|drillmaster|owner","update":"patch|minor|major|none","if":"kind == 'bug'"}}   (after: the step it follows, "0" to put it first; omit to append. skippable, update and if are optional, see below)
+{"op":"change_step","step":"1.2","gate":"drillmaster"}   (any of name, instruction, gate, rules, report, skippable ("no" makes it unskippable), update, if ("" removes it))
+A stage's or step's if makes it apply only to some work items, by their inputs, as a pipeline step's if does: "kind == 'bug'", "kind != 'bug'", "kind in ['bug', 'chore']", joined with &&, || and !. Drillmaster skips it, saying why, for a work item it doesn't apply to. It may read only inputs set at work_start or at a step before it. Use it for work only some work items need (a failing test first for a bug, a spec for a feature); use skippable when only the work can tell.
 A step's skippable says who decides that a work item can skip it (for example a step not every kind of work item needs); leave it out for a step every work item must do.
 A step's update lets an open work item move to the latest workflow version before the step starts, when the latest differs by at least that level; the item keeps the steps it did that are unchanged, and resumes at the first that changed. Put it on the first step of a stage that is done in a later session (for example the first build step), so work captured earlier runs on the current workflow. Leave it out (none) elsewhere.
 {"op":"remove_step","step":"1.2"}
@@ -364,9 +386,9 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"add_rule","policy":"pr","rule":{"id":"1.2","rule":"...","verified_by":"..."}}
 {"op":"change_rule","rule":"pr 1.1","text":"...","verified_by":"..."}   (any of text, verified_by)
 {"op":"remove_rule","rule":"pr 1.1"}
-{"op":"add_metric","metric":{"name":"size","categories":[{"value":"small","description":"one file, under an hour"},{"value":"large","description":"several files or over an hour"}],"at_step":"1.1","by":"agent|drillmaster|owner","instruction":"<how to choose the category>"}}
-{"op":"change_metric","metric":"size","instruction":"..."}   (any of categories, at_step, by, instruction)
-{"op":"remove_metric","metric":"size"}
+{"op":"add_input","input":{"name":"kind","options":[{"value":"bug","description":"existing behaviour is wrong"},{"value":"feature","description":"new behaviour"}],"set_at":"start","by":"agent|drillmaster|owner","instruction":"<how to choose the option>"}}   (set_at: "start" for work_start, or the step whose gate sets it, e.g. "1.1"; work can't go on without it)
+{"op":"change_input","input":"kind","instruction":"..."}   (any of options, set_at, by, instruction)
+{"op":"remove_input","input":"kind"}
 {"op":"set_objective","text":"...","measures":["owner_corrections_per_item"]}
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 
@@ -438,7 +460,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     'Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.',
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
-    `Propose at most ${MAX_PROPOSALS} changes: few, small and high-value, so each can be measured. A rule must say how it is verified. A work gate references specific rules. Metrics are categories taken at a work step (for example the size of a work item), so measures can be split by them.`,
+    `Propose at most ${MAX_PROPOSALS} changes: few, small and high-value, so each can be measured. A rule must say how it is verified. A work gate references specific rules. Work item inputs are options set at work_start or at a work step (for example whether it is a bug or a feature): steps and stages apply by them (if), and measures are split by them.`,
     `Write keep and improve as lists. In each entry, ${FEEDBACK_REFS_HELP} An entry about a tool is feedback on Drillmaster itself, which the workflow can't change; say so rather than propose a workflow change around it.`,
     'Each proposal lists in relies_on the references of what it builds on. A proposal that relies on something another proposal adds must come after it.',
     '',

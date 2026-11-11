@@ -9,7 +9,7 @@ describe('workflow document', () => {
       objective: OBJECTIVE,
       stages: [],
       policies: [],
-      metrics: [],
+      inputs: [],
       experiments: [],
     })
   })
@@ -34,14 +34,15 @@ describe('workflow document', () => {
     expect(() => WorkflowDocument.parse(bad)).toThrow(/unknown rule \\"pr 9.9\\"/)
   })
 
-  it('rejects a metric at a work step that does not exist, or with a repeated category', () => {
-    const metric = { guid: 'guid-size', name: 'size', categories: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], at_step: '1.1', by: 'agent' as const, instruction: 'pick' }
-    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [metric] })).not.toThrow()
-    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [{ ...metric, at_step: '1.9' }] })).toThrow(/work step 1.9, which does not exist/)
-    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, metrics: [{ ...metric, categories: [metric.categories[0], metric.categories[0]] }] })).toThrow(/repeats a category/)
+  it('rejects an input at a work step that does not exist, or with a repeated option', () => {
+    const input = { guid: 'guid-size', name: 'size', options: [{ value: 's', description: 'small' }, { value: 'l', description: 'large' }], set_at: '1.1', by: 'agent' as const, instruction: 'pick' }
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, inputs: [input] })).not.toThrow()
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, inputs: [{ ...input, set_at: 'start' }] })).not.toThrow()
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, inputs: [{ ...input, set_at: '1.9' }] })).toThrow(/work step 1.9, which does not exist/)
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, inputs: [{ ...input, options: [input.options[0], input.options[0]] }] })).toThrow(/repeats an option/)
   })
 
-  it('reads an old document: whole-number version, no purpose, instruction, metrics or hypotheses', () => {
+  it('reads an old document: whole-number version, no purpose, instruction, inputs or hypotheses', () => {
     const old = {
       version: 2,
       objective: OBJECTIVE,
@@ -50,7 +51,7 @@ describe('workflow document', () => {
       experiments: [{ id: 1, change: 'c', purpose: 'p', measure: 'owner_corrections_per_item', baseline: 1, started: '2026-11-01' }],
     }
     const migrated = WorkflowDocument.parse(migrateWorkflow(old))
-    expect(migrated).toMatchObject({ version: '2.0.0', metrics: [], stages: [{ purpose: '', steps: [{ instruction: '' }] }] })
+    expect(migrated).toMatchObject({ version: '2.0.0', inputs: [], stages: [{ purpose: '', steps: [{ instruction: '' }] }] })
     expect(migrated.experiments[0]).toMatchObject({ hypothesis: '', baseline_sd: 0, target: null, judge_after: 3, version: '2.0.0' })
   })
 

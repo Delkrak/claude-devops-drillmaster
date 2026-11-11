@@ -8,18 +8,18 @@ import type { WorkflowDocument } from '../../src/core/workflow.js'
 import { WORKFLOW_3 } from '../helpers.js'
 
 const at = '2026-11-09T10:00:00Z'
-const MOOD: WorkflowDocument['metrics'][number] = {
+const MOOD: WorkflowDocument['inputs'][number] = {
   name: 'value',
-  categories: [
+  options: [
     { value: 'low', description: 'nice to have' },
     { value: 'high', description: 'Owner needs it' },
   ],
-  guid: 'guid-metric',
-  at_step: '1.1',
+  guid: 'guid-input',
+  set_at: '1.1',
   by: 'owner',
   instruction: 'How much is this worth to you?',
 }
-const WORKFLOW: WorkflowDocument = { ...WORKFLOW_3, version: '1.0.0', metrics: [MOOD] }
+const WORKFLOW: WorkflowDocument = { ...WORKFLOW_3, version: '1.0.0', inputs: [MOOD] }
 const asEvents = (events: object[]) => events.map((event, i) => ({ id: `x${i}`, at, ...event })) as DrillmasterEvent[]
 
 const base = asEvents([
@@ -32,7 +32,7 @@ const base = asEvents([
   { type: 'gate_submitted', work_item_id: 'wi_1', stage: 2, step: 1, gate: 'owner', self_check: [], text: 'PR #40' },
 ])
 const GATE_QUESTION = 'Owner gate of wi_1 (#7), work step 2.1 "Owner approves": does the work meet pr 1.1?'
-const METRIC_QUESTION = 'Metric "value" for wi_1 (#7): How much is this worth to you?'
+const INPUT_QUESTION = 'Input "value" for wi_1 (#7): How much is this worth to you?'
 
 const hook = (events: DrillmasterEvent[], hookEvent: string, payload: Record<string, unknown>) => handleHook(foldState(events), hookEvent, { session_id: 's1', ...payload }, false)
 const ask = (events: DrillmasterEvent[], toolUseId: string, input: Record<string, unknown>) =>
@@ -41,14 +41,14 @@ const answered = (events: DrillmasterEvent[], toolUseId: string, answers: Record
   hook(events, 'PostToolUse', { tool_name: 'AskUserQuestion', tool_use_id: toolUseId, tool_input: { answers }, tool_response: { answers, annotations } })
 
 describe("Owner's pending questions", () => {
-  it('asks the Owner gate, and the metric Owner takes at a step already passed', () => {
+  it('asks the Owner gate, and the input Owner sets at a step already passed', () => {
     const questions = pendingOwnerQuestions(foldState(base))
     expect(questions.map((question) => [question.kind, question.question])).toEqual([
       ['owner_gate', GATE_QUESTION],
-      ['owner_metric', METRIC_QUESTION],
+      ['owner_input', INPUT_QUESTION],
     ])
     expect(askUserQuestionInput(questions).questions[1]).toEqual({
-      question: METRIC_QUESTION,
+      question: INPUT_QUESTION,
       header: 'value',
       options: [
         { label: 'low', description: 'nice to have' },
@@ -87,10 +87,10 @@ describe("Owner's pending questions", () => {
 })
 
 describe('Owner decides through AskUserQuestion', () => {
-  const askedEvents = [...base, ...asEvents(ask(base, 'tu_1', { questions: [{ question: GATE_QUESTION }, { question: METRIC_QUESTION }] }).events)]
+  const askedEvents = [...base, ...asEvents(ask(base, 'tu_1', { questions: [{ question: GATE_QUESTION }, { question: INPUT_QUESTION }] }).events)]
 
   it('records the clean call in PreToolUse', () => {
-    expect(askedEvents.filter((event) => event.type === 'owner_asked')).toEqual([expect.objectContaining({ tool_use_id: 'tu_1', questions: [GATE_QUESTION, METRIC_QUESTION] })])
+    expect(askedEvents.filter((event) => event.type === 'owner_asked')).toEqual([expect.objectContaining({ tool_use_id: 'tu_1', questions: [GATE_QUESTION, INPUT_QUESTION] })])
   })
 
   it('refuses a call whose input already carries the answers', () => {
@@ -100,9 +100,9 @@ describe('Owner decides through AskUserQuestion', () => {
   })
 
   it("records Owner's choices, and tells Agent", () => {
-    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve', [METRIC_QUESTION]: 'high' }, { [METRIC_QUESTION]: { notes: 'a customer asked' } })
+    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve', [INPUT_QUESTION]: 'high' }, { [INPUT_QUESTION]: { notes: 'a customer asked' } })
     expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: true, by: 'owner', via: 'question', why: 'Owner approved.', done: true }))
-    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'metric_recorded', name: 'value', value: 'high', explanation: 'a customer asked', by: 'owner' }))
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'input_set', name: 'value', value: 'high', explanation: 'a customer asked', by: 'owner' }))
     expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/Owner approved the Owner gate of step 2.1\. Every work gate has passed/)
   })
 
@@ -123,10 +123,10 @@ describe('Owner decides through AskUserQuestion', () => {
     }
   })
 
-  it('leaves a metric open when Owner types something that is none of its categories', () => {
-    const outcome = answered(askedEvents, 'tu_1', { [METRIC_QUESTION]: 'quite high' })
-    expect(outcome.events.filter((event) => event.type === 'metric_recorded')).toEqual([])
-    expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/none of its categories, so it stays open/)
+  it('leaves an input open when Owner types something that is none of its options', () => {
+    const outcome = answered(askedEvents, 'tu_1', { [INPUT_QUESTION]: 'quite high' })
+    expect(outcome.events.filter((event) => event.type === 'input_set')).toEqual([])
+    expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/none of its options, so it stays open/)
   })
 
   it('decides nothing from a chat prompt, however it sounds', () => {

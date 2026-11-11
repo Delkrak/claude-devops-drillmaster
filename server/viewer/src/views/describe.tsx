@@ -90,14 +90,14 @@ export function describeTimelineEvent(event: TimelineEvent): Described {
       return { group: 'reports', tone: 'ok', text: `delivered ${asText(event.pr)}`, body: <Strong>Delivered as {asText(event.pr)}</Strong> }
     case 'post_mortem_written':
       return { group: 'post mortems', tone: 'accent', text: `post mortem ${asText(event.author)} ${feedbackText(event.keep)} ${feedbackText(event.change)}`, body: <Muted>{asText(event.author)} wrote a workflow post mortem</Muted> }
-    case 'metric_recorded':
+    case 'input_set':
       return {
         group: 'reports',
         tone: 'info',
-        text: `metric ${asText(event.name)} ${asText(event.value)} ${asText(event.explanation)}`,
+        text: `input ${asText(event.name)} ${asText(event.value)} ${asText(event.explanation)}`,
         body: (
           <Muted>
-            Metric {asText(event.name)}: {asText(event.value)} (by {asText(event.by)}){event.explanation ? `: ${asText(event.explanation)}` : ''}
+            Input {asText(event.name)}: {asText(event.value)} (by {asText(event.by)}){event.explanation ? `: ${asText(event.explanation)}` : ''}
           </Muted>
         ),
       }

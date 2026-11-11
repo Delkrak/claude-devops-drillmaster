@@ -36,7 +36,7 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
    capture it today"). The `UserPromptSubmit` hook records Owner's words as a work trace.
 5. **Agent** calls `work_start` with the issue, what it is about, and the work stages this session
    works on. It gets its token and the first work step in full: the stage's purpose, the step's
-   instruction, the gate, each rule with how it is verified, what to report, the metrics to take,
+   instruction, the gate, each rule with how it is verified, what to report, the inputs to set,
    and the `work_gate` call to fill in. The `PostToolUse` hook binds the session to the work item.
    - **A later sitting** is a fresh session: `work_resume` takes the work item up for the stages
      that session works on, with a new token that voids the old one. If the step it resumes at
@@ -47,7 +47,7 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
       `PreToolUse` and `PostToolUse` hooks, with its exit status and the tail of its output.
    2. **Agent** reports in real time with `work_report`: impediments, better ways, decisions,
       questions and assumptions.
-   3. **Agent** hands in the gate with `work_gate`, with one self check per rule, and its metrics.
+   3. **Agent** hands in the gate with `work_gate`, with one self check per rule, and the work item inputs it sets.
       - **Self gate:** accepted or rejected at once.
       - **Drillmaster gate:** the reviewer (`claude -p`) judges it from the rules, the work reports
         and the work traces.
@@ -166,12 +166,13 @@ on different versions run side by side and know nothing of each other.
 
 | MCP tool | What it does |
 |---|---|
-| `workflow_get` | Describes the workflow: the objective, the work stages and work steps, the rules, the metrics and the experiments with their verdicts. |
+| `workflow_get` | Describes the workflow: the objective, the work stages and work steps, the rules, the work item inputs and the experiments with their verdicts. |
 | `work_start` | Starts a work item at its first step, for the stages this session works on. Returns the token and the first step in full. |
 | `work_resume` | Takes up an open work item in a later session, for the stages that session works on. Returns a new token and the step to do. |
 | `work_skip` | Skips the current step when the workflow marks it skippable; the step says who decides. |
+| `work_input` | Sets or changes one of Agent's work item inputs after its place; a step that now applies is gone back to. |
 | `work_report` | A work report in real time: impediment, better way, decision, question, assumption, required, or an added step after delivery. |
-| `work_gate` | Hands in the current step's gate, with one self check per rule and Agent's metrics. Returns the verdict and the next step in full. |
+| `work_gate` | Hands in the current step's gate, with one self check per rule and Agent's work item inputs. Returns the verdict and the next step in full. |
 | `work_deliver` | Delivers the work item, with a summary and artifacts. |
 | `work_post_mortem` | Agent's workflow post mortem. |
 | `workflow_retrospective` | `setup` creates workflow `0.0.0`. `run` returns Drillmaster's findings and proposals. `apply` applies the proposals Owner approved. |
@@ -192,12 +193,19 @@ experiment's version, the server judges it: the null hypothesis is rejected when
 baseline by more than the standard deviation, and the experiment is kept only if that holds and the
 target is met.
 
-**Metrics** are categories taken at a work step (for example a work item's size), by Agent,
-Drillmaster or Owner. Measures can be split by them.
+**Work item inputs** are options set at `work_start` or at a work step (for example whether a work
+item is a bug or a feature), by Agent, Drillmaster or Owner. Work can't go on without them, and
+measures can be split by them.
+
+**Conditions.** A stage or step can apply only to some work items, the way a pipeline step's `if`
+does: `"if": "kind == 'bug'"`, with `==`, `!=`, `in [...]`, `&&`, `||` and `!`. Drillmaster skips
+it for the others, saying why. An `if` reads only inputs set at start or at an earlier step; a step
+whose `if` waits for an input that isn't set yet holds the work item there. When Agent changes an
+input and a skipped step now applies, the work item goes back to it.
 
 **Versions** follow semver. A change to the path or its checks (a stage, step, gate or rule
-reference, or whether a step can be skipped) is major; a change to what Agent is told (an
-instruction, a rule's text, a metric, a new experiment, when a work item updates) is minor; anything
+reference, whether a step can be skipped, or when it applies) is major; a change to what Agent is
+told (an instruction, a rule's text, a work item input, a new experiment, when a work item updates) is minor; anything
 else is a patch. Every event records the workflow and Drillmaster versions it was made under.
 
 **Updates.** A work item runs on the workflow version it started on. A step can allow an update
@@ -212,7 +220,7 @@ example a production test that not every work item needs. Agent asks with `work_
 step, and the step says who decides. Only the current step can be skipped; there is no late start.
 
 **References.** Every component of a workflow is named the same way everywhere: `step 1.2`,
-`stage 1`, `rule pr 1.1`, `policy pr`, `metric size`, and `tool work_deliver` for Drillmaster's
+`stage 1`, `rule pr 1.1`, `policy pr`, `input kind`, and `tool work_deliver` for Drillmaster's
 own tools. Where a field fixes the kind, it is left out (`"step": "1.2"`). Behind each is a GUID
 that stays with the component across versions, so its history can be followed.
 

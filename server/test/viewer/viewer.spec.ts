@@ -31,8 +31,8 @@ test("navigates from a project's overview through every tab", async ({ page }) =
   await expect(page.getByTestId('definition-of-done').first()).toContainText('test 1.1 the tests run green before a PR')
   await expect(page.getByTestId('definition-of-done').first()).toContainText('pr 1.1 the PR says what it changes')
   await expect(page.getByTestId('instruction').first()).toContainText('Write a test for the change')
-  await expect(page.getByTestId('metric')).toContainText('taken by agent at step 1.1')
-  await expect(page.getByTestId('metric-category')).toHaveCount(2)
+  await expect(page.getByTestId('input')).toContainText('set by agent at step 1.1')
+  await expect(page.getByTestId('input-option')).toHaveCount(2)
   await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0.0.0')
   await expect(page.getByTestId('workflow')).toContainText('No work stages yet')
 
@@ -44,8 +44,8 @@ test("navigates from a project's overview through every tab", async ({ page }) =
 
   await page.getByRole('tab', { name: 'Measures' }).click()
   await expect(page.getByTestId('measures')).toContainText('Experiment 1 baseline')
-  await expect(page.getByTestId('measure-by-metric').first()).toContainText('By size')
-  await expect(page.getByTestId('measure-by-metric').first()).toContainText('small')
+  await expect(page.getByTestId('measure-by-input').first()).toContainText('By size')
+  await expect(page.getByTestId('measure-by-input').first()).toContainText('small')
 })
 
 test("a work item's page shows its gates, post mortems and a searchable added step", async ({ page }) => {
@@ -57,7 +57,7 @@ test("a work item's page shows its gates, post mortems and a searchable added st
   await expect(page.getByTestId('item-title')).toContainText('#1 CSV export')
   await expect(page.getByTestId('description')).toContainText('Owner wants the report as CSV')
   await expect(page.getByTestId('summary')).toContainText('the test checks the header')
-  await expect(page.getByTestId('item-metrics')).toContainText('size: small (by agent)')
+  await expect(page.getByTestId('item-inputs')).toContainText('size: small (by agent)')
   const image = page.getByTestId('artifact').locator('img')
   await expect(image).toHaveAttribute('alt', 'after.png')
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(1)

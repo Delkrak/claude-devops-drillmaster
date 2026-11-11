@@ -68,7 +68,7 @@ export const WORKFLOW_3: WorkflowDocument = migrateWorkflow({
     { name: 'test', rules: [{ id: '1.1', rule: 'the tests run green before a PR', verified_by: 'the test output' }] },
     { name: 'pr', rules: [{ id: '1.1', rule: 'the PR says what it changes', verified_by: 'reading the PR description' }] },
   ],
-  metrics: [],
+  inputs: [],
   experiments: [],
 })
 
@@ -84,7 +84,7 @@ export const WORKFLOW_DM: WorkflowDocument = {
 /** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
 export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
   const project = folderKey(dir)
-  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], metrics: [], experiments: [] }
+  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], inputs: [], experiments: [] }
   await ports.store.append(project, { id: 'seed_0', at: '2026-11-01T00:00:00Z', type: 'project_initialized', dir, workflow: v0 })
   const major = Number(workflow.version.split('.')[0])
   for (let v = 1; v <= major; v++) {
@@ -124,7 +124,7 @@ export const WORKFLOW_2: WorkflowDocument = migrateWorkflow({
     },
   ],
   policies: [{ name: 'pr', rules: [{ id: '1.1', rule: 'the PR says what it changes', verified_by: 'reading the PR description' }] }],
-  metrics: [],
+  inputs: [],
   experiments: [EXPERIMENT_1],
 })
 

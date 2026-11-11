@@ -7,13 +7,13 @@ import { folderKey as projectId } from '../../src/adapters/projects.js'
 import type { WorkflowDocument } from '../../src/core/workflow.js'
 import { ownerAnswers, seedWorkflow, tempDir, testPorts, WORKFLOW_3 } from '../helpers.js'
 
-const category = (value: string) => ({ value, description: `a ${value} one` })
-/** WORKFLOW_3 with Agent's size metric at 1.1 and Drillmaster's risk metric at 1.2. */
-const WORKFLOW_METRICS: WorkflowDocument = {
+const option = (value: string) => ({ value, description: `a ${value} one` })
+/** WORKFLOW_3 with Agent's size input at 1.1 and Drillmaster's risk input at 1.2. */
+const WORKFLOW_INPUTS: WorkflowDocument = {
   ...WORKFLOW_3,
-  metrics: [
-    { name: 'size', categories: [category('small'), category('large')], guid: 'guid-size', at_step: '1.1', by: 'agent', instruction: 'How big is it?' },
-    { name: 'risk', categories: [category('low'), category('high')], guid: 'guid-risk', at_step: '1.2', by: 'drillmaster', instruction: 'How risky is it?' },
+  inputs: [
+    { name: 'size', options: [option('small'), option('large')], guid: 'guid-size', set_at: '1.1', by: 'agent', instruction: 'How big is it?' },
+    { name: 'risk', options: [option('low'), option('high')], guid: 'guid-risk', set_at: '1.2', by: 'drillmaster', instruction: 'How risky is it?' },
   ],
 }
 
@@ -28,28 +28,28 @@ beforeAll(async () => {
   await writeFile(path.join(work.dir, 'after.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   await writeFile(path.join(work.dir, '.gitignore'), 'private.txt\n')
   await writeFile(path.join(work.dir, 'private.txt'), 'TOKEN=x')
-  ports = testPorts({ metrics: [{ metrics: [{ name: 'risk', value: 'high', explanation: 'touches exports' }, { name: 'size', value: 'small' }] }] })
-  await seedWorkflow(ports, work.dir, WORKFLOW_METRICS)
+  ports = testPorts({ inputs: [{ inputs: [{ name: 'risk', value: 'high', explanation: 'touches exports' }, { name: 'size', value: 'small' }] }] })
+  await seedWorkflow(ports, work.dir, WORKFLOW_INPUTS)
   app = new Drillmaster(ports)
 })
 afterAll(() => work.remove())
 
-describe('metrics and delivery', () => {
+describe('work item inputs and delivery', () => {
   let token: string
 
-  it("takes Agent's metric with the gate, and Drillmaster's after the gate in the background", async () => {
+  it("takes Agent's input with the gate, and Drillmaster's after the gate in the background", async () => {
     const started = await app.callTool(work.dir, 'work_start', { issue: '#5', description: 'Add a PNG export.' })
     token = (started.structuredContent as { agent_token: string; work_item_id: string }).agent_token
     await app.hook(work.dir, 'PostToolUse', { session_id: 's1', tool_name: 'work_start', tool_response: started.content })
     expect(started.content[0]!.text).toContain('`size`, by agent: How big is it?')
     const refused = await app.callTool(work.dir, 'work_gate', { token, step: '1.1', self_check: check('test 1.1'), text: 'green' })
-    expect(refused).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/Take metric "size"/) }] })
-    await app.callTool(work.dir, 'work_gate', { token, step: '1.1', self_check: check('test 1.1'), text: 'green', metrics: [{ name: 'size', value: 'small' }] })
+    expect(refused).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/Work can't go on without input "size"/) }] })
+    await app.callTool(work.dir, 'work_gate', { token, step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: [{ name: 'size', value: 'small' }] })
     await app.callTool(work.dir, 'work_gate', { token, step: '1.2', self_check: check('pr 1.1'), text: 'adds PNG export' })
     await app.idle()
     const item = Object.values((await app.state(work.dir)).workItems)[0]!
     // Drillmaster's answer also named "size", which is not its to take: only "risk" is recorded from it.
-    expect(item.metrics).toEqual({ size: { value: 'small', by: 'agent' }, risk: { value: 'high', by: 'drillmaster', explanation: 'touches exports' } })
+    expect(item.inputs).toEqual({ size: { value: 'small', by: 'agent' }, risk: { value: 'high', by: 'drillmaster', explanation: 'touches exports' } })
     expect(item.description).toBe('Add a PNG export.')
   })
 

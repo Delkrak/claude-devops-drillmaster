@@ -3,11 +3,11 @@ import type { WorkflowDocument } from './workflow.js'
 
 /**
  * One reference framework for every component of a workflow: `<kind> <name>`, such as
- * `step 1.2`, `stage 1`, `rule pr 1.1`, `policy pr`, `metric size` or `tool work_gate`. Where a
+ * `step 1.2`, `stage 1`, `rule pr 1.1`, `policy pr`, `input kind` or `tool work_gate`. Where a
  * field fixes the kind (a step's `rules`, work_gate's `step`), the kind may be left out.
  * Behind each reference is a GUID that stays with the component across workflow versions.
  */
-export const REF_KINDS = ['step', 'stage', 'rule', 'policy', 'metric', 'tool'] as const
+export const REF_KINDS = ['step', 'stage', 'rule', 'policy', 'input', 'tool'] as const
 export type RefKind = (typeof REF_KINDS)[number]
 
 export class InvalidReference extends Error {}
@@ -28,6 +28,9 @@ export interface ResolvedRef extends ParsedRef {
 
 const isRefKind = (word: string): word is RefKind => (REF_KINDS as readonly string[]).includes(word)
 
+/** Work item inputs were called metrics. */
+const OLD_KIND_NAMES: Record<string, RefKind> = { metric: 'input' }
+
 const STEP_NAME = /^(\d+)\.(\d+)$/
 const STAGE_NAME = /^\d+$/
 
@@ -35,7 +38,8 @@ export const stepName = (stage: number, step: number) => `${stage}.${step}`
 
 export function parseRef(text: string, impliedKind?: RefKind): ParsedRef {
   const words = text.trim().split(/\s+/)
-  const [first, ...rest] = words
+  const [written, ...rest] = words
+  const first = written && (OLD_KIND_NAMES[written] ?? written)
   if (impliedKind && first === impliedKind && rest.length) return { kind: impliedKind, name: rest.join(' ') }
   if (impliedKind) return { kind: impliedKind, name: words.join(' ') }
   if (first && isRefKind(first) && rest.length) return { kind: first, name: rest.join(' ') }
@@ -82,10 +86,10 @@ export function resolveRef(workflow: WorkflowDocument, text: string, options: Re
       if (!policy) throw missing(`policy "${name}"`)
       return { kind, name, ref: `policy ${name}`, guid: policy.guid, title: name }
     }
-    case 'metric': {
-      const metric = workflow.metrics.find((candidate) => candidate.name === name)
-      if (!metric) throw missing(`metric "${name}"`)
-      return { kind, name, ref: `metric ${name}`, guid: metric.guid, title: metric.instruction }
+    case 'input': {
+      const input = workflow.inputs.find((candidate) => candidate.name === name)
+      if (!input) throw missing(`input "${name}"`)
+      return { kind, name, ref: `input ${name}`, guid: input.guid, title: input.instruction }
     }
     case 'tool': {
       if (!options.toolNames?.includes(name)) throw new InvalidReference(`There is no Drillmaster tool "${name}"${options.toolNames ? `; the tools are ${options.toolNames.join(', ')}` : ''}.`)
@@ -108,8 +112,8 @@ export function refOfGuid(workflow: WorkflowDocument, guid: string): ResolvedRef
       if (rule.guid === guid) return { kind: 'rule', name: `${policy.name} ${rule.id}`, ref: `rule ${policy.name} ${rule.id}`, guid, title: rule.rule }
     }
   }
-  const metric = workflow.metrics.find((candidate) => candidate.guid === guid)
-  return metric ? { kind: 'metric', name: metric.name, ref: `metric ${metric.name}`, guid, title: metric.instruction } : undefined
+  const input = workflow.inputs.find((candidate) => candidate.guid === guid)
+  return input ? { kind: 'input', name: input.name, ref: `input ${input.name}`, guid, title: input.instruction } : undefined
 }
 
 export const stepGuidAt = (workflow: WorkflowDocument, stage: number, step: number) =>

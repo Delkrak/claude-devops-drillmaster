@@ -1,8 +1,8 @@
-import type { DrillmasterEvent, GateSubmitted, MetricAnswer, Position, StepSkipRequested, WorkTrace } from './events.js'
+import type { DrillmasterEvent, GateSubmitted, InputAnswer, Position, StepSkipRequested, WorkTrace } from './events.js'
 import { parseRef, stepName, stepPosition } from './refs.js'
 import type { WorkItemState } from './state.js'
-import { nextPosition, stepAt } from './work.js'
-import { findRule, type WorkflowDocument, type WorkflowMetric } from './workflow.js'
+import { inputsSetAt, nextPosition, stepAt } from './work.js'
+import { AT_START, findRule, type WorkflowDocument, type WorkItemInput } from './workflow.js'
 
 export const GATE_REVIEW_KIND = 'gate'
 const MAX_TRACES_IN_PROMPT = 120
@@ -54,37 +54,35 @@ export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState,
     `Work traces (${shownTraces.length} of ${traces.length}, most recent last):`,
     ...(shownTraces.length ? shownTraces.map(formatTraceLine) : ['- none']),
     '',
-    ...metricQuestionLines(dueDrillmasterMetrics(workflow, submission.stage, submission.step)),
+    ...inputQuestionLines(inputsSetAt(workflow, stepName(submission.stage, submission.step), 'drillmaster')),
     'Answer with JSON only, no prose around it:',
-    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": "<stage>.<step>", "metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
+    '{"accepted": true|false, "rule": "<the rule your verdict cites, e.g. pr 1.1, or null>", "why": "<one or two sentences>", "back_to": "<stage>.<step>", "inputs": [{"name": "<input>", "value": "<option>", "explanation": "<why>"}]}',
     'Reject when any referenced rule is not met or the evidence is not backed by the work traces, and cite that rule.',
     'back_to is only for a rejection: the work step the work goes back to (this one or an earlier one).',
   ].join('\n')
 }
 
-export const dueDrillmasterMetrics = (workflow: WorkflowDocument, stage: number, step: number) =>
-  workflow.metrics.filter((metric) => metric.by === 'drillmaster' && metric.at_step === stepName(stage, step))
-
-function metricQuestionLines(metrics: readonly WorkflowMetric[]) {
-  if (metrics.length === 0) return []
+function inputQuestionLines(inputs: readonly WorkItemInput[]) {
+  if (inputs.length === 0) return []
   return [
-    'Also take these metrics: pick one category for each, following its instruction.',
-    ...metrics.map((metric) => `- ${metric.name}: ${metric.instruction} Categories: ${metric.categories.map((category) => `${category.value} (${category.description})`).join('; ')}`),
+    'Also set these work item inputs: pick one option for each, following its instruction.',
+    ...inputs.map((input) => `- ${input.name}: ${input.instruction} Options: ${input.options.map((option) => `${option.value} (${option.description})`).join('; ')}`),
     '',
   ]
 }
 
-export const METRIC_REVIEW_KIND = 'metrics'
+export const INPUT_REVIEW_KIND = 'inputs'
 
-export function buildMetricPrompt(workflow: WorkflowDocument, item: WorkItemState, stage: number, step: number, events: readonly DrillmasterEvent[]) {
+/** Drillmaster sets its inputs of a work item that started (`at` null) or passed the step `at`. */
+export function buildInputPrompt(workflow: WorkflowDocument, item: WorkItemState, at: { stage: number; step: number } | null, events: readonly DrillmasterEvent[]) {
   const itemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)
   const traces = itemEvents.filter((event): event is WorkTrace => event.type === 'work_trace').slice(-MAX_TRACES_IN_PROMPT)
   const reports = itemEvents.filter((event) => event.type === 'work_reported' || event.type === 'gate_submitted').map((event) => `- ${JSON.stringify(event)}`)
   return [
-    `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) passed work step ${stage}.${step}.`,
+    `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) ${at ? `passed work step ${at.stage}.${at.step}` : 'has just started'}.`,
     ...(item.description ? [`What the work item is about: ${item.description}`] : []),
     '',
-    ...metricQuestionLines(dueDrillmasterMetrics(workflow, stage, step)),
+    ...inputQuestionLines(inputsSetAt(workflow, at ? stepName(at.stage, at.step) : AT_START, 'drillmaster')),
     "Agent's work reports:",
     ...(reports.length ? reports : ['- none']),
     '',
@@ -92,18 +90,18 @@ export function buildMetricPrompt(workflow: WorkflowDocument, item: WorkItemStat
     ...(traces.length ? traces.map(formatTraceLine) : ['- none']),
     '',
     'Answer with JSON only:',
-    '{"metrics": [{"name": "<metric>", "value": "<category>", "explanation": "<why>"}]}',
+    '{"inputs": [{"name": "<input>", "value": "<option>", "explanation": "<why>"}]}',
   ].join('\n')
 }
 
-/** Keeps the answers that name a due metric and one of its categories. */
-export function readMetricAnswers(metrics: readonly WorkflowMetric[], answer: unknown): MetricAnswer[] {
-  const parsed = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { metrics?: unknown } | undefined
-  if (!parsed || !Array.isArray(parsed.metrics)) return []
-  return parsed.metrics.flatMap((candidate: Partial<MetricAnswer>) => {
-    const metric = metrics.find((due) => due.name === candidate.name)
-    if (!metric || !metric.categories.some((category) => category.value === candidate.value)) return []
-    return [{ name: metric.name, value: candidate.value!, ...(typeof candidate.explanation === 'string' ? { explanation: candidate.explanation } : {}) }]
+/** Keeps the answers that name a due input and one of its options. */
+export function readInputAnswers(inputs: readonly WorkItemInput[], answer: unknown): InputAnswer[] {
+  const parsed = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { inputs?: unknown } | undefined
+  if (!parsed || !Array.isArray(parsed.inputs)) return []
+  return parsed.inputs.flatMap((candidate: Partial<InputAnswer>) => {
+    const input = inputs.find((due) => due.name === candidate.name)
+    if (!input || !input.options.some((option) => option.value === candidate.value)) return []
+    return [{ name: input.name, value: candidate.value!, ...(typeof candidate.explanation === 'string' ? { explanation: candidate.explanation } : {}) }]
   })
 }
 
@@ -153,11 +151,11 @@ export function readGateAnswer(workflow: WorkflowDocument, submission: GateSubmi
   if (!gateAnswer.accepted && step.rules.length > 0 && !citedRule) {
     throw new InvalidAnswer(`A rejection must cite one of the referenced rules (${step.rules.join(', ')}).`)
   }
-  const metrics = readMetricAnswers(dueDrillmasterMetrics(workflow, submission.stage, submission.step), gateAnswer)
+  const inputs = readInputAnswers(inputsSetAt(workflow, stepName(submission.stage, submission.step), 'drillmaster'), gateAnswer)
   if (gateAnswer.accepted) {
-    return { verdict: { accepted: true, why: gateAnswer.why, rule: citedRule, ...nextPosition(workflow, submission.stage, submission.step) }, metrics }
+    return { verdict: { accepted: true, why: gateAnswer.why, rule: citedRule, ...nextPosition(workflow, submission.stage, submission.step) }, inputs }
   }
-  return { verdict: { accepted: false, why: gateAnswer.why, rule: citedRule, next: backToThisOrEarlierStep(workflow, submission, gateAnswer.back_to), done: false }, metrics }
+  return { verdict: { accepted: false, why: gateAnswer.why, rule: citedRule, next: backToThisOrEarlierStep(workflow, submission, gateAnswer.back_to), done: false }, inputs }
 }
 
 function backToThisOrEarlierStep(workflow: WorkflowDocument, submission: GateSubmitted, backTo: Position | string | undefined): Position {

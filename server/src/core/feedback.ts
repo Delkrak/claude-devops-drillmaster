@@ -25,7 +25,7 @@ export const ReflectionInput = z.object({ experiment: z.number().int().positive(
 export type FeedbackInput = z.infer<typeof FeedbackInput>
 
 export const FEEDBACK_REFS_HELP =
-  'refs name what it is about: "step 1.2", "stage 1", "rule pr 1.1", "policy pr", "metric size", or "tool work_deliver" for Drillmaster itself. Leave refs empty for the workflow as a whole.'
+  'refs name what it is about: "step 1.2", "stage 1", "rule pr 1.1", "policy pr", "input kind", or "tool work_deliver" for Drillmaster itself. Leave refs empty for the workflow as a whole.'
 
 /**
  * Resolves each entry's references in `workflow`. With `unknownRefs: 'refuse'` a reference to
@@ -51,9 +51,20 @@ const asFeedbackList = (value: unknown): Feedback[] => {
   return typeof value === 'string' && value.trim() ? [{ refs: [], text: value }] : []
 }
 
-/** Reads events written before feedback had references: text fields become lists without refs. */
-export function migrateEvent(event: DrillmasterEvent): DrillmasterEvent {
-  if (event.type === 'post_mortem_written' && !Array.isArray(event.keep)) {
+const inputRefs = (entries: readonly Feedback[]) =>
+  entries.map((entry) => ({ ...entry, refs: entry.refs.map((mention) => (mention.ref.startsWith('metric ') ? { ...mention, ref: `input ${mention.ref.slice('metric '.length)}` } : mention)) }))
+
+/**
+ * Reads events written by earlier Drillmasters: feedback written as text becomes lists without refs,
+ * and metrics become work item inputs.
+ */
+export function migrateEvent(raw: DrillmasterEvent): DrillmasterEvent {
+  const event = (raw as { type: string }).type === 'metric_recorded' ? ({ ...raw, type: 'input_set' } as DrillmasterEvent) : raw
+  if (event.type === 'post_mortem_written' && Array.isArray(event.keep)) return { ...event, keep: inputRefs(event.keep), change: inputRefs(event.change) }
+  if (event.type === 'retrospective_ran' && Array.isArray(event.findings.keep)) {
+    return { ...event, findings: { ...event.findings, keep: inputRefs(event.findings.keep), improve: inputRefs(event.findings.improve) } }
+  }
+  if (event.type === 'post_mortem_written') {
     const legacy = event as unknown as { keep: unknown; change: unknown; experiment_reflections: unknown; free_text?: unknown }
     const { free_text: freeText, ...rest } = legacy
     return {
@@ -63,7 +74,7 @@ export function migrateEvent(event: DrillmasterEvent): DrillmasterEvent {
       experiment_reflections: asFeedbackList(legacy.experiment_reflections).map((entry) => ({ experiment: null, text: entry.text })),
     }
   }
-  if (event.type === 'retrospective_ran' && !Array.isArray(event.findings.keep)) {
+  if (event.type === 'retrospective_ran') {
     const findings = event.findings as unknown as { keep: unknown; improve: unknown }
     return { ...event, findings: { ...event.findings, keep: asFeedbackList(findings.keep), improve: asFeedbackList(findings.improve) } }
   }

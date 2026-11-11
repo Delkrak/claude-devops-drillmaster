@@ -49,7 +49,7 @@ afterAll(async () => {
 describe('stdio MCP shim', () => {
   it('lists the tools in a folder that is no project yet, where only setup works', async () => {
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_start', 'work_resume', 'work_skip', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
+    expect(tools.map((t) => t.name)).toEqual(['workflow_get', 'work_start', 'work_resume', 'work_skip', 'work_input', 'work_report', 'work_gate', 'work_deliver', 'work_post_mortem', 'workflow_retrospective', 'work_status'])
     const before = await client.callTool({ name: 'workflow_get', arguments: {} })
     expect(before.isError).toBe(true)
     expect(text(before)).toMatch(/not a Drillmaster project/)

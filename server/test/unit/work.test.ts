@@ -24,12 +24,12 @@ const started = (version: string, stage: number | null, step: number | null): Dr
 })
 const SIZE = {
   name: 'size',
-  categories: [
+  options: [
     { value: 'small', description: 'one file' },
     { value: 'large', description: 'several files' },
   ],
-  guid: 'guid-metric',
-  at_step: '1.1',
+  guid: 'guid-input',
+  set_at: '1.1',
   by: 'agent' as const,
   instruction: 'How big is the change?',
 }
@@ -86,18 +86,18 @@ describe('work gates', () => {
     expect(() => deliverWorkItem(pending.workItems.wi_1!, DELIVERY)).toThrow(/pending/)
   })
 
-  it("refuses the gate without Agent's metrics, and records them with it", () => {
-    const withSize = { ...W, metrics: [SIZE] }
+  it("refuses the gate without Agent's inputs, and records them with it", () => {
+    const withSize = { ...W, inputs: [SIZE] }
     const state = run([], withSize)
     const item = state.workItems.wi_1!
     const gate = { stage: 1, step: 1, self_check: [check('test 1.1')], text: 'green' }
-    expect(() => handInGate(state, item, gate)).toThrow(/Take metric "size"/)
-    expect(() => handInGate(state, item, { ...gate, metrics: [{ name: 'size', value: 'huge' }] })).toThrow(/small, large/)
-    expect(() => handInGate(state, item, { ...gate, metrics: [{ name: 'mood', value: 'x' }] })).toThrow(/No metric mood/)
-    const decision = handInGate(state, item, { ...gate, metrics: [{ name: 'size', value: 'small', explanation: 'one file' }] })
-    expect(decision.events.map((e) => e.type)).toEqual(['gate_submitted', 'metric_recorded', 'gate_verdict'])
+    expect(() => handInGate(state, item, gate)).toThrow(/Work can't go on without input "size"/)
+    expect(() => handInGate(state, item, { ...gate, inputs: [{ name: 'size', value: 'huge' }] })).toThrow(/small, large/)
+    expect(() => handInGate(state, item, { ...gate, inputs: [{ name: 'mood', value: 'x' }] })).toThrow(/No input mood/)
+    const decision = handInGate(state, item, { ...gate, inputs: [{ name: 'size', value: 'small', explanation: 'one file' }] })
+    expect(decision.events.map((e) => e.type)).toEqual(['gate_submitted', 'input_set', 'gate_verdict'])
     const after = run(asEvents(decision.events), withSize)
-    expect(after.workItems.wi_1!.metrics).toEqual({ size: { value: 'small', by: 'agent', explanation: 'one file' } })
+    expect(after.workItems.wi_1!.inputs).toEqual({ size: { value: 'small', by: 'agent', explanation: 'one file' } })
   })
 })
 

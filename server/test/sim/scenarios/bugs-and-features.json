@@ -3,7 +3,7 @@
   "project": "node-report",
   "objective": "fix bugs and ship features without Owner stepping in",
   "measures": ["owner_corrections_per_item", "gate_rejections_per_item"],
-  "expects": { "skip": true, "metric": "kind" },
+  "expects": { "skip": true, "input": "kind" },
   "files": {
     "src/summary.js": "import { revenue } from './report.js'\n\n// Summaries of the report rows.\n\nexport const totalUnits = (rows) => rows.reduce((sum, row) => sum + row.price, 0)\n\nexport const topProduct = (rows) => [...rows].sort((a, b) => revenue(a) - revenue(b))[0].product\n\nexport const averagePrice = (rows) => rows.reduce((sum, row) => sum + row.price, 0) / (rows.length + 1)\n\nexport const formatMoney = (amount) => `$${amount}`\n"
   },

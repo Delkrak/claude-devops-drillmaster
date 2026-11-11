@@ -16,7 +16,7 @@ export interface WorkItemState {
   pr: string | null
   summary: string | null
   artifacts: Artifact[]
-  metrics: Record<string, { value: string; by: string; explanation?: string }>
+  inputs: Record<string, { value: string; by: string; explanation?: string }>
   sessions: string[]
   started_at: string
   traces: number
@@ -25,6 +25,8 @@ export interface WorkItemState {
   /** GUIDs of the steps whose gate passed, and of the steps skipped. */
   passed_step_guids: string[]
   skipped_step_guids: string[]
+  /** Of the skipped steps, those skipped because their `if` wasn't met. */
+  condition_skipped_step_guids: string[]
   pending_skip: { stage: number; step: number; decided_by: 'drillmaster' | 'owner'; why: string } | null
   /** The stages the current session works on, by GUID; null for every stage. */
   stage_guids: string[] | null
@@ -122,7 +124,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           pr: null,
           summary: null,
           artifacts: [],
-          metrics: {},
+          inputs: {},
           sessions: [],
           started_at: event.at,
           traces: 0,
@@ -130,6 +132,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           rejections: 0,
           passed_step_guids: [],
           skipped_step_guids: [],
+          condition_skipped_step_guids: [],
           pending_skip: null,
           stage_guids: event.stage_guids ?? null,
           resumed: 0,
@@ -195,6 +198,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
             gates_done: event.done,
             passed_step_guids: item.passed_step_guids.filter((guid) => kept.has(guid)),
             skipped_step_guids: item.skipped_step_guids.filter((guid) => kept.has(guid)),
+            condition_skipped_step_guids: item.condition_skipped_step_guids.filter((guid) => kept.has(guid)),
             last_update: { from_version: event.from_version, to_version: event.to_version },
           })
         }
@@ -212,6 +216,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           const guid = event.step_guid ?? stepGuidOfItem(state, item, event.stage, event.step)
           if (event.accepted) {
             if (guid) item.skipped_step_guids.push(guid)
+            if (guid && event.by === 'condition') item.condition_skipped_step_guids.push(guid)
             item.stage = event.next.stage
             item.step = event.next.step
             item.gates_done = event.done
@@ -219,9 +224,21 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         }
         break
       }
-      case 'metric_recorded': {
+      case 'input_set': {
         const item = state.workItems[event.work_item_id]
-        if (item) item.metrics[event.name] = { value: event.value, by: event.by, ...(event.explanation ? { explanation: event.explanation } : {}) }
+        if (!item) break
+        item.inputs[event.name] = { value: event.value, by: event.by, ...(event.explanation ? { explanation: event.explanation } : {}) }
+        if (event.goes_back) {
+          const kept = new Set(event.goes_back.kept)
+          Object.assign(item, {
+            stage: event.goes_back.to.stage,
+            step: event.goes_back.to.step,
+            gates_done: false,
+            passed_step_guids: item.passed_step_guids.filter((guid) => kept.has(guid)),
+            skipped_step_guids: item.skipped_step_guids.filter((guid) => kept.has(guid)),
+            condition_skipped_step_guids: item.condition_skipped_step_guids.filter((guid) => kept.has(guid)),
+          })
+        }
         break
       }
       case 'post_mortem_written': {
@@ -282,17 +299,18 @@ export type WorkflowView =
       kind: 'overview'
       version: string
       objective: WorkflowDocument['objective']
-      stages: { n: number; name: string; purpose: string; steps: number }[]
-      metrics: WorkflowDocument['metrics']
+      stages: { n: number; name: string; purpose: string; if?: string; steps: number }[]
+      inputs: WorkflowDocument['inputs']
       experiments: WorkflowDocument['experiments']
     }
-  | { kind: 'stage'; version: string; stage: { n: number; name: string; purpose: string }; steps: StepView[] }
+  | { kind: 'stage'; version: string; stage: { n: number; name: string; purpose: string; if?: string }; steps: StepView[] }
   | { kind: 'full'; workflow: WorkflowDocument }
 
 export interface StepView {
   n: string
   name: string
   instruction: string
+  if?: string
   gate: string
   rules: { ref: string; rule: string; verified_by: string }[]
   report: string[]
@@ -329,11 +347,12 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
     return {
       kind: 'stage',
       version: workflow.version,
-      stage: { n: stage.n, name: stage.name, purpose: stage.purpose },
+      stage: { n: stage.n, name: stage.name, purpose: stage.purpose, ...(stage.if ? { if: stage.if } : {}) },
       steps: stage.steps.map((step) => ({
         n: `${stage.n}.${step.n}`,
         name: step.name,
         instruction: step.instruction,
+        ...(step.if ? { if: step.if } : {}),
         gate: step.gate,
         rules: step.rules.map((ruleRef) => {
           const rule = findRule(workflow, ruleRef)!
@@ -347,8 +366,8 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
     kind: 'overview',
     version: workflow.version,
     objective: workflow.objective,
-    stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, purpose: stage.purpose, steps: stage.steps.length })),
-    metrics: workflow.metrics,
+    stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, purpose: stage.purpose, ...(stage.if ? { if: stage.if } : {}), steps: stage.steps.length })),
+    inputs: workflow.inputs,
     experiments: workflow.experiments,
   }
 }

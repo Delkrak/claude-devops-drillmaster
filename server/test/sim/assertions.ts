@@ -3,6 +3,7 @@ import { averageMeasure, measureDeliveredItems } from '../../src/core/measures.j
 import { foldState } from '../../src/core/state.js'
 import { resolveRef } from '../../src/core/refs.js'
 import { workflowOfWorkItem } from '../../src/core/work.js'
+import { AT_START } from '../../src/core/workflow.js'
 
 export interface Check {
   name: string
@@ -20,7 +21,7 @@ export interface RunFacts {
   retros: number
   /** Issues done over several sittings, each a fresh session. */
   phasedIssues?: { issue: string; phases: number }[]
-  expects?: { update?: boolean; skip?: boolean; metric?: string }
+  expects?: { update?: boolean; skip?: boolean; input?: string }
 }
 
 export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): { checks: Check[]; metrics: Record<string, unknown> } {
@@ -78,14 +79,16 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     detail: missingWorkReports.map((event) => (event.type === 'work_reported' ? event.text.slice(0, 120) : '')).join(' | ') || 'none',
     doesNotFailRun: true,
   })
-  // A metric added by the last retrospective has had no work item to be taken on.
-  const takeableMetrics = items.flatMap((workItem) => {
+  // An input added by the last retrospective has had no work item to be set on.
+  const dueInputs = items.flatMap((workItem) => {
     const workflow = workflowOfWorkItem(state, workItem)
-    return workflow.metrics.filter((metric) => workItem.passed_step_guids.includes(resolveRef(workflow, metric.at_step, { impliedKind: 'step' }).guid!)).map((metric) => metric.name)
+    return workflow.inputs
+      .filter((input) => input.set_at === AT_START || workItem.passed_step_guids.includes(resolveRef(workflow, input.set_at, { impliedKind: 'step' }).guid!))
+      .map((input) => input.name)
   })
-  if (takeableMetrics.length > 0) {
-    const recorded = events.filter((event) => event.type === 'metric_recorded')
-    checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded; ${new Set(takeableMetrics).size} metrics were due at steps work items passed` })
+  if (dueInputs.length > 0) {
+    const set = events.filter((event) => event.type === 'input_set')
+    checks.push({ name: 'work item inputs set', ok: set.length > 0, detail: `${set.length} set; ${new Set(dueInputs).size} inputs were due at start or at steps work items passed` })
   }
   for (const phased of facts.phasedIssues ?? []) {
     const item = items.find((workItem) => workItem.issue.includes(phased.issue))
@@ -109,10 +112,10 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     const skips = events.filter((event): event is Extract<DrillmasterEvent, { type: 'step_skip_decided' }> => event.type === 'step_skip_decided')
     checks.push({ name: 'a skippable step was skipped', ok: skips.some((skip) => skip.accepted), detail: skips.map((skip) => `${skip.work_item_id} ${skip.stage}.${skip.step} ${skip.accepted ? 'skipped' : 'rejected'} by ${skip.by}`).join('; ') || 'none' })
   }
-  if (facts.expects?.metric) {
-    const metric = facts.expects.metric
-    const without = delivered.filter((workItem) => !workItem.metrics[metric])
-    checks.push({ name: `every delivered work item has its ${metric}`, ok: without.length === 0, detail: delivered.map((workItem) => `${workItem.issue}: ${workItem.metrics[metric]?.value ?? 'none'}`).join(', ') })
+  if (facts.expects?.input) {
+    const input = facts.expects.input
+    const without = delivered.filter((workItem) => !workItem.inputs[input])
+    checks.push({ name: `every delivered work item has its ${input}`, ok: without.length === 0, detail: delivered.map((workItem) => `${workItem.issue}: ${workItem.inputs[input]?.value ?? 'none'}`).join(', ') })
   }
   if (facts.repositoryCommits) {
     const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)

@@ -136,7 +136,8 @@ export interface StepSkipDecided extends EventEnvelope {
   step: number
   step_guid?: string
   accepted: boolean
-  by: 'agent' | 'drillmaster' | 'owner'
+  /** 'condition' when the step's or its stage's `if` isn't met, with no request. */
+  by: 'agent' | 'drillmaster' | 'owner' | 'condition'
   via?: DecidedVia
   why: string
   next: Position
@@ -202,22 +203,28 @@ export interface GateSubmitted extends EventEnvelope {
   text: string
 }
 
-export interface MetricAnswer {
+export interface InputAnswer {
   name: string
   value: string
   explanation?: string
 }
 
-export interface MetricRecorded extends EventEnvelope {
-  type: 'metric_recorded'
+/** A work item input set, at work_start (no step) or at a step; a later one changes it. */
+export interface InputSet extends EventEnvelope {
+  type: 'input_set'
   work_item_id: string
-  stage: number
-  step: number
+  stage: number | null
+  step: number | null
   step_guid?: string
   name: string
   value: string
   explanation?: string
   by: 'agent' | 'drillmaster' | 'owner'
+  /**
+   * When the change makes a step that was skipped by its condition apply: the step the work item
+   * goes back to, and the GUIDs of the done steps before it, which it keeps.
+   */
+  goes_back?: { to: Position & { step_guid?: string }; kept: string[] }
 }
 
 export interface Position {
@@ -288,7 +295,7 @@ export type DrillmasterEvent =
   | GateSubmitted
   | GateVerdict
   | ReviewFailed
-  | MetricRecorded
+  | InputSet
   | WorkItemDelivered
   | PostMortemWritten
   | RetrospectiveRan
