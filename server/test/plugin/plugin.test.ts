@@ -116,4 +116,13 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     expect(verdicts).toContainEqual(expect.objectContaining({ by: 'owner', via: 'question', accepted: true }))
     expect(item).toMatchObject({ status: 'delivered', artifacts: [expect.objectContaining({ name: 'shot.png', media_type: 'image/png' })] })
   }, 600_000)
+
+  it('takes a work item up again in a fresh session, with work_resume', async () => {
+    await turn('Start issue #3 "add a LICENSE file" with the drillmaster work skill, and stop right after work_start: do no work on it today.')
+    session = undefined
+    await turn('Take up issue #3 again with work_resume (the issue as it was started), check work_status, and stop there.')
+    const item = Object.values(foldState(await events()).workItems).find((candidate) => candidate.issue.includes('3'))!
+    expect(item).toMatchObject({ resumed: 1, status: 'active' })
+    expect(item.sessions).toHaveLength(2)
+  }, 600_000)
 })
