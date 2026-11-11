@@ -1,15 +1,19 @@
 # Recording real hook payloads
 
-Run a short headless session with the plugin, in an isolated home with recording on. Then turn its
-work traces into fixtures.
+Run two short headless sessions with the plugin, in an isolated home with recording on: one sets
+the project up and starts a work item, the next takes it up again. Then turn their work traces into
+fixtures.
 
 ```sh
 cd server && npm run build
-export DRILLMASTER_HOME=/tmp/rec-home DRILLMASTER_RECORD=1
+export DRILLMASTER_HOME=/tmp/rec-home DRILLMASTER_RECORD=1 DRILLMASTER_REVIEWER=none
+git init --bare -q --initial-branch=main /tmp/rec-drillmaster.git
 mkdir -p /tmp/rec-project && cd /tmp/rec-project && git init -q
-node <repo>/server/dist/cli.js init --objective "ship features without Owner stepping in" --measure owner_corrections_per_item
-claude -p "Use the drillmaster work_report tool to start a work item for issue #1. Then run the bash command: echo hello. Then call the drillmaster work_status tool with your token." \
-  --plugin-dir <repo> --allowedTools "mcp__plugin_devops-drillmaster_drillmaster" "Bash(echo:*)"
+TOOLS="mcp__plugin_devops-drillmaster_drillmaster Bash(git:*) Bash(ls:*) Read"
+claude -p --plugin-dir <repo> --allowedTools $TOOLS \
+  "Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. The Drillmaster repository: /tmp/rec-drillmaster.git. Then start issue #1 'add a CONTRIBUTING.md' with work_start, check work_status, and stop there."
+claude -p --plugin-dir <repo> --allowedTools $TOOLS \
+  "Take up issue #1 'add a CONTRIBUTING.md' again with work_resume, run ls, check work_status, and stop there."
 node <repo>/server/dist/cli.js inspect --json > /tmp/rec.json
 ```
 

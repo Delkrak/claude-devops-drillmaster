@@ -1,0 +1,27 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "1ff1342b-f780-45cd-b7e9-cc32f64ab21f",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec3-project\\1ff1342b-f780-45cd-b7e9-cc32f64ab21f.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project",
+    "prompt_id": "c65d2647-77f4-428a-8d30-f28e274752ea",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "PowerShell",
+    "tool_input": {
+      "command": "ls",
+      "description": "List project directory contents"
+    },
+    "tool_response": {
+      "stdout": "    Directory: /home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\n-a----        11/11/2026   7:37 PM            119 .drillmaster                                                         \r\n-a----        11/11/2026   7:36 PM              6 README.md",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false
+    },
+    "tool_use_id": "toolu_01Qp1dB5HRroVxBaihZXUDF7",
+    "duration_ms": 972
+  }
+}

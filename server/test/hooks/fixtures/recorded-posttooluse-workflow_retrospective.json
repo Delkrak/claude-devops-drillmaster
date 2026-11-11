@@ -1,0 +1,35 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "0a6cdcd4-a38f-4ae2-abe2-7ccb369609cb",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec3-project\\0a6cdcd4-a38f-4ae2-abe2-7ccb369609cb.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project",
+    "prompt_id": "d4e1bc18-0b44-4ce8-970c-4b7404f4b262",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__workflow_retrospective",
+    "tool_input": {
+      "action": "setup",
+      "objective": "ship features without Owner stepping in",
+      "measures": [
+        "owner_corrections_per_item"
+      ],
+      "drillmaster_repository": "/home/user/.claude/jobs/7f73c306/tmp/rec3/drillmaster.git"
+    },
+    "tool_response": [
+      {
+        "type": "text",
+        "text": "{\n  \"workflow\": {\n    \"version\": \"0.0.0\",\n    \"objective\": {\n      \"text\": \"ship features without Owner stepping in\",\n      \"measures\": [\n        \"owner_corrections_per_item\"\n      ]\n    },\n    \"stages\": [],\n    \"policies\": [],\n    \"metrics\": [],\n    \"experiments\": []\n  },\n  \"note\": \"Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections. Commit .drillmaster with the code: it is how Drillmaster knows this folder.\"\n}"
+      }
+    ],
+    "tool_use_id": "toolu_017aPafEuCs2cMCPtBwsnLWx",
+    "duration_ms": 946,
+    "mcp_server": {
+      "name": "plugin:devops-drillmaster:drillmaster",
+      "source": "plugin"
+    }
+  }
+}

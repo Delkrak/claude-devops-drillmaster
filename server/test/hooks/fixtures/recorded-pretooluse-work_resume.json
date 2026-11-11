@@ -1,0 +1,23 @@
+{
+  "event": "PreToolUse",
+  "payload": {
+    "session_id": "1ff1342b-f780-45cd-b7e9-cc32f64ab21f",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec3-project\\1ff1342b-f780-45cd-b7e9-cc32f64ab21f.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project",
+    "prompt_id": "c65d2647-77f4-428a-8d30-f28e274752ea",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_resume",
+    "tool_input": {
+      "issue": "#1"
+    },
+    "tool_use_id": "toolu_01T8TLSkr1vf1CVyfxdgVUV8",
+    "mcp_server": {
+      "name": "plugin:devops-drillmaster:drillmaster",
+      "source": "plugin"
+    }
+  }
+}
