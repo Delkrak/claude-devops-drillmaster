@@ -60,7 +60,7 @@
       { "name": "test", "rules": [{ "id": "1.1", "rule": "every new function has a test, and npm test is green", "verified_by": "the npm test output" }] },
       { "name": "changes", "rules": [{ "id": "1.1", "rule": "CHANGES.md has a line for the change", "verified_by": "reading CHANGES.md" }] }
     ],
-    "metrics": [],
+    "inputs": [],
     "experiments": []
   },
   "issues": [

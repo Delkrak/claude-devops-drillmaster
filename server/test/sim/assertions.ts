@@ -2,7 +2,8 @@ import type { DrillmasterEvent } from '../../src/core/events.js'
 import { averageMeasure, measureDeliveredItems } from '../../src/core/measures.js'
 import { foldState } from '../../src/core/state.js'
 import { resolveRef } from '../../src/core/refs.js'
-import { workflowOfWorkItem } from '../../src/core/work.js'
+import { applicabilityOf, workflowOfWorkItem } from '../../src/core/work.js'
+import { refOfGuid } from '../../src/core/refs.js'
 import { AT_START } from '../../src/core/workflow.js'
 
 export interface Check {
@@ -21,7 +22,19 @@ export interface RunFacts {
   retros: number
   /** Issues done over several sittings, each a fresh session. */
   phasedIssues?: { issue: string; phases: number }[]
-  expects?: { update?: boolean; skip?: boolean; input?: string }
+  /** Drillmaster's Owner gate questions Owner was asked, and how many showed what Owner approves beside them. */
+  ownerGates?: { asked: number; withPreview: number }
+  expects?: {
+    update?: boolean
+    skip?: boolean
+    input?: string
+    /** Steps skipped because their if wasn't met, and no work item through a step it doesn't meet. */
+    condition_skip?: boolean
+    /** A tool capture of this name kept output that a gate links. */
+    capture?: string
+    /** The friction judge judged Owner's inputs on delivered work items. */
+    friction?: boolean
+  }
 }
 
 export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): { checks: Check[]; metrics: Record<string, unknown> } {
@@ -111,6 +124,35 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   if (facts.expects?.skip) {
     const skips = events.filter((event): event is Extract<DrillmasterEvent, { type: 'step_skip_decided' }> => event.type === 'step_skip_decided')
     checks.push({ name: 'a skippable step was skipped', ok: skips.some((skip) => skip.accepted), detail: skips.map((skip) => `${skip.work_item_id} ${skip.stage}.${skip.step} ${skip.accepted ? 'skipped' : 'rejected'} by ${skip.by}`).join('; ') || 'none' })
+  }
+  if (facts.expects?.condition_skip) {
+    const conditionSkips = events.filter((event) => event.type === 'step_skip_decided' && event.by === 'condition')
+    const wrongPaths = delivered.flatMap((workItem) => {
+      const workflow = workflowOfWorkItem(state, workItem)
+      const inputs = Object.fromEntries(Object.entries(workItem.inputs).map(([name, input]) => [name, input.value]))
+      return workItem.passed_step_guids.flatMap((guid) => {
+        const step = refOfGuid(workflow, guid)
+        const [stage, stepNumber] = (step?.name ?? '').split('.').map(Number)
+        return step && applicabilityOf(workflow, stage!, stepNumber!, inputs).applies === false ? [`${workItem.issue} passed step ${step.name}`] : []
+      })
+    })
+    checks.push({ name: 'steps were skipped by their if', ok: conditionSkips.length > 0, detail: `${conditionSkips.length} skipped by condition` })
+    checks.push({ name: 'no work item went through a step whose if it does not meet', ok: wrongPaths.length === 0, detail: wrongPaths.join('; ') || 'none' })
+  }
+  if (facts.expects?.capture) {
+    const name = facts.expects.capture
+    const captured = events.filter((event) => event.type === 'work_trace' && event.captures?.some((capture) => capture.name === name))
+    const linked = events.filter((event) => event.type === 'gate_submitted' && event.capture_traces?.length)
+    checks.push({ name: `the tool capture "${name}" kept output`, ok: captured.length > 0, detail: `${captured.length} traces` })
+    checks.push({ name: 'gates link the captures at their step', ok: linked.length > 0, detail: `${linked.length} gates` })
+  }
+  if (facts.expects?.friction) {
+    const judged = events.filter((event) => event.type === 'owner_inputs_judged')
+    const friction = judged.flatMap((event) => (event.type === 'owner_inputs_judged' ? event.inputs.filter((input) => input.friction) : []))
+    checks.push({ name: "the friction judge judged Owner's inputs", ok: judged.length > 0, detail: `${judged.length} work items judged, ${friction.length} inputs called friction` })
+  }
+  if (facts.ownerGates?.asked) {
+    checks.push({ name: 'Owner gates showed what Owner approves beside the question', ok: facts.ownerGates.withPreview === facts.ownerGates.asked, detail: `${facts.ownerGates.withPreview} of ${facts.ownerGates.asked}` })
   }
   if (facts.expects?.input) {
     const input = facts.expects.input

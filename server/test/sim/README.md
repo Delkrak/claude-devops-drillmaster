@@ -44,11 +44,14 @@ Each run takes 15 to 40 minutes and costs a few dollars of Claude usage. It need
    - the retrospective ran, and the workflow grew with experiments and baselines;
    - Owner decided through AskUserQuestion;
    - every work stage has a work step with an instruction;
-   - metrics were recorded (when the workflow has any), and a late start was judged (when the
-     scenario expects one);
-   - the git store holds one squash commit per complete work item (when the scenario uses one).
+   - work item inputs were set (when the workflow has any);
+   - Owner gates showed what Owner approves beside the question;
+   - the Drillmaster repository holds one squash commit per complete work item;
+   - what the scenario's `expects` names: an update, a skip, an input on every delivered work
+     item, steps skipped by their `if` with no work item through a step it doesn't meet, a tool
+     capture that kept output and gates that link it, and the friction judge's verdicts.
 
-   Two checks are soft, because LLM runs vary: whether Owner corrections per work item fell after
+   Two checks are soft, because LLM runs vary: whether Owner's friction per work item fell after
    the retrospective, and whether Agent reported the workflow missing its work.
 
 ## Output
@@ -73,11 +76,13 @@ A scenario is one JSON file holding:
 
 Optional fields:
 - `seed_workflow`: start from this workflow instead of setup, for example one with an Owner gate.
-  It gets the run's git store.
+  The project's `.drillmaster` names the run's Drillmaster repository.
+- `files`: files added to the project before its first commit, such as code with bugs to fix.
+- `phases` on an issue: sittings, each a fresh session that works only some stages.
+- `expects`: what the run must show (see the checks above).
 - `origin`: give the project a local bare `origin`, so Agent can push a branch and merge it.
 - `prepared_branch`: work done "in an earlier session", committed on a branch and pushed before the
-  run, for a late start.
-- `expects_late_start`: check that a late start was judged.
+  run.
 - `extra_tools`: more tools Agent may use, such as `Bash(git:*)`.
 
 | Scenario | What it exercises |
@@ -85,4 +90,7 @@ Optional fields:
 | `export-features` | Three issues, one retrospective: the workflow grows from Owner's corrections. |
 | `docs-and-gates` | Three issues with documentation rules, one retrospective. |
 | `export-features-long` | Four issues, two retrospectives, and the git store from setup. |
-| `gated-delivery` | Starts from a workflow with an Owner gate and a metric; five issues delivered through a pushed branch, merged after Owner's approval; a late start on prepared work; two retrospectives. |
+| `gated-delivery` | Starts from a workflow with an Owner gate and a work item input; five issues delivered through a pushed branch, merged after Owner's approval; two retrospectives. |
+| `phases-update` | Three issues, each in two sittings; a retrospective between them adds a step, and an open work item updates at the step that allows it. |
+| `bugs-and-features` | Eight bugs and features through one workflow, with skippable steps and a `kind` input; three retrospectives. |
+| `pipeline-bugs-and-features` | Capture -> refine -> build -> test, with steps only for bugs or only for features by their `if`; a spec with an Owner gate for features; tool captures of the test runs; eight issues and three retrospectives. |

@@ -4,7 +4,8 @@ import path from 'node:path'
 
 export interface AskedQuestion {
   question: string
-  options: { label: string; description?: string }[]
+  header?: string
+  options: { label: string; description?: string; preview?: string }[]
 }
 
 export interface OwnerAnswers {

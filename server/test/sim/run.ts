@@ -10,7 +10,7 @@ import { compareVersions } from '../../src/core/versions.js'
 import { DotDrillmasterResolver, projectKey } from '../../src/adapters/projects.js'
 import { projectServerInfoFile } from '../../src/projectLocator.js'
 import { VERSION } from '../../src/version.js'
-import { checkRun } from './assertions.js'
+import { checkRun, type RunFacts } from './assertions.js'
 import { claudeTurn } from './claude.js'
 import { defaultAnswers, listenForOwnerQuestions, OWNER_PERMISSION_TOOL, ownerMcpConfig, type AskedQuestion, type OwnerAnswers } from './ownerAnswers.js'
 
@@ -34,7 +34,7 @@ interface Scenario {
   /** Files added to the project before its first commit, for example code with bugs to fix. */
   files?: Record<string, string>
   /** What a run must show. */
-  expects?: { update?: boolean; skip?: boolean; input?: string }
+  expects?: RunFacts['expects']
   hidden_rules: string[]
   retro_after: number[]
   max_turns_per_issue: number
@@ -137,6 +137,8 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   let ownerSession: string | undefined
   let ownerMessages = 0
   let ownerQuestions = 0
+  /** Drillmaster's Owner gate questions as Owner saw them: with what Owner approves beside them, or not. */
+  const ownerGates = { asked: 0, withPreview: 0 }
   let retros = 0
   let currentIssue = ''
 
@@ -147,12 +149,16 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
 
   const answerOwnerQuestions = async (questions: AskedQuestion[]): Promise<OwnerAnswers> => {
     ownerQuestions += questions.length
+    for (const question of questions.filter((candidate) => candidate.header === 'Owner gate')) {
+      ownerGates.asked++
+      if (question.options.some((option) => option.preview)) ownerGates.withPreview++
+    }
     let answered = defaultAnswers(questions)
     if (ownerMode === 'llm') {
       const reply = await owner(
         [
           'Agent asks you these questions in a form (AskUserQuestion):',
-          JSON.stringify(questions.map(({ question, options }) => ({ question, options: options.map((option) => option.label) })), null, 2),
+          JSON.stringify(questions.map(({ question, options }) => ({ question, options: options.map((option) => option.label), ...(options[0]?.preview ? { shown_beside_the_options: options[0].preview } : {}) })), null, 2),
           'Decide each one as Owner. When it is about the work, check the project files against your rules first.',
           'Approve alone approves. Any note or words of your own reject (or decline), and say why, so add them only when you reject.',
           'Reply with JSON only: {"answers": {"<question>": "<an option label, or your own words>"}, "notes": {"<question>": "<an optional note>"}}',
@@ -290,6 +296,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     retros,
     repositoryCommits: mainCommitSubjects(drillmasterRepository),
     phasedIssues: scenario.issues.filter((issue) => issue.phases).map((issue) => ({ issue: issue.id, phases: issue.phases!.length })),
+    ownerGates,
     expects: scenario.expects ?? {},
   })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)

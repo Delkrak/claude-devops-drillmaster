@@ -178,24 +178,24 @@ wants the user interface changes later.
   views only lay those sentences out.
 
 **The new scenario, `pipeline-bugs-and-features`:**
-- 🟥 Inputs:
+- 🟩 Inputs:
   - `kind` (bug or feature), set at start by Agent;
   - `user_visible` (yes or no), set at the capture step by Agent.
-- 🟥 **Capture** (1.1): write down what's wrong or wanted.
-- 🟥 **Refine:**
+- 🟩 **Capture** (1.1): write down what's wrong or wanted.
+- 🟩 **Refine:**
   - 2.1, for bugs: find the cause and name the line.
   - 2.2, for features: write the spec with examples and the open choices. It has an Owner gate
     showing the spec.
-- 🟥 **Build:**
+- 🟩 **Build:**
   - 3.1, for bugs: a failing test first.
   - 3.2: the code and its tests.
   - 3.3, if a feature or user-visible: document it.
-- 🟧 **Test:**
+- 🟩 **Test:**
   - 4.1: the full suite. The workflow's tool capture rules keep the `npm test` totals and the
     failing tests.
   - 4.2, for features: check the spec's examples by hand.
   - 4.3, for bugs: show that the failing test now passes.
-- 🟥 8 issues, 4 bugs and 4 features, with retrospectives after 3, 6 and 8. It runs with the
+- 🟩 8 issues, 4 bugs and 4 features, with retrospectives after 3, 6 and 8. It runs with the
   scripted Owner and with the LLM Owner.
 
 ## Build order
@@ -241,10 +241,10 @@ One round, pressure-tested with both the scripted and the LLM Owner.
    - experiments (`affects`, refusing a baseline that can't move, exact counts);
    - judged skips;
    - per-rule rejection counts.
-6. 🟩 **The viewer keeps working:** only the renames (work item inputs, Owner inputs, friction),
+6. 🟩 **The viewer keeps working** (75bf00b): only the renames (work item inputs, Owner inputs, friction),
    with no new pages, layouts or wording. The Playwright tests pass as they are, apart from the
    renamed words.
-7. 🟧 **The new scenario:** `pipeline-bugs-and-features.json`, the checks it needs (skipped by
+7. 🟩 **The new scenario:** `pipeline-bugs-and-features.json`, the checks it needs (skipped by
    condition, tool capture fields, friction judged), and the old scenarios migrated.
 8. 🟥 **Review, before the simulations (an agent review):**
    - `/code-review` on the round's diff, with its findings fixed and committed;

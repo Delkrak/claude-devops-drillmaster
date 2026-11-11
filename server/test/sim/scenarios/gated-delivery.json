@@ -73,14 +73,14 @@
         ]
       }
     ],
-    "metrics": [
+    "inputs": [
       {
         "name": "size",
-        "categories": [
+        "options": [
           { "value": "small", "description": "one function and its test" },
           { "value": "large", "description": "more than one function, or changes to existing ones" }
         ],
-        "at": { "stage": 1, "step": 1 },
+        "set_at": "1.1",
         "by": "agent",
         "instruction": "How big is the change?"
       }

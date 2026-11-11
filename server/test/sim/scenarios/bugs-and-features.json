@@ -68,14 +68,14 @@
         ]
       }
     ],
-    "metrics": [
+    "inputs": [
       {
         "name": "kind",
-        "categories": [
+        "options": [
           { "value": "bug", "description": "existing behaviour is wrong" },
           { "value": "feature", "description": "new behaviour" }
         ],
-        "at_step": "1.1",
+        "set_at": "1.1",
         "by": "agent",
         "instruction": "Is this work item a bug fix or a feature?"
       }
