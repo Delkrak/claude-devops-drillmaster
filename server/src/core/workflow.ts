@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { comparisonsOf, InvalidCondition, parseCondition } from './conditions.js'
 import { InvalidPipeline, parsePipeline } from './logPipeline.js'
-import { currentMeasureName, MEASURE_NAMES } from './measures.js'
+import { currentMeasureName, isOldMeasureName, MEASURE_NAMES } from './measures.js'
 import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
 
@@ -95,6 +95,11 @@ export const WorkflowExperiment = z.object({
   judge_after: z.number().int().positive(),
   /** GUIDs of the steps the change touched; an experiment counts only the work items that went through one. None: every item counts. */
   affects: z.array(Guid).optional(),
+  /**
+   * Its baseline was taken by an earlier definition of its measure, so it is taken again from the
+   * work items delivered before the experiment.
+   */
+  rebaseline: z.boolean().optional(),
   version: WorkflowVersion,
   started: z.string().min(1),
 })
@@ -285,6 +290,7 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
       version,
       ...experiment,
       measure: currentMeasureName(experiment.measure),
+      ...(isOldMeasureName(experiment.measure) ? { rebaseline: true } : {}),
     })),
   } as WorkflowDocument
 }

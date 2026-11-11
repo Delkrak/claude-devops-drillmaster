@@ -115,6 +115,14 @@ export function applicabilityOf(workflow: WorkflowDocument, stageNumber: number,
   return { applies: true }
 }
 
+/** Where a work item with these inputs starts: its first step that applies, or that waits for an input to tell. */
+export function startPosition(workflow: WorkflowDocument, inputs: InputValues): Position {
+  for (const stage of workflow.stages) {
+    for (const step of stage.steps) if (applicabilityOf(workflow, stage.n, step.n, inputs).applies !== false) return { stage: stage.n, step: step.n }
+  }
+  return { stage: null, step: null }
+}
+
 interface StepsSkipped {
   events: NewEvent[]
   position: { next: Position; done: boolean }
@@ -234,7 +242,9 @@ export function changeInput(state: ProjectState, item: WorkItemState, args: Inpu
   if (input.by !== 'agent') throw new Refused(`Input "${input.name}" is ${input.by === 'owner' ? "Owner's" : "Drillmaster's"} to set, not yours. Tell Owner why it is wrong.`)
   if (!optionsOf(input).includes(args.value)) throw new Refused(`"${args.value}" is not an option of input "${input.name}": pick one of ${optionsOf(input).join(', ')}.`)
   if (item.inputs[input.name]?.value === args.value) throw new Refused(`Input "${input.name}" is ${args.value} already.`)
-  if (input.set_at !== AT_START && !item.inputs[input.name]) throw new Refused(`Input "${input.name}" is set with the gate of step ${input.set_at}.`)
+  const setAt = input.set_at === AT_START ? undefined : stepPosition(input.set_at)
+  const pastItsStep = setAt !== undefined && [...item.passed_step_guids, ...item.skipped_step_guids].includes(stepGuidAt(workflow, setAt.stage, setAt.step)!)
+  if (input.set_at !== AT_START && !item.inputs[input.name] && !pastItsStep) throw new Refused(`Input "${input.name}" is set with the gate of step ${input.set_at}.`)
 
   const inputs = { ...inputValuesOf(item), [input.name]: args.value }
   const set = inputSetEvent(workflow, item.work_item_id, item.stage === null ? null : { stage: item.stage, step: item.step! }, { name: input.name, value: args.value, explanation: args.why, by: 'agent' })

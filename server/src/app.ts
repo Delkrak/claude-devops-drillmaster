@@ -406,7 +406,10 @@ export class Drillmaster {
   }
 
   private withProjectLock<T>(projectDir: string, criticalSection: (projectId: string, project: ProjectRef) => Promise<T>): Promise<T> {
-    const project = this.projectOf(projectDir)
+    return this.withLockOn(this.projectOf(projectDir), criticalSection)
+  }
+
+  private withLockOn<T>(project: ProjectRef, criticalSection: (projectId: string, project: ProjectRef) => Promise<T>): Promise<T> {
     const previousRun = this.lockByProject.get(project.key) ?? Promise.resolve()
     const thisRun = previousRun.then(() => criticalSection(project.key, project))
     this.lockByProject.set(project.key, thisRun.catch(() => {}))
@@ -441,7 +444,18 @@ export class Drillmaster {
     if (storedEvent.type === 'project_initialized' || storedEvent.type === 'workflow_changed') known.workflow = toSemver(storedEvent.workflow.version)
     if (storedEvent.type === 'work_item_started') known.items.set(storedEvent.work_item_id, toSemver(storedEvent.workflow_version))
     if (storedEvent.type === 'work_item_updated') known.items.set(storedEvent.work_item_id, storedEvent.to_version)
+    this.takeDrillmasterInputsAfter(project, storedEvent)
     return storedEvent
+  }
+
+  /**
+   * Drillmaster's inputs are due once a work item starts, and once it is past a step, by a gate it
+   * didn't judge itself or by a skip: whichever path, tool or hook, got it there.
+   */
+  private takeDrillmasterInputsAfter(project: ProjectRef, storedEvent: DrillmasterEvent) {
+    if (storedEvent.type === 'work_item_started') this.takeDrillmasterInputsInBackground(project, storedEvent.work_item_id, null, storedEvent.workflow_version)
+    const pastStep = (storedEvent.type === 'gate_verdict' && storedEvent.accepted && storedEvent.by !== 'drillmaster') || (storedEvent.type === 'step_skip_decided' && storedEvent.accepted)
+    if (pastStep) this.takeDrillmasterInputsInBackground(project, storedEvent.work_item_id, { stage: storedEvent.stage, step: storedEvent.step }, storedEvent.workflow_version)
   }
 
   /** The project's Drillmaster repository, when the project has one and this server writes to repositories. */
@@ -673,11 +687,13 @@ export class Drillmaster {
       if (!workflow) throw new UserError(NO_WORKFLOW_YET)
       const firstStage = workflow.stages[0]
       const position = firstStage && firstStage.steps.length > 0 ? { stage: firstStage.n, step: 1 } : { stage: null, step: null }
-      const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
-      if (stageGuids && firstStage && !stageGuids.includes(firstStage.guid)) {
-        throw new UserError(`A work item starts at step 1.1, in stage 1 "${firstStage.name}", which isn't among the stages you named. To go on with an open work item, use work_resume.`)
-      }
       work.agentInputEvents(workflow, '', AT_START, args.inputs ?? [], 'in work_start (inputs)')
+      const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
+      const startsAt = work.startPosition(workflow, Object.fromEntries((args.inputs ?? []).map((input) => [input.name, input.value])))
+      const startStage = workflow.stages.find((stage) => stage.n === startsAt.stage)
+      if (stageGuids && startStage && !stageGuids.includes(startStage.guid)) {
+        throw new UserError(`This work item starts at step ${startsAt.stage}.${startsAt.step}, in stage ${startStage.n} "${startStage.name}", which isn't among the stages you named. To go on with an open work item, use work_resume.`)
+      }
       const agentToken = this.ports.ids.secret()
       const workItemId = this.ports.ids.next('wi')
       await this.appendEvent(project, {
@@ -703,7 +719,6 @@ export class Drillmaster {
         workItemId,
       }
     })
-    this.takeDrillmasterInputsInBackground(projectDir, started.workItemId, null, undefined)
     const askOwner = await this.ownerQuestionsFor(projectDir, started.workItemId)
     return askOwner ? workResult(`${started.markdown}\n\n${render.renderAskOwner(askOwner)}`, { ...started.answer, ask_owner: askOwner }) : workResult(started.markdown, started.answer)
   }
@@ -856,9 +871,6 @@ export class Drillmaster {
       for (const newEvent of decision.events) {
         const storedEvent = await this.appendEvent(project, newEvent)
         if (storedEvent.type === 'gate_submitted' && storedEvent.gate === 'drillmaster') gateSubmissionToJudge = storedEvent.id
-        if (storedEvent.type === 'gate_verdict' && storedEvent.accepted && storedEvent.by !== 'drillmaster') {
-          this.takeDrillmasterInputsInBackground(projectDir, storedEvent.work_item_id, { stage: storedEvent.stage, step: storedEvent.step }, storedEvent.workflow_version)
-        }
         if (storedEvent.type === 'work_item_delivered') {
           this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
           this.runInBackground(this.judgeFriction(projectDir, storedEvent.work_item_id))
@@ -899,28 +911,25 @@ export class Drillmaster {
     }
   }
 
-  /**
-   * Drillmaster's inputs of a work item that started (`at` null), or passed a step another gate
-   * than Drillmaster's decided, in the workflow version it was on then.
-   */
-  private takeDrillmasterInputsInBackground(projectDir: string, workItemId: string, at: { stage: number; step: number } | null, workflowVersion: string | undefined) {
+  /** Drillmaster's inputs of a work item that started (`at` null), or is past a step, in the workflow version it was on then. */
+  private takeDrillmasterInputsInBackground(project: ProjectRef, workItemId: string, at: { stage: number; step: number } | null, workflowVersion: string | undefined) {
     this.runInBackground(
       (async () => {
-        const events = await this.events(projectDir)
+        const events = await this.ports.store.read(project.key)
         const state = foldState(events)
         const item = state.workItems[workItemId]!
         const workflow = (workflowVersion && findVersion(state, workflowVersion)) || work.workflowOfWorkItem(state, item)
         const due = work.inputsSetAt(workflow, at ? `${at.stage}.${at.step}` : AT_START, 'drillmaster')
         if (due.length === 0) return
         const { answer } = await this.ports.reviewer.review({ kind: INPUT_REVIEW_KIND, prompt: buildInputPrompt(workflow, item, at, events) })
-        await this.recordDrillmasterInputs(projectDir, workItemId, at, readInputAnswers(due, answer))
+        await this.recordDrillmasterInputs(project, workItemId, at, readInputAnswers(due, answer))
       })(),
     )
   }
 
-  private recordDrillmasterInputs(projectDir: string, workItemId: string, at: { stage: number; step: number } | null, answers: readonly InputAnswer[]) {
+  private recordDrillmasterInputs(project: ProjectRef, workItemId: string, at: { stage: number; step: number } | null, answers: readonly InputAnswer[]) {
     if (answers.length === 0) return Promise.resolve()
-    return this.withProjectLock(projectDir, async (projectId, project) => {
+    return this.withLockOn(project, async (projectId) => {
       const state = foldState(await this.ports.store.read(projectId))
       const events = work.inputEventsWithMove(state, state.workItems[workItemId]!, at, answers.map((answer) => ({ ...answer, by: 'drillmaster' as const })))
       for (const newEvent of events) await this.appendEvent(project, newEvent)
@@ -973,8 +982,11 @@ export class Drillmaster {
   private async runRetrospective(projectDir: string) {
     // Drillmaster's own post mortems and the friction judgements are made in the background; the retrospective needs them.
     await this.idle()
-    const delivered = Object.values((await this.state(projectDir)).workItems).filter((item) => item.status === 'delivered')
-    for (const item of delivered) await this.judgeFriction(projectDir, item.work_item_id)
+    const beforeJudging = await this.events(projectDir)
+    const judged = frictionJudgementsOf(beforeJudging)
+    const deliveredIds = new Set(Object.values(foldState(beforeJudging).workItems).filter((item) => item.status === 'delivered').map((item) => item.work_item_id))
+    const itemsToJudge = new Set(ownerInputsOf(beforeJudging).flatMap((input) => (input.work_item_id && deliveredIds.has(input.work_item_id) && !judged.has(input.event_id) ? [input.work_item_id] : [])))
+    await Promise.all([...itemsToJudge].map((workItemId) => this.judgeFriction(projectDir, workItemId)))
     const events = await this.events(projectDir)
     const state = foldState(events)
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)

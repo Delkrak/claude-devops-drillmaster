@@ -190,10 +190,15 @@ const denyAsk = (reason: string) => ({
  * What differs between a question Agent asks and Drillmaster's pending question it stands for: one
  * with the text or the header of a pending question. Owner must see Drillmaster's question as it is.
  */
-function changesToPendingQuestions(asked: NonNullable<AskUserQuestionInput['questions']>, pending: readonly OwnerQuestion[]): string[] {
+/**
+ * `ofThisSession` are the pending questions of the session's own work item, and those of no work
+ * item, such as proposals: a header stands for one of those only, so Agent's own questions with the
+ * header of another work item's question pass.
+ */
+function changesToPendingQuestions(asked: NonNullable<AskUserQuestionInput['questions']>, pending: readonly OwnerQuestion[], ofThisSession: readonly OwnerQuestion[]): string[] {
   return asked.flatMap((question) => {
     const sameText = pending.find((candidate) => candidate.question === question.question)
-    const sameHeader = pending.filter((candidate) => candidate.header === question.header)
+    const sameHeader = ofThisSession.filter((candidate) => candidate.header === question.header)
     if (!sameText && sameHeader.length === 0) return []
     if (!sameText) return [`the question with header "${String(question.header)}" is not one Drillmaster asks; ask ${sameHeader.map((candidate) => `"${candidate.question}"`).join(' or ')} word for word`]
     const options = question.options ?? []
@@ -220,7 +225,9 @@ function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId
   const toolUseId = typeof payload.tool_use_id === 'string' ? payload.tool_use_id : undefined
   const input = (payload.tool_input ?? {}) as AskUserQuestionInput
   if (hookEvent === 'PreToolUse') {
-    const changes = changesToPendingQuestions(input.questions ?? [], pendingQuestions)
+    const sessionItem = state.sessions[sessionId]?.work_item_id
+    const ofThisSession = pendingQuestions.filter((question) => !('work_item_id' in question) || !sessionItem || question.work_item_id === sessionItem)
+    const changes = changesToPendingQuestions(input.questions ?? [], pendingQuestions, ofThisSession)
     if (changes.length) return denyAsk(`Owner must see Drillmaster's question as it is, so this call is blocked: ${changes.join('; ')}. Pass ask_owner from the result (work_status shows it) exactly as it is.`)
     const askedTexts = (input.questions ?? []).map((question) => question.question).filter((text): text is string => typeof text === 'string' && pendingQuestionTexts.has(text))
     if (askedTexts.length === 0 || !toolUseId) return { events: [] }

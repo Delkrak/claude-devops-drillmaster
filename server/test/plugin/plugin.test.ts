@@ -12,7 +12,7 @@ import { projectServerInfoFile } from '../../src/projectLocator.js'
 
 const enabled = process.env.DRILLMASTER_PLUGIN_TESTS === '1'
 const REPO = path.resolve(import.meta.dirname, '../../..')
-const TOOLS = ['mcp__plugin_devops-drillmaster_drillmaster', 'Read', 'Write', 'Skill']
+const TOOLS = ['mcp__plugin_devops-drillmaster_drillmaster', 'Read', 'Write', 'Skill', 'Bash(cat:*)']
 
 let home: Awaited<ReturnType<typeof tempDir>>
 let project: Awaited<ReturnType<typeof tempDir>>
@@ -95,23 +95,27 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     expect(item.traces).toBeGreaterThan(0)
   }, 600_000)
 
-  it('decides an Owner gate through AskUserQuestion, and delivers with an image artifact', async () => {
-    // A workflow with one Owner-gated step, as if a retrospective had added it.
+  it('decides an Owner gate in AskUserQuestion with what Owner approves beside it, captures a command, and delivers with an image artifact', async () => {
+    // A workflow with one Owner-gated step and a tool capture, as if a retrospective had added them.
     const ownerGated = {
       version: '1.0.0',
       objective: { text: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] },
-      stages: [{ n: 1, name: 'review', purpose: 'Owner accepts the change', steps: [{ n: 1, name: 'Owner approves', instruction: 'Show Owner the file and ask for approval.', gate: 'owner', rules: [], report: ['what to look at'] }] }],
+      stages: [{ n: 1, name: 'review', purpose: 'Owner accepts the change', steps: [{ n: 1, name: 'Owner approves', instruction: 'Show the file with cat, then ask Owner for approval.', gate: 'owner', rules: [], report: ['what to look at'] }] }],
       policies: [],
-      metrics: [],
+      inputs: [],
+      tool_captures: [{ name: 'file', command: '^cat ', keep: '| line_format `content: {{__line__}}`' }],
       experiments: [],
     }
     const eventsFile = path.join(home.dir, 'projects', new DotDrillmasterResolver().resolve(project.dir)!.key, 'events.jsonl')
     await writeFile(eventsFile, (await readFile(eventsFile, 'utf8')) + JSON.stringify({ id: 'ev_plugin_v1', at: new Date().toISOString(), type: 'workflow_changed', workflow: ownerGated, reason: 'an Owner gate' }) + '\n')
     await writeFile(path.join(project.dir, 'shot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
-    await turn('Do issue #2 with the drillmaster work skill: create bye.txt containing "bye". At the Owner gate, ask me as the work tool tells you. Then deliver it as pr "local" with shot.png as an artifact, and write your post mortem.')
+    await turn('Do issue #2 with the drillmaster work skill: create bye.txt containing "bye", and show it with cat bye.txt. At the Owner gate, ask me as the work tool tells you. Then deliver it as pr "local" with shot.png as an artifact, and write your post mortem.')
     const state = foldState(await events())
     const item = Object.values(state.workItems).find((candidate) => candidate.issue.includes('2'))!
-    expect(askedOwner.some((question) => question.question.startsWith(`Owner gate of ${item.work_item_id}`))).toBe(true)
+    const gateQuestion = askedOwner.find((question) => question.question.startsWith(`Owner gate of ${item.work_item_id}`))
+    expect(gateQuestion?.options[0]?.preview).toContain('## What Agent reports')
+    const captured = (await events()).filter((e) => e.type === 'work_trace' && e.captures?.length)
+    expect(captured).toContainEqual(expect.objectContaining({ captures: [{ name: 'file', lines: ['content: bye'], fields: [] }] }))
     const verdicts = (await events()).filter((e) => e.type === 'gate_verdict' && e.work_item_id === item.work_item_id)
     expect(verdicts).toContainEqual(expect.objectContaining({ by: 'owner', via: 'question', accepted: true }))
     expect(item).toMatchObject({ status: 'delivered', artifacts: [expect.objectContaining({ name: 'shot.png', media_type: 'image/png' })] })

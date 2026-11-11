@@ -19,6 +19,7 @@ export const MEASURE_NAMES = Object.keys(MEASURES) as [MeasureName, ...MeasureNa
 const OLD_MEASURE_NAMES: Record<string, MeasureName> = { owner_corrections_per_item: 'owner_friction_per_item' }
 
 export const currentMeasureName = (name: string): string => OLD_MEASURE_NAMES[name] ?? name
+export const isOldMeasureName = (name: string) => name in OLD_MEASURE_NAMES
 
 export interface ItemMeasures {
   work_item_id: string
@@ -87,7 +88,7 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
   const judgements = frictionJudgementsOf(events)
   for (const input of ownerInputsOf(events)) {
     const item = input.work_item_id ? items.get(input.work_item_id) : undefined
-    if (item && isFriction(input, judgements, events)) item.values.owner_friction_per_item++
+    if (item && isFriction(input, judgements)) item.values.owner_friction_per_item++
   }
   return [...items.entries()]
     .filter(([, item]) => item.deliveredAt)

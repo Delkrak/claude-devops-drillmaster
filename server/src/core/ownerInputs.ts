@@ -12,6 +12,8 @@ export interface OwnerInput {
   /** The work item it belongs to; none for a retrospective, or outside a work item. */
   work_item_id: string | null
   after_delivery: boolean
+  /** Whether Agent changed the work after it, before Owner's next input in the session. */
+  changed_work_after: boolean
 }
 
 export interface FrictionJudgement {
@@ -42,6 +44,7 @@ export function ownerInputsOf(events: readonly DrillmasterEvent[]): OwnerInput[]
   const openBySession = new Map<string, Open>()
   const deliveredItems = new Set<string>()
   const settle = (sessionId: string) => openBySession.delete(sessionId)
+  const latestBySession = new Map<string, OwnerInput>()
   for (const event of events) {
     if (event.type === 'work_item_delivered') deliveredItems.add(event.work_item_id)
     if (event.type === 'session_bound') {
@@ -63,10 +66,16 @@ export function ownerInputsOf(events: readonly DrillmasterEvent[]): OwnerInput[]
         role: 'input',
         work_item_id: event.work_item_id,
         after_delivery: event.work_item_id !== null && deliveredItems.has(event.work_item_id),
+        changed_work_after: false,
       }
       inputs.push(input)
       openBySession.set(event.session_id, { input })
+      latestBySession.set(event.session_id, input)
       continue
+    }
+    if (event.hook === 'PostToolUse' && WORK_CHANGING_TOOLS.test(event.tool ?? '')) {
+      const latest = latestBySession.get(event.session_id)
+      if (latest) latest.changed_work_after = true
     }
     const open = openBySession.get(event.session_id)
     if (!open || open.takesUp || !event.tool || !DRILLMASTER_TOOL.test(event.tool)) continue
@@ -88,27 +97,16 @@ export function ownerInputsOf(events: readonly DrillmasterEvent[]): OwnerInput[]
   return inputs
 }
 
-/** Whether Agent changed the work after an input, before Owner's next one in the session. */
-function changedWorkAfter(events: readonly DrillmasterEvent[], input: OwnerInput) {
-  const start = events.findIndex((event) => event.id === input.event_id)
-  for (const event of events.slice(start + 1)) {
-    if (event.type !== 'work_trace' || event.session_id !== input.session_id) continue
-    if (event.hook === 'UserPromptSubmit') return false
-    if (event.hook === 'PostToolUse' && WORK_CHANGING_TOOLS.test(event.tool ?? '')) return true
-  }
-  return false
-}
-
 /**
  * Whether an input counts as friction: as the friction judge decided, or, until it has, by what it
  * led to. A start or resume is not; an input during the work item is; one after delivery is when
  * Agent then changed the work.
  */
-export function isFriction(input: OwnerInput, judgements: ReadonlyMap<string, FrictionJudgement>, events: readonly DrillmasterEvent[]) {
+export function isFriction(input: OwnerInput, judgements: ReadonlyMap<string, FrictionJudgement>) {
   const judged = judgements.get(input.event_id)
   if (judged) return judged.friction
   if (input.role !== 'input') return false
-  return !input.after_delivery || changedWorkAfter(events, input)
+  return !input.after_delivery || input.changed_work_after
 }
 
 export function frictionJudgementsOf(events: readonly DrillmasterEvent[]) {

@@ -127,3 +127,46 @@ describe('steps and stages that apply by the work item inputs', () => {
     expect(await item()).toMatchObject({ workflow_version: '2.0.0', stage: 3, step: 1 })
   })
 })
+
+describe('inputs set at a step that is skipped, and where a work item starts', () => {
+  const withSeverity = migrateWorkflow({
+    ...PIPELINE,
+    stages: [
+      { ...PIPELINE.stages[0]!, steps: [PIPELINE.stages[0]!.steps[0]!, step(2, 'rate the bug', { if: "kind == 'bug'" }), step(3, 'escalate', { if: "severity == 'high'" })] },
+      PIPELINE.stages[1]!,
+    ],
+    inputs: [...PIPELINE.inputs, { name: 'severity', options: [option('low'), option('high')], set_at: '1.2', by: 'agent', instruction: 'How bad is it?' }],
+  })
+
+  it("lets Agent set its input of a step the work item skipped, so a later step can tell whether it applies", async () => {
+    const { start, gate, tool } = await project('/projects/if-skipped-input', withSeverity)
+    const { token } = await start([{ name: 'kind', value: 'feature' }])
+    const captured = await gate(token, '1.1', [{ name: 'user_visible', value: 'no' }])
+    expect(captured.structuredContent).toMatchObject({ next: { stage: 1, step: 3 }, waiting_for_inputs: ['severity'], skipped_by_condition: [{ step: '1.2' }] })
+    const set = await tool('work_input', { token, name: 'severity', value: 'low', why: 'a feature has no severity: low' })
+    expect(set.structuredContent).toMatchObject({ next: { stage: 2, step: 1 }, skipped_by_condition: [{ step: '1.3' }] })
+  })
+
+  it("takes Drillmaster's inputs at a step whose Owner gate Owner approved in AskUserQuestion", async () => {
+    const ownerGated = migrateWorkflow({
+      ...PIPELINE,
+      stages: [{ ...PIPELINE.stages[0]!, steps: [step(1, 'approve', { gate: 'owner' }), step(2, 'go on', { if: "risk == 'high'" }), step(3, 'finish')] }],
+      inputs: [{ name: 'risk', options: [option('low'), option('high')], set_at: '1.1', by: 'drillmaster', instruction: 'How risky?' }],
+    })
+    const { app, ports, start, gate } = await project('/projects/if-owner-gate-input', ownerGated)
+    ports.reviewer.enqueue('inputs', { inputs: [{ name: 'risk', value: 'low', explanation: 'one file' }] })
+    const { token, item } = await start()
+    await gate(token, '1.1')
+    await ownerAnswers(app, '/projects/if-owner-gate-input', () => 'Approve')
+    await app.idle()
+    expect(await item()).toMatchObject({ stage: 1, step: 3, inputs: { risk: { value: 'low', by: 'drillmaster' } } })
+  })
+
+  it('checks the named stages against where the work item starts, past the stages that do not apply to it', async () => {
+    const refineFirst = migrateWorkflow({ ...PIPELINE, stages: [PIPELINE.stages[1]!, PIPELINE.stages[2]!].map((stage, index) => ({ ...stage, n: index + 1 })) })
+    const { tool } = await project('/projects/if-start-stage', refineFirst)
+    const started = await tool('work_start', { issue: '#1', description: 'a bug', inputs: [{ name: 'kind', value: 'bug' }], stages: ['2'] })
+    expect(started.structuredContent).toMatchObject({ stage: 2, step: 1 })
+    expect((await tool('work_start', { issue: '#2', description: 'a feature', inputs: [{ name: 'kind', value: 'feature' }], stages: ['2'] })).content[0]!.text).toMatch(/starts at step 1.1, in stage 1 "refine"/)
+  })
+})

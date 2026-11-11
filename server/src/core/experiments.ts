@@ -1,4 +1,4 @@
-import { averageMeasure, rejectionsByRule, type ItemMeasures } from './measures.js'
+import { averageMeasure, measureBaseline, measureBaselineSd, rejectionsByRule, type ItemMeasures } from './measures.js'
 import { refOfGuid } from './refs.js'
 import { compareVersions, type WorkflowDocument, type WorkflowExperiment } from './workflow.js'
 
@@ -35,7 +35,11 @@ export const itemsCountedFor = (experiment: WorkflowExperiment, deliveredItems: 
  * rejected when the mean over the first `judge_after` items beats the baseline by more than the
  * baseline's standard deviation.
  */
-export function judgeExperiment(experiment: WorkflowExperiment, deliveredItems: readonly ItemMeasures[], overlapping: number[] = [], workflow?: WorkflowDocument): ExperimentVerdict {
+export function judgeExperiment(experimentAsWritten: WorkflowExperiment, deliveredItems: readonly ItemMeasures[], overlapping: number[] = [], workflow?: WorkflowDocument): ExperimentVerdict {
+  const before = deliveredItems.filter((item) => compareVersions(item.workflow_version, experimentAsWritten.version) < 0)
+  const experiment = experimentAsWritten.rebaseline
+    ? { ...experimentAsWritten, baseline: measureBaseline(before, experimentAsWritten.measure), baseline_sd: measureBaselineSd(before, experimentAsWritten.measure) }
+    : experimentAsWritten
   const countedItems = itemsCountedFor(experiment, deliveredItems)
   const judgedItems = countedItems.slice(0, experiment.judge_after)
   const mean = averageMeasure(judgedItems, experiment.measure)

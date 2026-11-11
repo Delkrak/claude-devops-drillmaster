@@ -244,9 +244,9 @@ One round, pressure-tested with both the scripted and the LLM Owner.
 6. 🟩 **The viewer keeps working** (75bf00b): only the renames (work item inputs, Owner inputs, friction),
    with no new pages, layouts or wording. The Playwright tests pass as they are, apart from the
    renamed words.
-7. 🟩 **The new scenario:** `pipeline-bugs-and-features.json`, the checks it needs (skipped by
+7. 🟩 **The new scenario** (7d9eb6f): `pipeline-bugs-and-features.json`, the checks it needs (skipped by
    condition, tool capture fields, friction judged), and the old scenarios migrated.
-8. 🟥 **Review, before the simulations (an agent review):**
+8. 🟩 **Review, before the simulations (an agent review):**
    - `/code-review` on the round's diff, with its findings fixed and committed;
    - a check of the build against this plan's decisions, one by one.
 9. 🟥 **Simulations:**

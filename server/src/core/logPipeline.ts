@@ -53,7 +53,7 @@ function compilePattern(source: string, text: string) {
       return `(?<${capture[1]}>${last ? '.*' : '.*?'})`
     })
     .join('')
-  return { pattern: new RegExp(`^${body}$`), names }
+  return { pattern: compile(source, `^${body}$`), names }
 }
 
 export function parsePipeline(source: string): Stage[] {
@@ -143,7 +143,13 @@ function jsonFields(line: string, wanted: { name: string; path: string }[]): Rec
   }
   const fields: Record<string, string> = {}
   for (const { name, path } of wanted) {
-    const value = path.split('.').reduce<unknown>((node, key) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[key.replace(/\[(\d+)\]$/, '')] : undefined), parsed)
+    const value = path
+      .split(/\.|(?=\[)/)
+      .reduce<unknown>((node, key) => {
+        if (!node || typeof node !== 'object') return undefined
+        const index = /^\[(\d+)\]$/.exec(key)
+        return index ? (Array.isArray(node) ? node[Number(index[1])] : undefined) : (node as Record<string, unknown>)[key]
+      }, parsed)
     if (value !== undefined) fields[name] = typeof value === 'string' ? value : JSON.stringify(value)
   }
   return fields
@@ -171,6 +177,10 @@ function compare(fieldValue: string | undefined, stage: Extract<Stage, { kind: '
   }
 }
 
+/** The named groups that took part in the match: one that didn't is no field. */
+const matchedGroups = (pattern: RegExp, line: string) =>
+  Object.fromEntries(Object.entries(pattern.exec(line)?.groups ?? {}).filter((group): group is [string, string] => group[1] !== undefined))
+
 const formatLine = (template: string, entry: LogEntry) =>
   template.replace(/\{\{\s*(?:\.([\w.]+)|(__line__))\s*\}\}/g, (_match, field: string | undefined) => (field ? (entry.fields[field] ?? '') : entry.line))
 
@@ -196,7 +206,7 @@ export function runPipeline(stages: readonly Stage[], output: string): LogEntry[
         break
       case 'pattern':
       case 'regexp':
-        entries = entries.map((entry) => ({ ...entry, fields: { ...entry.fields, ...(stage.pattern.exec(entry.line)?.groups ?? {}) } }))
+        entries = entries.map((entry) => ({ ...entry, fields: { ...entry.fields, ...matchedGroups(stage.pattern, entry.line) } }))
         break
       case 'field_filter':
         entries = entries.filter((entry) => compare(entry.fields[stage.field], stage))

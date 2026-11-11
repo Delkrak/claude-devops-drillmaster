@@ -82,7 +82,7 @@ export function buildInputPrompt(workflow: WorkflowDocument, item: WorkItemState
   const traces = itemEvents.filter((event): event is WorkTrace => event.type === 'work_trace').slice(-MAX_TRACES_IN_PROMPT)
   const reports = itemEvents.filter((event) => event.type === 'work_reported' || event.type === 'gate_submitted').map((event) => `- ${JSON.stringify(event)}`)
   return [
-    `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) ${at ? `passed work step ${at.stage}.${at.step}` : 'has just started'}.`,
+    `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) ${at ? `is past work step ${at.stage}.${at.step}` : 'has just started'}.`,
     ...(item.description ? [`What the work item is about: ${item.description}`] : []),
     '',
     ...inputQuestionLines(inputsSetAt(workflow, at ? stepName(at.stage, at.step) : AT_START, 'drillmaster')),
