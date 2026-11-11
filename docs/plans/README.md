@@ -7,4 +7,4 @@ phase's commit when the phase is done, and the status below follows.
 |---|---|---|---|
 | 1 | [round-1.md](round-1.md): build the plugin around the concept | built, except publishing to npm (phase 7) | c9ac3d8..2bf4e17 |
 | 2 | [round-2.md](round-2.md): what the simulations taught us | built, local | 5f0ccb1..50bc9ba |
-| 3 | [round-3.md](round-3.md): what reviewing round 2 decided | in progress | |
+| 3 | [round-3.md](round-3.md): what reviewing round 2 decided | built, local | d733b35..HEAD |

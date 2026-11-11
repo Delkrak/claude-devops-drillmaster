@@ -208,13 +208,13 @@ OK.
      and committed;
    - a check of the build against this plan's decisions, one by one, noting anything built
      differently.
-10. **Simulations:**
+10. **Simulations:** (done: 5c602e8, b7a6f7a; all four runs passed)
    - phases across fresh sessions, each phase a new `claude -p` session using `work_resume`;
    - a bugs-and-features scenario, with skippable steps and a `kind` metric;
    - an update scenario, where a retrospective adds a step between two phases of an open item and
      the item fast-forwards;
    - new checks.
-11. **Finish:** a clean-code pass, re-recorded hook fixtures, local CI on Windows and Linux, docs.
+11. **Finish:** (done: f9e86d7, d68fb64, bb76347, 2a0f21f, 6ca14eb) a clean-code pass, re-recorded hook fixtures, local CI on Windows and Linux, docs.
 
 ## Verification
 
