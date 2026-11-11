@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { InvalidArtifact, readArtifactFromWorkFolder } from './adapters/artifacts.js'
+import { ACCEPTED_ARTIFACTS, InvalidArtifact, MAX_ARTIFACT_BYTES, readArtifactFromWorkFolder } from './adapters/artifacts.js'
 import { defaultFolderOf, projectKey } from './adapters/projects.js'
 import { RepositoryConflict, RepositoryPublisher } from './adapters/repositoryPublisher.js'
 import { isPublishMoment } from './core/repositoryLayout.js'
@@ -308,7 +308,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_deliver',
     description:
-      'Delivers the work item, once every work gate has passed (or the workflow has none). summary: what was delivered and how it was verified. artifacts: paths of files in the work folder that show the result, such as screenshots (images or text, at most 5 MB each, not ignored by git).',
+      `Delivers the work item, once every work gate has passed (or the workflow has none). summary: what was delivered and how it was verified. artifacts: paths of files in the work folder that show the result, such as screenshots, the changed source and tests, or a diff: ${ACCEPTED_ARTIFACTS}, at most ${MAX_ARTIFACT_BYTES / 1024 / 1024} MB each, not ignored by git.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -698,7 +698,7 @@ export class Drillmaster {
       const answer = { work_item_id: workItemId, agent_token: agentToken, workflow_version: workflow.version, ...moved.next, ...move }
       const sessionStages = stageGuids ? namesOfStages(workflow, stageGuids) : undefined
       return {
-        markdown: render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, move, sessionStages }),
+        markdown: render.renderStarted({ workItemId, agentToken, issue: args.issue, workflow, move, sessionStages, ...(stageGuids ? { stageGuids } : {}) }),
         answer,
         workItemId,
       }
@@ -731,19 +731,27 @@ export class Drillmaster {
         .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
       if (!item) throw new UserError(`No open work item has issue "${args.issue}". Start one with work_start.`)
       const workflow = work.workflowOfWorkItem(state, item)
-      const stageGuids = args.stages && stageGuidsOf(workflow, args.stages)
+      const canMoveOn = item.status === 'active' && !item.pending_gate && !item.pending_skip && item.stage !== null
+      const moved = canMoveOn ? work.moveOn(state, { ...item, stage_guids: null }, workflow, { next: { stage: item.stage, step: item.step }, done: item.gates_done }) : undefined
+      const requestedStages = args.stages && stageGuidsOf(workflow, args.stages)
+      // The stage the work item resumes at is always this session's, or the session could not go on.
+      const stagesItIsIn = [stageGuidAt(workflow, item.stage), stageGuidAt(moved?.update?.to ?? workflow, moved?.next.stage ?? null)].filter((guid): guid is string => guid !== undefined)
+      const addedStages = requestedStages ? stagesItIsIn.filter((guid) => !requestedStages.includes(guid)) : []
+      const stageGuids = requestedStages && [...requestedStages, ...new Set(addedStages)]
       const agentToken = this.ports.ids.secret()
       await this.appendEvent(project, { type: 'work_item_resumed', work_item_id: item.work_item_id, token_hash: hashToken(agentToken), ...(stageGuids ? { stage_guids: stageGuids } : {}) })
-      const resumedItem = foldState(await this.ports.store.read(projectId)).workItems[item.work_item_id]!
-      const canMoveOn = resumedItem.status === 'active' && !resumedItem.pending_gate && !resumedItem.pending_skip && resumedItem.stage !== null
-      const moved = canMoveOn ? work.moveOn(foldState(await this.ports.store.read(projectId)), resumedItem, workflow, { next: { stage: item.stage, step: item.step }, done: item.gates_done }) : undefined
       for (const movedEvent of moved?.events ?? []) await this.appendEvent(project, movedEvent)
       const update = moved?.update
       const after = foldState(await this.ports.store.read(projectId))
       const current = after.workItems[item.work_item_id]!
       const currentWorkflow = work.workflowOfWorkItem(after, current)
-      const move = moved ? work.describeMove(moved) : { next: { stage: current.stage, step: current.step }, done: current.gates_done, ...waitingForInputsOf(currentWorkflow, current) }
-      const answer = { work_item_id: current.work_item_id, agent_token: agentToken, workflow_version: current.workflow_version, stage: current.stage, step: current.step, ...move }
+      const position = { stage: current.stage, step: current.step }
+      const move = {
+        ...(moved ? work.describeMove(moved) : { next: position, done: current.gates_done, ...waitingForInputsOf(currentWorkflow, current) }),
+        session_done: work.outsideSessionStages(currentWorkflow, current, position),
+      }
+      const addedStageNames = addedStages.length ? namesOfStages(currentWorkflow, addedStages) || namesOfStages(workflow, addedStages) : undefined
+      const answer = { work_item_id: current.work_item_id, agent_token: agentToken, workflow_version: current.workflow_version, stage: current.stage, step: current.step, ...move, ...(addedStageNames ? { added_stages: addedStageNames } : {}) }
       const markdown = render.renderResumed({
         workItemId: current.work_item_id,
         agentToken,
@@ -754,6 +762,7 @@ export class Drillmaster {
         outsideSession: work.outsideSessionStages(currentWorkflow, current, current),
         update: update && work.describeUpdate(update),
         move,
+        addedStages: addedStageNames,
       })
       return { markdown, answer, workItemId: current.work_item_id }
     })
@@ -975,7 +984,7 @@ export class Drillmaster {
       .catch((error: unknown) => {
         throw new UserError(`Drillmaster could not carry out the retrospective: ${error instanceof Error ? error.message : String(error)}`)
       })
-    const retroResult = readRetroAnswer(state.workflow, answer, TOOL_NAMES)
+    const retroResult = readRetroAnswer(state.workflow, answer, TOOL_NAMES, measureDeliveredItems(events))
     return this.withProjectLock(projectDir, async (projectId, project) => {
       const storedEvent = await this.appendEvent(project, {
         type: 'retrospective_ran',
@@ -1138,6 +1147,7 @@ export class Drillmaster {
 }
 
 const stageGuidsOf = (workflow: WorkflowDocument, stageRefs: readonly string[]) => stageRefs.map((stageRef) => resolveRef(workflow, stageRef, { impliedKind: 'stage' }).guid!)
+const stageGuidAt = (workflow: WorkflowDocument, stage: number | null) => workflow.stages.find((candidate) => candidate.n === stage)?.guid
 const namesOfStages = (workflow: WorkflowDocument, guids: readonly string[]) =>
   workflow.stages.filter((stage) => guids.includes(stage.guid)).map((stage) => `stage ${stage.n} "${stage.name}"`).join(', ')
 

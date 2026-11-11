@@ -106,8 +106,9 @@ AskUserQuestion.
 1. Once every work gate has passed, or there are none, call
    `work_deliver({token, pr, summary, artifacts})`:
    - `summary`: what was delivered, and how it was verified;
-   - `artifacts`: files in the work folder that show the result, such as screenshots. They must be
-     images or text, at most 5 MB each, and not ignored by git.
+   - `artifacts`: files in the work folder that show the result, such as screenshots, the changed
+     source and tests, or a diff. They must be images, text, or source or test files, at most 5 MB
+     each, and not ignored by git; a refusal lists the types.
 2. Then write your workflow post mortem on the work item as a whole with
    `work_post_mortem({token, keep, change, experiment_reflections})`. It's about the workflow, not
    the code: lists of what to keep, what to change, and how each running workflow experiment did.

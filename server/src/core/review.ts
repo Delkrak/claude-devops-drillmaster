@@ -116,6 +116,8 @@ export function buildSkipPrompt(workflow: WorkflowDocument, item: WorkItemState,
   return [
     'You are Drillmaster. The workflow marks this work step as skippable, with you deciding. Agent asks to skip it for this work item.',
     'Approve when the step is not needed for this work item, judged by what the work item is about and what Agent did. Otherwise reject it, and say why.',
+    "Check every claim in Agent's reason against the work traces. Reject a skip whose claim has nothing behind it in the traces, and say which claim.",
+    'There is no approval with a condition: when the step is needed until something else is done, reject the skip.',
     '',
     `Work item ${item.work_item_id} (${item.issue}): ${item.description || 'no description'}`,
     `Step ${request.stage}.${request.step} "${step.name}" (${step.gate} gate): ${step.instruction || 'no instruction'}`,

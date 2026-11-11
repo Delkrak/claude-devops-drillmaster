@@ -6,20 +6,29 @@ import type { ArtifactStore } from '../ports.js'
 
 export const MAX_ARTIFACT_BYTES = 5 * 1024 * 1024
 
-const MEDIA_TYPES: Record<string, string> = {
+const IMAGE_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
+}
+const TEXT_TYPES: Record<string, string> = {
   '.txt': 'text/plain',
   '.md': 'text/markdown',
   '.log': 'text/plain',
   '.csv': 'text/csv',
   '.json': 'application/json',
   '.html': 'text/html',
+  '.diff': 'text/x-diff',
+  '.patch': 'text/x-diff',
 }
+/** Source and test files, kept and served as plain text. */
+const SOURCE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.kt', '.rb', '.php', '.cs', '.c', '.h', '.cpp', '.swift', '.sh', '.ps1', '.sql', '.css', '.scss', '.yaml', '.yml', '.toml', '.xml']
+const MEDIA_TYPES: Record<string, string> = { ...IMAGE_TYPES, ...TEXT_TYPES, ...Object.fromEntries(SOURCE_EXTENSIONS.map((extension) => [extension, 'text/plain'])) }
+
+export const ACCEPTED_ARTIFACTS = `images (${Object.keys(IMAGE_TYPES).join(' ')}), text (${Object.keys(TEXT_TYPES).join(' ')}) and source or test files (${SOURCE_EXTENSIONS.join(' ')})`
 
 export class InvalidArtifact extends Error {}
 
@@ -36,7 +45,7 @@ export async function readArtifactFromWorkFolder(projectDir: string, requestedPa
   const relative = path.relative(workFolder, file)
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new InvalidArtifact(`Artifact ${requestedPath} is outside the work folder.`)
   const mediaType = MEDIA_TYPES[path.extname(file).toLowerCase()]
-  if (!mediaType) throw new InvalidArtifact(`Artifact ${requestedPath} is not an image or text file (${Object.keys(MEDIA_TYPES).join(' ')}).`)
+  if (!mediaType) throw new InvalidArtifact(`Artifact ${requestedPath} is none of the files Drillmaster keeps: ${ACCEPTED_ARTIFACTS}. Deliver without it, or as one of those.`)
   const { size } = await stat(file)
   if (size > MAX_ARTIFACT_BYTES) throw new InvalidArtifact(`Artifact ${requestedPath} is ${size} bytes; the limit is ${MAX_ARTIFACT_BYTES}.`)
   if (await isGitIgnored(workFolder, relative)) throw new InvalidArtifact(`Artifact ${requestedPath} is ignored by git, so it may hold secrets.`)

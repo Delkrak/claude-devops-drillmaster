@@ -36,7 +36,7 @@ describe('artifacts from the work folder', () => {
     await expect(readArtifactFromWorkFolder(work.dir, path.join(outside.dir, 'id_rsa.txt'))).rejects.toThrow(/outside the work folder/)
     await expect(readArtifactFromWorkFolder(work.dir, '../' + path.basename(outside.dir) + '/id_rsa.txt')).rejects.toThrow(/outside the work folder/)
     await expect(readArtifactFromWorkFolder(work.dir, 'secret.txt')).rejects.toThrow(/ignored by git/)
-    await expect(readArtifactFromWorkFolder(work.dir, 'tool.exe')).rejects.toThrow(/not an image or text/)
+    await expect(readArtifactFromWorkFolder(work.dir, 'tool.exe')).rejects.toThrow(/is none of the files Drillmaster keeps: images \(\.png .*\), text \(.*\.diff \.patch\) and source or test files \(\.js .*\.ts .*\.py /)
     await expect(readArtifactFromWorkFolder(work.dir, 'huge.log')).rejects.toThrow(/the limit is/)
     await expect(readArtifactFromWorkFolder(work.dir, 'nope.png')).rejects.toThrow(InvalidArtifact)
   })

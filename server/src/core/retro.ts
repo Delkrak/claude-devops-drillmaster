@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import type { DrillmasterEvent, Proposal, RetroFindings, RetrospectiveRan } from './events.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, ReflectionInput, resolveFeedback } from './feedback.js'
-import { judgeExperiments } from './experiments.js'
-import { averageMeasure, BASELINE_WINDOW, currentMeasureName, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, type ItemMeasures, type MeasureName } from './measures.js'
+import { itemsCountedFor, judgeExperiments } from './experiments.js'
+import { stepUnchanged } from './updates.js'
+import { averageMeasure, BASELINE_WINDOW, currentMeasureName, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, rejectionsByRule, type ItemMeasures, type MeasureName } from './measures.js'
 import { frictionJudgementsOf, ownerInputsOf, type OwnerInput } from './ownerInputs.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
@@ -386,6 +387,7 @@ export function applyProposal(current: WorkflowDocument, proposal: Proposal, del
       baseline_sd: measureBaselineSd(deliveredItems, measure),
       target: proposal.target ?? null,
       judge_after: proposal.judge_after ?? DEFAULT_JUDGE_AFTER,
+      affects: next.stages.flatMap((stage) => stage.steps).filter((step) => !stepUnchanged(current, next, step.guid)).map((step) => step.guid),
       version: next.version,
       started: today,
     })
@@ -481,6 +483,10 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
       `- experiment ${experiment.id} "${experiment.change}" (purpose: ${experiment.purpose}; hypothesis: ${experiment.hypothesis || 'none'}; null hypothesis: ${experiment.null_hypothesis || 'none'})`,
       `  measure ${experiment.measure}: baseline ${experiment.baseline} (sd ${experiment.baseline_sd}), target ${experiment.target ?? 'none'}, judged after ${experiment.judge_after} items; ${verdict.counted} counted so far, mean ${verdict.mean ?? 'n/a'}`,
       `  server's verdict: ${verdict.status === 'running' ? 'still running' : `${verdict.status} (null hypothesis ${verdict.null_rejected ? 'rejected' : 'not rejected'}, target ${verdict.target_met ? 'met' : 'not met'})`}${verdict.overlapping.length ? `; runs alongside experiment ${verdict.overlapping.join(', ')} on the same measure, so the effects mix` : ''}`,
+      ...(verdict.through_steps.length ? [`  counts only the work items that went through step ${verdict.through_steps.join(', ')}, which its change touched`] : []),
+      ...(Object.keys(verdict.rule_rejections).length
+        ? [`  gate rejections citing the rules of those steps, over the judged items: ${Object.entries(verdict.rule_rejections).map(([rule, count]) => `${rule}: ${count}`).join(', ')}`]
+        : []),
     ].join('\n')
   })
 
@@ -491,6 +497,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     'Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.',
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
+    'Judge each proposal on a measure that can still drop: one that is 0 over the last delivered items cannot show an improvement, and a target must be below the baseline. Such a proposal is dropped.',
     `Propose at most ${MAX_PROPOSALS} changes: few, small and high-value, so each can be measured. A rule must say how it is verified. A work gate references specific rules. Work item inputs are options set at work_start or at a work step (for example whether it is a bug or a feature): steps and stages apply by them (if), and measures are split by them.`,
     `Write keep and improve as lists. In each entry, ${FEEDBACK_REFS_HELP} An entry about a tool is feedback on Drillmaster itself, which the workflow can't change; say so rather than propose a workflow change around it.`,
     'Each proposal lists in relies_on the references of what it builds on. A proposal that relies on something another proposal adds must come after it.',
@@ -503,6 +510,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     '',
     `Measures (Owner's objective: "${workflow.objective.text}"):`,
     ...measureLines,
+    `Gate rejections per rule, over the work items delivered since the last retrospective: ${Object.entries(rejectionsByRule(recentDelivered)).map(([rule, count]) => `${rule}: ${count}`).join(', ') || 'none'}`,
     '',
     "The last retrospective's actions:",
     ...lastRetrospectiveLines(state, events),
@@ -572,7 +580,16 @@ function proposalsReliedOn(relies: readonly string[], current: WorkflowDocument,
   return [...dependsOn]
 }
 
-export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, toolNames: readonly string[] = []) {
+/** Why an experiment on this measure and target could never show an improvement, if it couldn't. */
+function cannotShowImprovement(measure: MeasureName, target: unknown, deliveredItems: readonly ItemMeasures[]) {
+  if (deliveredItems.length === 0) return undefined
+  const baseline = measureBaseline(deliveredItems, measure)
+  if (baseline === 0) return `It is judged on ${measure}, which is 0 over the last ${Math.min(deliveredItems.length, BASELINE_WINDOW)} delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.`
+  if (typeof target === 'number' && target >= baseline) return `Its target ${target} on ${measure} is not below the baseline ${baseline}, so meeting it shows no improvement.`
+  return undefined
+}
+
+export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, toolNames: readonly string[] = [], deliveredItems: readonly ItemMeasures[] = []) {
   const retroAnswer = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { findings?: unknown; proposals?: unknown } | undefined
   const parsedFindings = Findings.safeParse(retroAnswer?.findings)
   if (!parsedFindings.success) throw new InvalidAnswer(`The retrospective has no findings: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
@@ -595,6 +612,13 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, too
     }
     try {
       const ops = z.array(WorkflowOp).min(1).parse(candidate.ops)
+      const named = typeof candidate.measure === 'string' ? currentMeasureName(candidate.measure) : ''
+      const measure = ((MEASURE_NAMES as readonly string[]).includes(named) ? named : workflow.objective.measures[0]!) as MeasureName
+      const noImprovement = opensWorkflowExperiment(ops) ? cannotShowImprovement(measure, candidate.target, deliveredItems) : undefined
+      if (noImprovement) {
+        dropped.push({ change, error: noImprovement })
+        continue
+      }
       const reliesOn = Array.isArray(candidate.relies_on) ? candidate.relies_on.filter((ref): ref is string => typeof ref === 'string') : []
       const afterOwnOps = { ...applyWorkflowOps(workflowAfterEarlierProposals, ops), version: workflowAfterEarlierProposals.version }
       let dependsOn = proposalsReliedOn(reliesOn, workflow, workflowAfterProposal, afterOwnOps, toolNames)
@@ -611,7 +635,7 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, too
         id: proposals.length + 1,
         change,
         purpose: typeof candidate.purpose === 'string' ? candidate.purpose : '',
-        measure: typeof candidate.measure === 'string' ? candidate.measure : workflow.objective.measures[0]!,
+        measure,
         ...(typeof candidate.hypothesis === 'string' ? { hypothesis: candidate.hypothesis } : {}),
         ...(typeof candidate.null_hypothesis === 'string' ? { null_hypothesis: candidate.null_hypothesis } : {}),
         ...(typeof candidate.target === 'number' ? { target: candidate.target } : {}),
@@ -634,6 +658,14 @@ export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDoc
       ? `- ${event.hook}${event.tool ? ` ${event.tool}` : ''}${event.input ? ` ${event.input}` : ''}${event.prompt ? ` Owner: "${event.prompt}"` : ''}`
       : `- ${JSON.stringify(event)}`,
   )
+  const delivered = measureDeliveredItems(events)
+  const experimentLines = workflow.experiments.map((experiment) => {
+    const counted = itemsCountedFor(experiment, delivered)
+    const number = counted.findIndex((countedItem) => countedItem.work_item_id === item.work_item_id) + 1
+    const about = `- experiment ${experiment.id} "${experiment.change}", judged after ${experiment.judge_after} work items:`
+    if (number === 0) return `${about} this work item does not count for it${experiment.affects?.length ? ': it did not go through the steps the change touched' : ''}.`
+    return `${about} this work item is number ${number} of them${number > experiment.judge_after ? ', past the ones it is judged on' : ''}.`
+  })
   return [
     `You are Drillmaster. Work item ${item.work_item_id} (${item.issue}) is delivered. Write your workflow post mortem on the work item as a whole: it is about the workflow, not the code.`,
     'Look at what Agent did (the work traces), what it reported, the verdicts, and what Owner had to say or correct.',
@@ -643,6 +675,9 @@ export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDoc
     '',
     `The workflow it ran on (version ${workflow.version}):`,
     workflowForReading(workflow),
+    '',
+    'Running workflow experiments, and how this work item counts for each (use these counts in experiment_reflections):',
+    ...(experimentLines.length ? experimentLines : ['- none']),
     '',
     `Write keep and change as lists. In each entry, ${FEEDBACK_REFS_HELP}`,
     'Answer with JSON only:',

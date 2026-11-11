@@ -9,6 +9,8 @@ const item = (n: number, corrections: number, version = '2.0.0', inputs: Record<
   workflow_version: version,
   delivered_at: `2026-11-1${n}T10:00:00Z`,
   inputs,
+  passed_step_guids: [],
+  rejections_by_rule: {},
   values: { owner_friction_per_item: corrections, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: n, tool_calls_per_item: 1 },
 })
 

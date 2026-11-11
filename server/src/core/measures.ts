@@ -27,6 +27,10 @@ export interface ItemMeasures {
   delivered_at: string
   values: Record<MeasureName, number>
   inputs: Record<string, string>
+  /** GUIDs of the steps whose gate passed. */
+  passed_step_guids: string[]
+  /** Gate rejections by the rule they cite. */
+  rejections_by_rule: Record<string, number>
 }
 
 const zeroMeasures = (): Record<MeasureName, number> => ({
@@ -40,11 +44,11 @@ const zeroMeasures = (): Record<MeasureName, number> => ({
 export function measureDeliveredItems(events: readonly DrillmasterEvent[]): ItemMeasures[] {
   const items = new Map<
     string,
-    { issue: string; workflowVersion: string; startedAt: string; deliveredAt?: string; values: Record<MeasureName, number>; inputs: Record<string, string> }
+    { issue: string; workflowVersion: string; startedAt: string; deliveredAt?: string; values: Record<MeasureName, number>; inputs: Record<string, string>; passedSteps: string[]; rejectionsByRule: Record<string, number> }
   >()
   for (const event of events) {
     if (event.type === 'work_item_started') {
-      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), inputs: {} })
+      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), inputs: {}, passedSteps: [], rejectionsByRule: {} })
       continue
     }
     if (event.type === 'work_item_updated') {
@@ -69,7 +73,9 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
         if (event.gate !== 'self') item.values.review_rounds_per_item++
         break
       case 'gate_verdict':
+        if (event.accepted && event.step_guid) item.passedSteps.push(event.step_guid)
         if (!event.accepted) item.values.gate_rejections_per_item++
+        if (!event.accepted && event.rule) for (const rule of event.rule.split(', ')) item.rejectionsByRule[rule] = (item.rejectionsByRule[rule] ?? 0) + 1
         if (event.by === 'owner' && !event.accepted) item.values.owner_friction_per_item++
         break
       case 'work_item_delivered':
@@ -92,8 +98,17 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
       delivered_at: item.deliveredAt!,
       values: item.values,
       inputs: item.inputs,
+      passed_step_guids: item.passedSteps,
+      rejections_by_rule: item.rejectionsByRule,
     }))
     .sort((a, b) => a.delivered_at.localeCompare(b.delivered_at))
+}
+
+/** Gate rejections by the rule they cite, over the items. */
+export function rejectionsByRule(items: readonly ItemMeasures[]) {
+  const counts: Record<string, number> = {}
+  for (const item of items) for (const [rule, count] of Object.entries(item.rejections_by_rule)) counts[rule] = (counts[rule] ?? 0) + count
+  return counts
 }
 
 export function averageMeasure(items: readonly ItemMeasures[], measure: MeasureName): number | null {

@@ -123,23 +123,23 @@ wants the user interface changes later.
 - 🟩 Agent keeps full agency. Nothing is run by the gate.
 
 **Per-rule rejection counts:**
-- 🟥 The retrospective prompt lists gate rejections per rule.
-- 🟥 An experiment's result counts the rejections citing the rules its change touched.
+- 🟩 The retrospective prompt lists gate rejections per rule.
+- 🟩 An experiment's result counts the rejections citing the rules its change touched.
 
 **Fixes from the feedback:**
-- 🟥 `work_resume` always includes the stage it resumes at. Today an item stalled when Agent left
+- 🟩 `work_resume` always includes the stage it resumes at. Today an item stalled when Agent left
   that stage out.
-- 🟥 `work_start` and `work_resume` list every step of the session's stages in outline: name, gate,
+- 🟩 `work_start` and `work_resume` list every step of the session's stages in outline: name, gate,
   `if`, and whether it can be skipped. The current step is shown in full. This stops false
   "missing step" impediments.
-- 🟥 `work_deliver` accepts source, test and diff files as text artifacts. A refused call lists the
+- 🟩 `work_deliver` accepts source, test and diff files as text artifacts. A refused call lists the
   accepted types.
-- 🟥 An experiment records the GUIDs its change touched (`affects`). Its result counts only the
+- 🟩 An experiment records the GUIDs its change touched (`affects`). Its result counts only the
   items that went through one of them.
-- 🟥 An experiment is refused when its baseline can't move toward the target, for example a
+- 🟩 An experiment is refused when its baseline can't move toward the target, for example a
   baseline of 0 with sd 0 when lower is better.
-- 🟥 Post mortem prompts give the exact count of items under each running experiment.
-- 🟥 A Drillmaster-judged skip is rejected when its claim has no trace behind it. There is no
+- 🟩 Post mortem prompts give the exact count of items under each running experiment.
+- 🟩 A Drillmaster-judged skip is rejected when its claim has no trace behind it. There is no
   acceptance with a condition attached.
 
 **Not taken up now:**
@@ -229,12 +229,12 @@ One round, pressure-tested with both the scripted and the LLM Owner.
 3. 🟩 **Owner's questions side by side** (1600b5f): `preview` on every Owner question, the gate question's
    content, no `self_check` on Owner gates, and the skills.
    - 🟩 the PreToolUse check that Owner is shown Drillmaster's question unchanged.
-4. 🟩 **Tool capture:**
+4. 🟩 **Tool capture** (8266c86):
    - the hook keeps the output's tail, for Bash and PowerShell;
    - `core/logPipeline.ts` (the LogQL subset);
    - the workflow's `tool_captures` rules and their retrospective operations;
    - the gate record links to traces.
-5. 🟥 **The fixes:**
+5. 🟩 **The fixes:**
    - `work_resume`'s stage;
    - the outline of the stages;
    - artifact types;
@@ -271,14 +271,14 @@ One round, pressure-tested with both the scripted and the LLM Owner.
     yields nothing;
   - 🟩 changing an input: going back to a step that now applies, keeping passed steps;
   - 🟩 the PreToolUse check of an Owner question: unchanged passes, changed is blocked;
-  - 🟥 per-rule counts.
+  - 🟩 per-rule counts.
 - **API tests:**
   - 🟩 a feature item skips the bug steps by condition, and the other way round;
   - 🟩 a stage skipped as a whole;
   - 🟩 fast-forward over a changed `if`;
-  - 🟥 `work_resume` adds its stage;
-  - 🟥 artifact types and the refusal message;
-  - 🟥 experiment `affects`, and a refused baseline;
+  - 🟩 `work_resume` adds its stage;
+  - 🟩 artifact types and the refusal message;
+  - 🟩 experiment `affects`, and a refused baseline;
   - 🟩 the friction measure from a post mortem.
 - 🟧 **Playwright:** the existing tests pass with the renames.
 - 🟥 **The plugin in real Claude Code:** an Owner gate whose AskUserQuestion shows the preview.

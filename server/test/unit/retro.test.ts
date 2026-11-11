@@ -93,6 +93,8 @@ describe('applying a proposal', () => {
     workflow_version: '0.0.0',
     delivered_at: `2026-11-0${n}T10:00:00Z`,
     inputs: {},
+    passed_step_guids: [],
+    rejections_by_rule: {},
     values: { owner_friction_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
   }))
 
@@ -111,6 +113,7 @@ describe('applying a proposal', () => {
         baseline_sd: 0.82,
         target: 1,
         judge_after: 2,
+        affects: [next.workflow.stages[0]!.steps[0]!.guid],
         version: '1.0.0',
         started: '2026-11-09',
       },
@@ -228,6 +231,8 @@ describe('measures', () => {
         workflow_version: '0.0.0',
         delivered_at: at(10),
         inputs: {},
+        passed_step_guids: [],
+        rejections_by_rule: {},
         values: { owner_friction_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
       },
     ])

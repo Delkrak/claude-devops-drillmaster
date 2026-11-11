@@ -106,7 +106,27 @@ export function renderNext(workflow: WorkflowDocument, next: Position, done: boo
   return renderStep(workflow, next.stage, next.step)
 }
 
-export function renderStarted(args: { workItemId: string; agentToken: string; issue: string; workflow: WorkflowDocument; move: Move; sessionStages?: string }) {
+/**
+ * Every step of the stages a session works on, in one line each, so Agent sees what is ahead and
+ * doesn't take a step that comes later for a missing one.
+ */
+export function renderSessionOutline(workflow: WorkflowDocument, stageGuids: readonly string[] | null, at: Position) {
+  const gateWords = { self: 'self gate', drillmaster: 'Drillmaster gate', owner: 'Owner gate' }
+  const stages = workflow.stages.filter((stage) => stageGuids === null || stageGuids.includes(stage.guid))
+  return [
+    "**This session's work stages** (each step's instruction comes when you reach it):",
+    ...stages.flatMap((stage) => [
+      `- Stage ${stage.n} "${stage.name}"${stage.if ? `, only when ${stage.if}` : ''}`,
+      ...stage.steps.map((step) => {
+        const details = [gateWords[step.gate], ...(step.if ? [`only when ${step.if}`] : []), ...(step.skippable ? [`skippable (${step.skippable === 'self' ? 'you decide' : `${step.skippable === 'owner' ? 'Owner' : 'Drillmaster'} decides`})`] : [])]
+        const here = at.stage === stage.n && at.step === step.n ? ' <- you are here' : ''
+        return `  - ${stage.n}.${step.n} ${step.name} (${details.join(', ')})${here}`
+      }),
+    ]),
+  ].join('\n')
+}
+
+export function renderStarted(args: { workItemId: string; agentToken: string; issue: string; workflow: WorkflowDocument; move: Move; sessionStages?: string; stageGuids?: readonly string[] }) {
   const lines = [
     `# Work item ${args.workItemId} started: ${args.issue}`,
     '',
@@ -120,7 +140,7 @@ export function renderStarted(args: { workItemId: string; agentToken: string; is
   if (args.workflow.stages.length === 0) {
     lines.push('The workflow has no work stages yet: do your best, and Owner will step in where needed. Deliver with `work_deliver` when the work is done.')
   } else {
-    lines.push(renderMove(args.workflow, args.move))
+    lines.push(renderSessionOutline(args.workflow, args.stageGuids ?? null, args.move.next), '', renderMove(args.workflow, args.move))
   }
   return lines.join('\n')
 }
@@ -149,6 +169,8 @@ export function renderResumed(args: {
   outsideSession: boolean
   update?: UpdateSummary
   move: Move
+  /** The stages added to the session's, because the work item is in them. */
+  addedStages?: string
 }) {
   const { item } = args
   const where = item.pending_gate
@@ -168,6 +190,9 @@ export function renderResumed(args: {
     '',
     'This token replaces the earlier one, which no longer works. Keep it to yourself, and pass it to every work tool.',
     `Workflow version ${args.workflow.version}. This session works on ${args.sessionStages}, and stops when the last of them is done.`,
+    ...(args.addedStages ? [`${args.addedStages[0]!.toUpperCase()}${args.addedStages.slice(1)} is added to the stages you named: the work item is there, so this session works on it too.`] : []),
+    '',
+    renderSessionOutline(args.workflow, item.stage_guids, { stage: item.stage, step: item.step }),
     ...(args.update ? ['', renderUpdate(args.update)] : []),
     '',
     where,

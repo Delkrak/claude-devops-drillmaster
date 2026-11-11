@@ -51,7 +51,7 @@ describe('a work item in phases, one session each', () => {
     expect(await ownerAnswers(app, '/projects/phases', () => 'Approve', 'thursday')).toMatch(/Every work gate has passed/)
   })
 
-  it('updates on resuming at a step that allows it, and says when the step to redo is outside the session', async () => {
+  it('updates on resuming at a step that allows it, and adds the stage of the step to redo to the session', async () => {
     const { ports, tool, takeUp, app } = await project('/projects/phases-update')
     const capture = await takeUp('work_start', { issue: '#5', description: 'JSON export', stages: ['1'] }, 'monday')
     const { agent_token: token } = capture.structuredContent as { agent_token: string }
@@ -67,9 +67,11 @@ describe('a work item in phases, one session each', () => {
     await tool('workflow_retrospective', { action: 'apply' })
 
     const resumed = await takeUp('work_resume', { issue: '#5', stages: ['2'] }, 'thursday')
-    expect(resumed.structuredContent).toMatchObject({ workflow_version: '4.0.0', stage: 1, step: 3, update: { kept: ['1.1', '1.2'] } })
+    expect(resumed.structuredContent).toMatchObject({ workflow_version: '4.0.0', stage: 1, step: 3, session_done: false, added_stages: 'stage 1 "build"', update: { kept: ['1.1', '1.2'] } })
     expect(textOf(resumed)).toContain('**The work item updated from workflow 3.0.0 to 4.0.0**')
-    expect(textOf(resumed)).toContain("The work item is at step 1.3, which is not in the stages this session works on. Tell Owner, and don't go on.")
+    expect(textOf(resumed)).toContain('Stage 1 "build" is added to the stages you named: the work item is there, so this session works on it too.')
+    expect(textOf(resumed)).toContain('  - 1.3 send email (self gate) <- you are here')
+    expect(textOf(resumed)).toContain('## Work step 1.3: send email')
   })
 
   it('refuses a start outside the first stage, and a resume of an issue with no open work item', async () => {
