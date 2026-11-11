@@ -6,8 +6,8 @@ description: Sets up Drillmaster for a project - Owner states the objective and 
 # Setting up Drillmaster
 
 The first workflow holds only Owner's objective: no work stages, work policies or workflow
-experiments yet. Agent does its best, Owner corrects it, and the workflow grows from those
-corrections at each workflow retrospective. Nothing is copied from another workflow.
+experiments yet. Agent does its best, Owner steps in where needed, and the workflow grows from that
+at each workflow retrospective. Nothing is copied from another workflow.
 
 ## Steps
 
@@ -18,7 +18,7 @@ corrections at each workflow retrospective. Nothing is copied from another workf
 
    | Measure | What it counts |
    |---|---|
-   | `owner_corrections_per_item` | Owner's prompts during a work item that were not approvals |
+   | `owner_friction_per_item` | Owner's prompts during a work item that were not approvals |
    | `gate_rejections_per_item` | Work gate rejections per work item |
    | `review_rounds_per_item` | Drillmaster and Owner gate hand-ins per work item |
    | `minutes_per_item` | Minutes from start to delivery |
@@ -41,6 +41,6 @@ corrections at each workflow retrospective. Nothing is copied from another workf
 5. **Tell Owner how it goes from here,** in a few lines:
    - Give me issues as usual. I start each one with Drillmaster (`work_start`) and report as I
      go, and every action I take is recorded.
-   - Correct me whenever I get something wrong. Your corrections are what the workflow is built
-     from.
+   - Step in whenever I get something wrong. Where you have to step in is what the workflow is
+     built from.
    - Call `/devops-drillmaster:retrospective` when you want the workflow to improve.

@@ -93,11 +93,11 @@ describe('applying a proposal', () => {
     workflow_version: '0.0.0',
     delivered_at: `2026-11-0${n}T10:00:00Z`,
     inputs: {},
-    values: { owner_corrections_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
+    values: { owner_friction_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
   }))
 
   it("opens a workflow experiment with the measure's baseline", () => {
-    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_corrections_per_item', hypothesis: 'a test step stops the asking', target: 1, judge_after: 2, ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] }, items, '2026-11-09')
+    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_friction_per_item', hypothesis: 'a test step stops the asking', target: 1, judge_after: 2, ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] }, items, '2026-11-09')
     expect(next.level).toBe('major')
     expect(next.workflow.experiments).toEqual([
       {
@@ -105,8 +105,8 @@ describe('applying a proposal', () => {
         change: 'add a test step',
         purpose: 'Owner had to ask for tests',
         hypothesis: 'a test step stops the asking',
-        null_hypothesis: '"add a test step" makes no difference to owner_corrections_per_item.',
-        measure: 'owner_corrections_per_item',
+        null_hypothesis: '"add a test step" makes no difference to owner_friction_per_item.',
+        measure: 'owner_friction_per_item',
         baseline: 2,
         baseline_sd: 0.82,
         target: 1,
@@ -119,7 +119,7 @@ describe('applying a proposal', () => {
 
   it('judging an experiment ends it without opening a new one', () => {
     const withExperiment = { ...WORKFLOW_3, experiments: [{ ...EXPERIMENT_1, id: 4 }] }
-    const next = applyProposal(withExperiment, { id: 1, change: 'keep experiment 4', purpose: 'it worked', measure: 'owner_corrections_per_item', ops: [{ op: 'end_experiment', id: 4, outcome: 'kept' }] }, items, '2026-11-09')
+    const next = applyProposal(withExperiment, { id: 1, change: 'keep experiment 4', purpose: 'it worked', measure: 'owner_friction_per_item', ops: [{ op: 'end_experiment', id: 4, outcome: 'kept' }] }, items, '2026-11-09')
     expect(next.workflow.experiments).toEqual([])
     expect(next).toMatchObject({ level: 'patch', workflow: { version: '3.0.1' } })
   })
@@ -132,8 +132,8 @@ describe("reading Drillmaster's answers", () => {
     const read = readRetroAnswer(w0, {
       findings,
       proposals: [
-        { id: 7, change: 'bad', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'remove_stage', stage: '3' }] },
-        { id: 8, change: 'good', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }] },
+        { id: 7, change: 'bad', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'remove_stage', stage: '3' }] },
+        { id: 8, change: 'good', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }] },
       ],
     })
     expect(read.proposals.map((p) => [p.id, p.change])).toEqual([[1, 'good']])
@@ -144,8 +144,8 @@ describe("reading Drillmaster's answers", () => {
     const read = readRetroAnswer(w0, {
       findings,
       proposals: [
-        { change: 'policy', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }] },
-        { change: 'stage', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] },
+        { change: 'policy', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }] },
+        { change: 'stage', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] },
         { change: 'objective', purpose: 'p', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['minutes_per_item'] }] },
       ],
     })
@@ -191,13 +191,13 @@ describe("reading Drillmaster's answers", () => {
       findings,
       proposals: [
         { change: 'time it', purpose: 'p', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['minutes_per_item'] }] },
-        { change: 'lint rule', purpose: 'p', measure: 'owner_corrections_per_item', ops: [lintRule] },
-        { change: 'lint step', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['rule lint 1.1', 'step 1.1'], ops: [{ op: 'change_step', step: '1.1', rules: ['test 1.1', 'lint 1.1'] }] },
-        { change: 'own rule', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['rule own 1.1'], ops: [{ op: 'add_policy', name: 'own', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] },
+        { change: 'lint rule', purpose: 'p', measure: 'owner_friction_per_item', ops: [lintRule] },
+        { change: 'lint step', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['rule lint 1.1', 'step 1.1'], ops: [{ op: 'change_step', step: '1.1', rules: ['test 1.1', 'lint 1.1'] }] },
+        { change: 'own rule', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['rule own 1.1'], ops: [{ op: 'add_policy', name: 'own', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] },
       ],
     })
     expect(read.proposals.map((p) => [p.change, p.depends_on])).toEqual([['time it', undefined], ['lint rule', undefined], ['lint step', [2]], ['own rule', undefined]])
-    const nothing = { change: 'nothing there', purpose: 'p', measure: 'owner_corrections_per_item', relies_on: ['step 7.1'], ops: [{ op: 'set_objective', text: 'x' }] }
+    const nothing = { change: 'nothing there', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['step 7.1'], ops: [{ op: 'set_objective', text: 'x' }] }
     expect(readRetroAnswer(WORKFLOW_3, { findings, proposals: [nothing] }).dropped).toEqual([{ change: 'nothing there', error: "It relies on step 7.1, which workflow 3.0.0 doesn't have and no earlier proposal adds." }])
   })
 })
@@ -228,7 +228,7 @@ describe('measures', () => {
         workflow_version: '0.0.0',
         delivered_at: at(10),
         inputs: {},
-        values: { owner_corrections_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
+        values: { owner_friction_per_item: 2, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 10, tool_calls_per_item: 1 },
       },
     ])
   })

@@ -271,6 +271,13 @@ export interface Artifact {
   bytes: number
 }
 
+/** The friction judge's verdict on each of Owner's inputs on a work item. */
+export interface OwnerInputsJudged extends EventEnvelope {
+  type: 'owner_inputs_judged'
+  work_item_id: string
+  inputs: { event: string; friction: boolean; why: string }[]
+}
+
 export interface PostMortemWritten extends EventEnvelope {
   type: 'post_mortem_written'
   work_item_id: string
@@ -298,6 +305,7 @@ export type DrillmasterEvent =
   | InputSet
   | WorkItemDelivered
   | PostMortemWritten
+  | OwnerInputsJudged
   | RetrospectiveRan
   | OwnerDecided
   | OwnerAsked

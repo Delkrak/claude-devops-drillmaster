@@ -232,7 +232,7 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
     lines.push(`A workflow retrospective is due: ${context.retrospectiveDue}. Suggest it to Owner (/devops-drillmaster:retrospective); Owner decides when.`)
   }
   if (workflow.stages.length === 0) {
-    lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. The workflow grows from those corrections.')
+    lines.push('The workflow has no work stages yet: do your best, and Owner will step in where needed. The workflow grows from that.')
   }
   return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: lines.join('\n') } }
 }

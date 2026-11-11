@@ -21,7 +21,7 @@ const retro: DrillmasterEvent = {
   work_items: [],
   findings: { should: '', did: '', why: '', keep: [], improve: [] },
   proposals: [
-    { id: 1, change: 'add pr 1.1', purpose: 'Owner corrected PR descriptions', hypothesis: 'A PR rule stops the corrections', measure: 'owner_corrections_per_item', ops: [] },
+    { id: 1, change: 'add pr 1.1', purpose: 'Owner corrected PR descriptions', hypothesis: 'A PR rule stops the corrections', measure: 'owner_friction_per_item', ops: [] },
     { id: 2, change: 'time it', purpose: 'see speed', measure: 'minutes_per_item', ops: [] },
   ],
 }
@@ -59,7 +59,7 @@ describe('what a retrospective reads', () => {
     const events = [init, grown, ...open]
     const prompt = buildRetroPrompt(foldState(events), events, [])
     expect(prompt).toContain('Open work items, partly done (their reports and Owner\'s words below count too): wi_open (#9) at step 1.1')
-    expect(prompt).toContain('- wi_open: "tell the stakeholders"')
+    expect(prompt).toContain('- wi_open, input: "tell the stakeholders" (not judged yet)')
     expect(prompt).toContain('stakeholders were not told')
   })
 })

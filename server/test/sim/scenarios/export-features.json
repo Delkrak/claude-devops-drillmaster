@@ -2,7 +2,7 @@
   "name": "export-features",
   "project": "node-report",
   "objective": "ship features without Owner stepping in",
-  "measures": ["owner_corrections_per_item"],
+  "measures": ["owner_friction_per_item"],
   "issues": [
     { "id": "#1", "text": "Add a toCsv(rows) function in src/csv.js that turns the report rows into CSV with a header line." },
     { "id": "#2", "text": "Add a toJson(rows) function in src/json.js that returns the rows as pretty-printed JSON, with revenue added to each row." },
@@ -15,7 +15,7 @@
   "retro_after": [2],
   "max_turns_per_issue": 6,
   "scripted": {
-    "setup": "Please set up Drillmaster for this project with the drillmaster setup skill. My objective: ship features without Owner stepping in. Measure it by owner_corrections_per_item. Keep the project in the Drillmaster repository at {drillmaster_repository}.",
+    "setup": "Please set up Drillmaster for this project with the drillmaster setup skill. My objective: ship features without Owner stepping in. Measure it by owner_friction_per_item. Keep the project in the Drillmaster repository at {drillmaster_repository}.",
     "issues": [
       ["Please do issue #1 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "You didn't add a test for it. Every new function needs its own test file, and run npm test.", "Also add a line to CHANGES.md saying what changed.", "Looks good."],
       ["Please do issue #2 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Looks good."],

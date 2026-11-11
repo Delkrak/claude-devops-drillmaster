@@ -54,7 +54,7 @@ describe('viewer API', () => {
     expect(body.workflow.version).toBe('3.0.0')
     expect(body.versions.map((v: any) => v.version)).toEqual(['0.0.0', '1.0.0', '2.0.0', '3.0.0'])
     expect(body.work_items[0]).toMatchObject({ issue: '#9', status: 'active', stage: 1, step: 2, reports: 2, added_steps: 0 })
-    expect(body.measures[0]).toMatchObject({ name: 'owner_corrections_per_item', all: null })
+    expect(body.measures[0]).toMatchObject({ name: 'owner_friction_per_item', all: null })
     expect(body.retrospectives).toEqual([])
   })
 

@@ -48,7 +48,7 @@ describe('workflow document', () => {
       objective: OBJECTIVE,
       stages: [{ n: 1, name: 'build', steps: [{ n: 1, name: 'test', gate: 'self', rules: [], report: [] }] }],
       policies: [],
-      experiments: [{ id: 1, change: 'c', purpose: 'p', measure: 'owner_corrections_per_item', baseline: 1, started: '2026-11-01' }],
+      experiments: [{ id: 1, change: 'c', purpose: 'p', measure: 'owner_friction_per_item', baseline: 1, started: '2026-11-01' }],
     }
     const migrated = WorkflowDocument.parse(migrateWorkflow(old))
     expect(migrated).toMatchObject({ version: '2.0.0', inputs: [], stages: [{ purpose: '', steps: [{ instruction: '' }] }] })

@@ -114,7 +114,7 @@ export function renderStarted(args: { workItemId: string; agentToken: string; is
     '',
   ]
   if (args.workflow.stages.length === 0) {
-    lines.push('The workflow has no work stages yet: do your best, and Owner will correct you. Deliver with `work_deliver` when the work is done.')
+    lines.push('The workflow has no work stages yet: do your best, and Owner will step in where needed. Deliver with `work_deliver` when the work is done.')
   } else {
     lines.push(renderMove(args.workflow, args.move))
   }

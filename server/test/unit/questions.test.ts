@@ -66,7 +66,7 @@ describe("Owner's pending questions", () => {
         work_items: [],
         findings: { should: '', did: '', why: '', keep: '', improve: '' },
         proposals: [
-          { id: 1, change: 'add a lint step', purpose: 'Owner fixed lint', hypothesis: 'no more lint fixes', measure: 'owner_corrections_per_item', ops: [] },
+          { id: 1, change: 'add a lint step', purpose: 'Owner fixed lint', hypothesis: 'no more lint fixes', measure: 'owner_friction_per_item', ops: [] },
           { id: 2, change: 'time it', purpose: 'see speed', measure: 'minutes_per_item', ops: [] },
         ],
       },
@@ -141,7 +141,7 @@ describe("Owner's corrections, whatever the channel", () => {
   const verdict = (accepted: boolean, via: 'question' | 'prompt') =>
     asEvents([{ type: 'gate_verdict', work_item_id: 'wi_1', stage: 2, step: 1, accepted, by: 'owner', via, why: 'w', rule: null, next: { stage: null, step: null }, done: accepted }])
   const prompt = asEvents([{ type: 'work_trace', session_id: 's1', work_item_id: 'wi_1', stage: 2, step: 1, hook: 'UserPromptSubmit', prompt: 'p' }])
-  const corrections = (events: DrillmasterEvent[]) => measureDeliveredItems([...base, ...events, ...delivered])[0]!.values.owner_corrections_per_item
+  const corrections = (events: DrillmasterEvent[]) => measureDeliveredItems([...base, ...events, ...delivered])[0]!.values.owner_friction_per_item
 
   it('counts every chat prompt, and every rejected Owner gate', () => {
     expect(corrections(verdict(true, 'question'))).toBe(0)

@@ -42,8 +42,8 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   const firstRetroAt = facts.retros > 0 ? (retros[0]?.at ?? '') : ''
   const deliveredBeforeRetro = deliveredMeasures.filter((item) => item.delivered_at <= firstRetroAt)
   const deliveredAfterRetro = deliveredMeasures.filter((item) => item.delivered_at > firstRetroAt)
-  const correctionsBefore = averageMeasure(deliveredBeforeRetro, 'owner_corrections_per_item')
-  const correctionsAfter = averageMeasure(deliveredAfterRetro, 'owner_corrections_per_item')
+  const correctionsBefore = averageMeasure(deliveredBeforeRetro, 'owner_friction_per_item')
+  const correctionsAfter = averageMeasure(deliveredAfterRetro, 'owner_friction_per_item')
 
   const checks: Check[] = [
     { name: 'workflow set up from the objective', ok: state.initialized, detail: `version ${state.workflow?.version ?? 'none'}` },

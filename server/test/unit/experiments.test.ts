@@ -9,7 +9,7 @@ const item = (n: number, corrections: number, version = '2.0.0', inputs: Record<
   workflow_version: version,
   delivered_at: `2026-11-1${n}T10:00:00Z`,
   inputs,
-  values: { owner_corrections_per_item: corrections, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: n, tool_calls_per_item: 1 },
+  values: { owner_friction_per_item: corrections, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: n, tool_calls_per_item: 1 },
 })
 
 describe("an experiment's verdict", () => {
@@ -43,12 +43,12 @@ describe('measure helpers', () => {
   it('takes the spread of the baseline window', () => {
     expect(standardDeviation([1, 2, 3])).toBe(0.82)
     expect(standardDeviation([])).toBe(0)
-    expect(measureBaselineSd([item(1, 2), item(2, 2)], 'owner_corrections_per_item')).toBe(0)
+    expect(measureBaselineSd([item(1, 2), item(2, 2)], 'owner_friction_per_item')).toBe(0)
   })
 
   it('splits a measure by a work item input', () => {
     const items = [item(1, 2, '2.0.0', { size: 'small' }), item(2, 4, '2.0.0', { size: 'large' }), item(3, 0, '2.0.0', { size: 'small' }), item(4, 1)]
-    expect(splitMeasureByInput(items, 'owner_corrections_per_item', 'size')).toEqual([
+    expect(splitMeasureByInput(items, 'owner_friction_per_item', 'size')).toEqual([
       { option: 'small', items: 2, mean: 1 },
       { option: 'large', items: 1, mean: 4 },
       { option: 'not set', items: 1, mean: 1 },

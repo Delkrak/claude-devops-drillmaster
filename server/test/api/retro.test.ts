@@ -34,7 +34,7 @@ beforeAll(async () => {
             id: 1,
             change: 'add a build stage whose first step runs the tests',
             purpose: 'Owner corrected missing test runs',
-            measure: 'owner_corrections_per_item',
+            measure: 'owner_friction_per_item',
             hypothesis: 'A test step means Owner stops asking for tests',
             target: 0,
             judge_after: 2,
@@ -43,7 +43,7 @@ beforeAll(async () => {
               { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [{ name: 'run the tests', instruction: 'Run npm test and fix what is red.', gate: 'self', rules: ['test 1.1'], report: ['test result'] }] },
             ],
           },
-          { id: 2, change: 'measure time too', purpose: 'see speed', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['owner_corrections_per_item', 'minutes_per_item'] }] },
+          { id: 2, change: 'measure time too', purpose: 'see speed', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['owner_friction_per_item', 'minutes_per_item'] }] },
           { id: 3, change: 'broken', purpose: 'x', measure: 'minutes_per_item', ops: [{ op: 'remove_stage', stage: 9 }] },
         ],
       },
@@ -59,7 +59,7 @@ describe('the improvement loop', () => {
   let token: string
 
   it("sets workflow_0 from Owner's objective, once", async () => {
-    const setup = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] })
+    const setup = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] })
     expect(setup.value.workflow).toMatchObject({ version: '0.0.0', stages: [] })
     expect((await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'again', measures: ['minutes_per_item'] })).isError).toBe(true)
   })
@@ -84,7 +84,7 @@ describe('the improvement loop', () => {
 
   it('shows the measures in the workflow overview', async () => {
     const overview = await tool('workflow_get', {})
-    expect(overview.value.measures.owner_corrections_per_item).toEqual({ last_5: 1, all: 1, delivered: 1 })
+    expect(overview.value.measures.owner_friction_per_item).toEqual({ last_5: 1, all: 1, delivered: 1 })
   })
 
   it("runs the retrospective from the post mortems and Owner's corrections, dropping proposals that would not apply", async () => {
@@ -113,7 +113,7 @@ describe('the improvement loop', () => {
         {
           proposal: 1,
           level: 'major',
-          experiment: { id: 1, measure: 'owner_corrections_per_item', baseline: 1, purpose: 'Owner corrected missing test runs', target: 0, judge_after: 2, version: '1.0.0' },
+          experiment: { id: 1, measure: 'owner_friction_per_item', baseline: 1, purpose: 'Owner corrected missing test runs', target: 0, judge_after: 2, version: '1.0.0' },
         },
       ],
     })

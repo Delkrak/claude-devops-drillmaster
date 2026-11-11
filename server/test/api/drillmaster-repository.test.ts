@@ -25,7 +25,7 @@ const buildAndShip = {
       id: 1,
       change: 'a build stage that runs the tests',
       purpose: 'Owner asked for tests',
-      measure: 'owner_corrections_per_item',
+      measure: 'owner_friction_per_item',
       hypothesis: 'no more asking',
       ops: [
         { op: 'add_policy', name: 'test', rules: [testRule] },

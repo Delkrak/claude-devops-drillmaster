@@ -33,7 +33,7 @@ export function WorkItemsView({ project }: { project: ProjectView }) {
           { header: 'Traces', cell: (workItem) => workItem.traces },
           { header: 'Rejections', cell: (workItem) => (workItem.rejections ? <Badge tone="bad">{workItem.rejections}</Badge> : 0) },
           { header: 'Added steps', cell: (workItem) => (workItem.added_steps ? <Badge tone="warn">{workItem.added_steps}</Badge> : 0) },
-          { header: 'Corrections', cell: (workItem) => formatNumber(workItem.measures?.owner_corrections_per_item) },
+          { header: 'Friction', cell: (workItem) => formatNumber(workItem.measures?.owner_friction_per_item) },
           { header: 'Post mortems', cell: (workItem) => workItem.post_mortems.join(' + ') || '-' },
           { header: 'Started', cell: (workItem) => formatDateTime(workItem.started_at) },
         ]}

@@ -72,7 +72,7 @@ function WorkItem({ view, projectId, highlightedEvent }: { view: WorkItemView; p
         <Stat label="Work reports" value={item.reports} />
         <Stat label="Work traces" value={item.traces} />
         <Stat label="Rejections" value={item.rejections} />
-        {view.measures && <Stat label={measureLabel('owner_corrections_per_item')} value={formatNumber(view.measures.owner_corrections_per_item)} />}
+        {view.measures && <Stat label={measureLabel('owner_friction_per_item')} value={formatNumber(view.measures.owner_friction_per_item)} />}
         {view.measures && <Stat label="Minutes" value={formatNumber(view.measures.minutes_per_item)} />}
       </Grid>
       <PostMortems events={view.post_mortems} projectId={projectId} />

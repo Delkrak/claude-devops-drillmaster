@@ -2,7 +2,7 @@
   "name": "phases-update",
   "project": "node-report",
   "objective": "ship features Owner agreed to up front, without Owner having to correct them",
-  "measures": ["owner_corrections_per_item"],
+  "measures": ["owner_friction_per_item"],
   "expects": { "update": true },
   "seed_workflow": {
     "version": "1.0.0",

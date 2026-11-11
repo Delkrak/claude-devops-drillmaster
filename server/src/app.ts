@@ -9,7 +9,9 @@ import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type InputAnsw
 import { judgeExperiments } from './core/experiments.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resolveFeedback } from './core/feedback.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
-import { averageMeasure, BASELINE_WINDOW, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
+import { averageMeasure, BASELINE_WINDOW, currentMeasureName, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
+import { buildFrictionPrompt, FRICTION_REVIEW_KIND, readFrictionAnswer } from './core/friction.js'
+import { frictionJudgementsOf, ownerInputsOf } from './core/ownerInputs.js'
 import {
   applyProposal,
   buildPostMortemPrompt,
@@ -340,7 +342,7 @@ export const TOOLS: ToolDefinition[] = [
     description: [
       'The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.',
       `- setup {objective, measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective, in the Drillmaster repository, and writes .drillmaster in the work folder. measures: ${MEASURE_NAMES.join(', ')}.`,
-      `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's corrections, the measures and the experiments' verdicts. Show them to Owner as they are.`,
+      `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's inputs, the measures and the experiments' verdicts. Show them to Owner as they are.`,
       "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline.",
     ].join('\n'),
     inputSchema: {
@@ -624,10 +626,10 @@ export class Drillmaster {
         case 'workflow_retrospective': {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs)
           if (retroArgs.action === 'setup') {
-            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder })
+            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures.map(currentMeasureName) }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder })
             return jsonResult({
               workflow,
-              note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner corrects, and the workflow grows from those corrections. Commit .drillmaster with the code: it is how Drillmaster knows this folder.',
+              note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner steps in where needed, and the workflow grows from that. Commit .drillmaster with the code: it is how Drillmaster knows this folder.',
             })
           }
           return jsonResult(retroArgs.action === 'run' ? await this.runRetrospective(projectDir) : await this.applyApprovedProposals(projectDir, retroArgs.proposal))
@@ -845,7 +847,10 @@ export class Drillmaster {
         if (storedEvent.type === 'gate_verdict' && storedEvent.accepted && storedEvent.by !== 'drillmaster') {
           this.takeDrillmasterInputsInBackground(projectDir, storedEvent.work_item_id, { stage: storedEvent.stage, step: storedEvent.step }, storedEvent.workflow_version)
         }
-        if (storedEvent.type === 'work_item_delivered') this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
+        if (storedEvent.type === 'work_item_delivered') {
+          this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
+          this.runInBackground(this.judgeFriction(projectDir, storedEvent.work_item_id))
+        }
       }
       const after = foldState(await this.ports.store.read(projectId))
       return { answer: decision.answer, gateSubmissionToJudge, workflow: work.workflowOfWorkItem(after, after.workItems[item!.work_item_id]!), workItemId: item!.work_item_id }
@@ -910,6 +915,25 @@ export class Drillmaster {
     })
   }
 
+  /** The separate friction judge, on each of Owner's inputs on a work item it hasn't judged yet. */
+  private async judgeFriction(projectDir: string, workItemId: string) {
+    const events = await this.events(projectDir)
+    const item = foldState(events).workItems[workItemId]!
+    const judged = frictionJudgementsOf(events)
+    const unjudged = ownerInputsOf(events).filter((input) => input.work_item_id === workItemId && !judged.has(input.event_id))
+    if (unjudged.length === 0) return
+    let judgements
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_REVIEW_KIND, prompt: buildFrictionPrompt(item, unjudged, events) })
+      judgements = readFrictionAnswer(unjudged, answer)
+    } catch {
+      // Until the judge has judged, an input counts by what it led to.
+      return
+    }
+    if (judgements.length === 0) return
+    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'owner_inputs_judged', work_item_id: workItemId, inputs: judgements }))
+  }
+
   private async writeDrillmasterPostMortem(projectDir: string, workItemId: string) {
     const events = await this.events(projectDir)
     const state = foldState(events)
@@ -935,8 +959,10 @@ export class Drillmaster {
   }
 
   private async runRetrospective(projectDir: string) {
-    // Drillmaster's own post mortems are written in the background; the retrospective needs them.
+    // Drillmaster's own post mortems and the friction judgements are made in the background; the retrospective needs them.
     await this.idle()
+    const delivered = Object.values((await this.state(projectDir)).workItems).filter((item) => item.status === 'delivered')
+    for (const item of delivered) await this.judgeFriction(projectDir, item.work_item_id)
     const events = await this.events(projectDir)
     const state = foldState(events)
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)

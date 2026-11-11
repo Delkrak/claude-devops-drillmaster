@@ -88,7 +88,7 @@ test('shows a real simulated run: its retrospective, applied proposals and measu
   await page.getByRole('tab', { name: 'Work items' }).click()
   await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(3)
   await page.getByRole('tab', { name: 'Measures' }).click()
-  await expect(page.getByRole('img', { name: 'owner_corrections_per_item per work item' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'owner_friction_per_item per work item' })).toBeVisible()
 })
 
 test('follows a live session: a new work item appears without reloading', async ({ page, request }) => {

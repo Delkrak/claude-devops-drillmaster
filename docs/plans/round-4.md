@@ -54,22 +54,22 @@ wants the user interface changes later.
   `remove_input`, and the old names are still read.
 
 **Owner inputs, and friction:**
-- 🟥 Owner's chat prompts are "Owner inputs", not corrections. A work item's values are "work item
+- 🟩 Owner's chat prompts are "Owner inputs", not corrections. A work item's values are "work item
   inputs". Every text, tool result, skill and the viewer uses these names.
-- 🟥 An Owner input belongs to what it leads to:
+- 🟩 An Owner input belongs to what it leads to:
   - when Agent's next Drillmaster call is `work_start` or `work_resume`, to that item, as its start
     or resume input;
   - when it is `workflow_retrospective`, to that retrospective;
   - otherwise, to the item the session is on.
 
   This fixes the inputs listed one item late.
-- 🟧 A separate judge decides whether each Owner input on the item was friction (Owner had to step
+- 🟩 A separate judge decides whether each Owner input on the item was friction (Owner had to step
   in), or not. It is a fresh review that sees only the item: its issue, the Owner inputs, and what
   Agent did just before and after each one. It never sees the workflow, its history or the
   retrospectives, so it has no stake in the workflow looking better. It runs at delivery, next to
   Drillmaster's post mortem, and logs `owner_inputs_judged {work_item_id, inputs: [{event,
   friction, why}]}`.
-- 🟥 The measure `owner_corrections_per_item` becomes `owner_friction_per_item`: the inputs judged
+- 🟩 The measure `owner_corrections_per_item` becomes `owner_friction_per_item`: the inputs judged
   friction, plus the Owner gates Owner rejected. Its value is known once the judge has run.
   Objectives and experiments that name the old measure are migrated on read.
 
@@ -205,25 +205,25 @@ OK. A review is an agent review, not a stop for Owner.
 
 One round, pressure-tested with both the scripted and the LLM Owner.
 
-0. 🟥 **The plan in the repository:** `docs/plans/round-4.md`, and its row in the README (round 3's
+0. 🟩 **The plan in the repository** (e393637): `docs/plans/round-4.md`, and its row in the README (round 3's
    commits named exactly, d733b35..42d2693).
-   - 🟧 The status squares go in a new `~/.claude/CLAUDE.md`, as the rule for every plan:
+   - 🟩 The status squares go in a new `~/.claude/CLAUDE.md`, as the rule for every plan:
      - every item starts with 🟥 (not built, in an earlier version), 🟧 (not built, new since the
        version Owner last saw) or 🟩 (built);
      - the legend sits at the top;
      - plan files are ASCII with LF line endings, except for the squares.
 
      The squares in `docs/plans/round-4.md` turn green as phases are built.
-1. 🟩 **Inputs and conditions:**
+1. 🟩 **Inputs and conditions** (04c0506):
    - `metrics` become `inputs`, with migration;
    - `core/conditions.ts` (parse, validate, evaluate);
    - `if` on stages and steps, skipped by condition, as a major change;
    - `set_at: "start"` in `work_start`;
    - 🟩 changing an input, and going back;
    - the retrospective operations and their prompt.
-2. 🟥 **Owner inputs and friction:**
+2. 🟩 **Owner inputs and friction:**
    - attribution by the call an input leads to;
-   - 🟧 the separate friction judge;
+   - 🟩 the separate friction judge;
    - `owner_friction_per_item`, with migration;
    - the wording everywhere.
 3. 🟥 **Owner's questions side by side:** `preview` on every Owner question, the gate question's
@@ -264,8 +264,8 @@ One round, pressure-tested with both the scripted and the LLM Owner.
 
 - **Unit tests:**
   - 🟩 conditions: parsing, refusals (unknown input, unknown value, read before set), evaluation;
-  - 🟥 migration of metrics to inputs, and of the old measure;
-  - 🟥 attribution of Owner inputs, including the one-item-late case from the runs;
+  - 🟩 migration of metrics to inputs, and of the old measure;
+  - 🟩 attribution of Owner inputs, including the one-item-late case from the runs;
   - 🟧 the LogQL subset: each filter, parser and `line_format`, and refusals of what's outside it;
   - 🟧 tool capture: the default 20 lines, replaced by a rule's yield, and the fallback when it
     yields nothing;
@@ -279,7 +279,7 @@ One round, pressure-tested with both the scripted and the LLM Owner.
   - 🟥 `work_resume` adds its stage;
   - 🟥 artifact types and the refusal message;
   - 🟥 experiment `affects`, and a refused baseline;
-  - 🟥 the friction measure from a post mortem.
+  - 🟩 the friction measure from a post mortem.
 - 🟧 **Playwright:** the existing tests pass with the renames.
 - 🟥 **The plugin in real Claude Code:** an Owner gate whose AskUserQuestion shows the preview.
 - 🟧 **The plugin in real Claude Code:** a Bash trace with tool capture fields.

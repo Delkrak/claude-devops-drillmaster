@@ -71,7 +71,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
   it('sets up workflow_0 through the setup skill, which writes .drillmaster', async () => {
     const drillmasterRepository = path.join(home.dir, 'drillmaster.git')
     execFileSync('git', ['init', '--bare', '--quiet', '--initial-branch=main', drillmasterRepository])
-    await turn(`Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. The Drillmaster repository: ${drillmasterRepository}.`)
+    await turn(`Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_friction_per_item. The Drillmaster repository: ${drillmasterRepository}.`)
     expect(JSON.parse(await readFile(path.join(project.dir, '.drillmaster'), 'utf8'))).toMatchObject({ drillmaster_repository: drillmasterRepository })
     expect(foldState(await events()).workflow).toMatchObject({ version: '0.0.0', stages: [] })
   }, 600_000)
@@ -99,7 +99,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     // A workflow with one Owner-gated step, as if a retrospective had added it.
     const ownerGated = {
       version: '1.0.0',
-      objective: { text: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] },
+      objective: { text: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] },
       stages: [{ n: 1, name: 'review', purpose: 'Owner accepts the change', steps: [{ n: 1, name: 'Owner approves', instruction: 'Show Owner the file and ask for approval.', gate: 'owner', rules: [], report: ['what to look at'] }] }],
       policies: [],
       metrics: [],

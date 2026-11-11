@@ -38,10 +38,10 @@ export default async function setup() {
     post_mortem: [{ keep: 'Small PRs', change: 'Ask for CHANGES.md in a rule', experiment_reflections: 'none running', free_text: '' }],
   })
   const app = new Drillmaster({ store, artifacts: new FileArtifactStore(path.join(home, 'projects')), clock: systemClock, ids: sequentialIds(), reviewer, projects: new FolderResolver() })
-  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'every change is documented', measures: ['owner_corrections_per_item'] })
+  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'every change is documented', measures: ['owner_friction_per_item'] })
   const workflow = {
     version: 1,
-    objective: { text: 'every change is documented', measures: ['owner_corrections_per_item'] },
+    objective: { text: 'every change is documented', measures: ['owner_friction_per_item'] },
     stages: [
       {
         n: 1,
@@ -82,7 +82,7 @@ export default async function setup() {
         purpose: 'Owner had to ask for tests',
         hypothesis: 'A test step means Owner stops asking for tests',
         null_hypothesis: 'The build stage makes no difference to the corrections',
-        measure: 'owner_corrections_per_item',
+        measure: 'owner_friction_per_item',
         baseline: 1.5,
         baseline_sd: 0.5,
         target: 0.5,

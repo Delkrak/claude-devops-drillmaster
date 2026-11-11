@@ -10,7 +10,7 @@ const step = (n: number, name: string, extra: Record<string, unknown> = {}) => (
 /** Capture, refine only for features, and build with a step only for bugs and one for features or what users see. */
 const PIPELINE: WorkflowDocument = migrateWorkflow({
   version: '1.0.0',
-  objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
+  objective: { text: OBJECTIVE.text, measures: ['owner_friction_per_item'] },
   stages: [
     { n: 1, name: 'capture', purpose: 'everyone knows what is wrong or wanted', steps: [step(1, 'write down what is wrong or wanted')] },
     { n: 2, name: 'refine', purpose: 'a feature has a spec', if: "kind == 'feature'", steps: [step(1, 'write the spec')] },
@@ -118,7 +118,7 @@ describe('steps and stages that apply by the work item inputs', () => {
     const { token, item } = await start([{ name: 'kind', value: 'feature' }])
     await gate(token, '1.1', [{ name: 'user_visible', value: 'no' }])
     await gate(token, '2.1')
-    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'features too', purpose: 'p', measure: 'owner_corrections_per_item', ops: [{ op: 'change_step', step: '3.1', if: '' }] }] })
+    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'features too', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'change_step', step: '3.1', if: '' }] }] })
     await app.callTool('/projects/if-update', 'workflow_retrospective', { action: 'run' })
     await ownerAnswers(app, '/projects/if-update', () => 'Approve')
     expect((await app.callTool('/projects/if-update', 'workflow_retrospective', { action: 'apply' })).structuredContent).toMatchObject({ workflow_version: '2.0.0' })

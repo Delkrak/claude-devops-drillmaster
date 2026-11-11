@@ -54,14 +54,15 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
       - **Owner gate:** pending. The result gives the exact AskUserQuestion to ask, and Owner
         approves or not there: Approve alone approves, and a note or a typed answer rejects, with
         Owner's words as the reason. The hooks record the answer as the verdict. Owner's chat
-        messages never decide; they count as corrections.
+        messages never decide: they are Owner inputs.
    4. The result shows the next step in full, or where a rejection sends the work back to.
    5. At the end of each work stage, the work item's events are committed and pushed to its own
       branch in the Drillmaster repository.
 7. With no work stages yet (workflow `0.0.0`), there are no gates: **Agent** does its best, and
-   **Owner** corrects it. Those corrections are recorded, and the workflow grows from them.
+   **Owner** steps in where needed. Owner's inputs are recorded, and the workflow grows from them.
 8. **Agent** calls `work_deliver` once every gate has passed, with a summary and artifacts such as
-   screenshots. **Drillmaster** writes its post mortem in the background.
+   screenshots. **Drillmaster** writes its post mortem in the background, and a separate friction
+   judge decides which of Owner's inputs on the work item were friction: Owner having to step in.
 9. **Agent** writes its own post mortem with `work_post_mortem`: what to keep, what to change, how
    the experiments did, and anything else. With both post mortems written, the work item's branch is
    squash-merged into the Drillmaster repository's main branch as one commit.
@@ -70,9 +71,10 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
 
 10. **Owner** runs `/devops-drillmaster:retrospective`.
 11. **Agent** calls `workflow_retrospective(run)`. **Drillmaster** first judges the last
-    retrospective's actions, then reads the post mortems, the work reports, Owner's corrections and
-    the measures. It returns findings and at most four proposals, each with a hypothesis, a null
-    hypothesis and a target. The server's verdicts on the running experiments come with them.
+    retrospective's actions, then reads the post mortems, the work reports, Owner's inputs with the
+    friction judge's verdicts, and the measures. It returns findings and at most four proposals,
+    each with a hypothesis, a null hypothesis and a target. The server's verdicts on the running
+    experiments come with them.
 12. **Owner** decides each proposal in AskUserQuestion: Approve alone approves, and Decline, a note
     or a typed answer declines. The hooks record the decision.
 13. **Agent** calls `workflow_retrospective(apply)`. The server applies every proposal Owner
@@ -181,7 +183,7 @@ on different versions run side by side and know nothing of each other.
 Every work tool answers in markdown, for Agent, and with the same data as `structuredContent`.
 
 **Measures.** v1 computes five measures from the events:
-- `owner_corrections_per_item`;
+- `owner_friction_per_item`;
 - `gate_rejections_per_item`;
 - `review_rounds_per_item`;
 - `minutes_per_item`;
@@ -224,9 +226,18 @@ step, and the step says who decides. Only the current step can be skipped; there
 own tools. Where a field fixes the kind, it is left out (`"step": "1.2"`). Behind each is a GUID
 that stays with the component across versions, so its history can be followed.
 
-On workflow `0.0.0` there are no gates, so Owner often corrects after delivery. That also counts as a
-correction when Agent then changes the work. Agent first asks Owner "fix it now, or create a
-separate issue?". A fix done now is reported as an `added_step` against the same work item. It's
+**Owner inputs.** Owner's chat prompts are Owner inputs. Each belongs to what it leads to: one after
+which Agent calls `work_start` or `work_resume` starts or resumes that work item, one after which
+Agent calls `workflow_retrospective` belongs to the retrospective, and any other to the work item
+the session is on. At delivery, and again before a retrospective, a separate friction judge decides
+for each input whether it was friction. It sees only the work item, Owner's inputs and what Agent
+did around them, never the workflow or the retrospectives, so it has no stake in the workflow
+looking better. `owner_friction_per_item` counts the inputs judged friction, plus the Owner gates
+Owner rejected. Until the judge has judged, an input counts unless it started or resumed the work
+item, and after delivery only when Agent then changed the work.
+
+On workflow `0.0.0` there are no gates, so Owner often steps in after delivery. Agent first asks
+Owner "fix it now, or create a separate issue?". A fix done now is reported as an `added_step` against the same work item. It's
 the only report allowed after delivery, and the viewer can search for it.
 
 Each work gate is judged by the level of the chain of command it belongs to:
@@ -253,7 +264,7 @@ The CLI:
 ```
 drillmaster open      # this project's viewer in your browser
 drillmaster upgrade [--to <version>]   # pin the project to a Drillmaster version
-drillmaster init --objective "<Owner's objective>" --measure owner_corrections_per_item --repository <git url> [--folder <name>]
+drillmaster init --objective "<Owner's objective>" --measure owner_friction_per_item --repository <git url> [--folder <name>]
 drillmaster inspect [--json]
 ```
 

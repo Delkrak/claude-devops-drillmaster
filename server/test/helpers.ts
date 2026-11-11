@@ -41,12 +41,12 @@ export function workToolCall(name: string, args: Record<string, unknown>): { nam
   return { name: WORK_TOOLS[action] ?? `work_${action}`, arguments: { ...required, ...fields } }
 }
 
-export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_corrections_per_item'] }
+export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] }
 
 /** Two work stages: build (two self gates) and review (an Owner gate). */
 export const WORKFLOW_3: WorkflowDocument = migrateWorkflow({
   version: '3.0.0',
-  objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
+  objective: { text: OBJECTIVE.text, measures: ['owner_friction_per_item'] },
   stages: [
     {
       n: 1,
@@ -99,7 +99,7 @@ export const EXPERIMENT_1 = {
   purpose: 'Owner corrected missing PR descriptions',
   hypothesis: 'A PR rule stops the corrections',
   null_hypothesis: 'The rule makes no difference',
-  measure: 'owner_corrections_per_item' as const,
+  measure: 'owner_friction_per_item' as const,
   baseline: 2,
   baseline_sd: 0.5,
   target: 0.5,
@@ -111,7 +111,7 @@ export const EXPERIMENT_1 = {
 /** A workflow after a few retrospectives: one work stage, one work policy, one experiment. */
 export const WORKFLOW_2: WorkflowDocument = migrateWorkflow({
   version: '2.0.0',
-  objective: { text: OBJECTIVE.text, measures: ['owner_corrections_per_item'] },
+  objective: { text: OBJECTIVE.text, measures: ['owner_friction_per_item'] },
   stages: [
     {
       n: 1,

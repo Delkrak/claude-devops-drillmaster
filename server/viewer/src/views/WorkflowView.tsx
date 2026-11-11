@@ -52,7 +52,7 @@ function WorkflowBody({ workflow, verdicts, projectId }: { workflow: Workflow; v
         ))}
       </Row>
       {workflow.stages.length === 0 ? (
-        <Empty>No work stages yet. Agent does its best, Owner corrects it, and the workflow grows from those corrections.</Empty>
+        <Empty>No work stages yet. Agent does its best, Owner steps in where needed, and the workflow grows from that.</Empty>
       ) : (
         <Flow>
           {workflow.stages.map((stage) => (

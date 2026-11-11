@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { comparisonsOf, InvalidCondition, parseCondition } from './conditions.js'
-import { MEASURE_NAMES } from './measures.js'
+import { currentMeasureName, MEASURE_NAMES } from './measures.js'
 import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
 
@@ -213,6 +213,7 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
   return {
     ...document,
     version,
+    ...(document.objective ? { objective: { ...document.objective, measures: (document.objective.measures ?? []).map(currentMeasureName) } } : {}),
     stages: (document.stages ?? []).map((stage: Record<string, any>) => ({
       ...stage,
       guid: guidFor(stage.guid, earlierStage(stage.name)?.guid, `stage:${stage.name}`),
@@ -247,6 +248,7 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
       judge_after: 3,
       version,
       ...experiment,
+      measure: currentMeasureName(experiment.measure),
     })),
   } as WorkflowDocument
 }
