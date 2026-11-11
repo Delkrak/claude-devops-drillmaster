@@ -101,8 +101,8 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
       name: 'an open work item updated to a newer workflow at a step that allows it',
       ok: updates.length > 0,
       detail: updates.map((event) => `${event.work_item_id}: ${event.from_version} -> ${event.to_version}, kept ${event.kept.length}, resumes at ${event.resumes_at.stage ?? '-'}.${event.resumes_at.step ?? '-'}`).join('; ') || 'none',
-      // The retrospective decides what changes; when it changes nothing an update can't happen.
-      doesNotFailRun: changes.length === 0,
+      // An update needs the workflow to change while a work item is open, between its sittings.
+      doesNotFailRun: !changes.some((change) => items.some((workItem) => workItem.started_at < change.at && events.some((event) => event.type === 'work_item_resumed' && event.work_item_id === workItem.work_item_id && event.at > change.at))),
     })
   }
   if (facts.expects?.skip) {

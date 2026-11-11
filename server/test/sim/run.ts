@@ -121,7 +121,12 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
       git('checkout', '-q', 'main')
     }
   }
-  if (scenario.seed_workflow) seedWorkflow(home, project, scenario, drillmasterRepository)
+  if (scenario.seed_workflow) {
+    seedWorkflow(home, project, scenario, drillmasterRepository)
+    // As setup asks Owner to: .drillmaster is committed with the code.
+    git('add', '.drillmaster')
+    git('-c', 'user.name=sim', '-c', 'user.email=sim@example.invalid', 'commit', '-q', '-m', 'Drillmaster')
+  }
 
   const env: NodeJS.ProcessEnv = { ...process.env, DRILLMASTER_HOME: home }
   delete env.DRILLMASTER_CLOCK

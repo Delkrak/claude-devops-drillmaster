@@ -49,6 +49,21 @@ describe('when a retrospective is due', () => {
   })
 })
 
+describe('what a retrospective reads', () => {
+  it('includes the reports and Owner words of open work items, which phases keep open across retrospectives', () => {
+    const open: DrillmasterEvent[] = [
+      { id: 'o1', at: at(2), type: 'work_item_started', work_item_id: 'wi_open', issue: '#9', workflow_version: '2.0.0', token_hash: 'h9', stage: 1, step: 1 },
+      { id: 'o2', at: at(3), type: 'work_trace', session_id: 's9', work_item_id: 'wi_open', stage: 1, step: 1, hook: 'UserPromptSubmit', prompt: 'tell the stakeholders' },
+      { id: 'o3', at: at(4), type: 'work_reported', work_item_id: 'wi_open', stage: 1, step: 1, kind: 'impediment', text: 'stakeholders were not told' },
+    ]
+    const events = [init, grown, ...open]
+    const prompt = buildRetroPrompt(foldState(events), events, [])
+    expect(prompt).toContain('Open work items, partly done (their reports and Owner\'s words below count too): wi_open (#9) at step 1.1')
+    expect(prompt).toContain('- wi_open: "tell the stakeholders"')
+    expect(prompt).toContain('stakeholders were not told')
+  })
+})
+
 describe("a retrospective's opening", () => {
   it("gives Drillmaster the last retrospective's actions to judge first", () => {
     const events = [init, retro, decided, grown, ...delivered(1)]

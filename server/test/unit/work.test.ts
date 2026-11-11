@@ -104,6 +104,13 @@ describe('work gates', () => {
 const DELIVERY = { pr: '#40', summary: 'adds the export', artifacts: [] }
 
 describe('reports, delivery and the post mortem', () => {
+  it('says the step a report is about, not where the work item is', () => {
+    const item = run().workItems.wi_1!
+    const decision = recordReport(W, item, { kind: 'impediment', text: 'the spec step lacked a field', stage: 1, step: 2 })
+    expect(decision.events[0]).toMatchObject({ stage: 1, step: 2 })
+    expect(decision.answer).toMatchObject({ stage: 1, step: 2 })
+  })
+
   it('requires the extra fields of decisions and questions', () => {
     const item = run().workItems.wi_1!
     expect(() => recordReport(W, item, { kind: 'decision', text: 't' })).toThrow(/chosen/)

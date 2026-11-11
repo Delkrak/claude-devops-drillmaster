@@ -408,7 +408,9 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   const workflow = state.workflow!
   const allDelivered = measureDeliveredItems(events)
   const recentDelivered = deliveredSinceLastRetro(state, events)
-  const recentItemIds = new Set(recentDelivered.map((item) => item.work_item_id))
+  // Work items done in phases stay open across retrospectives; what happened on them counts too.
+  const openItems = Object.values(state.workItems).filter((item) => item.status === 'active')
+  const recentItemIds = new Set([...recentDelivered.map((item) => item.work_item_id), ...openItems.map((item) => item.work_item_id)])
   const recentItemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id && recentItemIds.has(event.work_item_id))
   const ownerWordLines = recentItemEvents
     .filter((event): event is Extract<DrillmasterEvent, { type: 'work_trace' }> => event.type === 'work_trace' && event.hook === 'UserPromptSubmit')
@@ -456,6 +458,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     ...(experimentLines.length ? experimentLines : ['- none']),
     '',
     `Delivered work items since the last retrospective: ${recentDelivered.map((item) => `${item.work_item_id} (${item.issue})`).join(', ') || 'none'}`,
+    `Open work items, partly done (their reports and Owner's words below count too): ${openItems.map((item) => `${item.work_item_id} (${item.issue}) at ${item.stage === null ? 'delivery' : `step ${item.stage}.${item.step}`}`).join(', ') || 'none'}`,
     '',
     "Owner's chat prompts during those work items (each counts as a correction; Owner decides only in AskUserQuestion):",
     ...(ownerWordLines.length ? ownerWordLines : ['- none']),

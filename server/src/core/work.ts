@@ -109,7 +109,7 @@ export function recordReport(workflow: WorkflowDocument, item: WorkItemState, ar
     ...(kind === 'question' ? { asked, answer } : {}),
     ...(kind === 'added_step' ? { why } : {}),
   }
-  return { events: [event], answer: { recorded: kind, stage: item.stage, step: item.step } }
+  return { events: [event], answer: { recorded: kind, stage: event.stage, step: event.step } }
 }
 
 export function handInGate(state: ProjectState, item: WorkItemState, args: GateArgs): Decision {
