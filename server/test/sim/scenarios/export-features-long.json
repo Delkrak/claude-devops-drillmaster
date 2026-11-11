@@ -23,6 +23,6 @@
       ["Please do issue #3 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Looks good."],
       ["Please do issue #4 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Looks good."]
     ],
-    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Yes, approve all of them."]
+    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Please ask me about each proposal in the form."]
   }
 }

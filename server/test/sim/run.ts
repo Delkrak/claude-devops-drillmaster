@@ -14,12 +14,27 @@ import { checkRun } from './assertions.js'
 import { claudeTurn } from './claude.js'
 import { defaultAnswers, listenForOwnerQuestions, OWNER_PERMISSION_TOOL, ownerMcpConfig, type AskedQuestion, type OwnerAnswers } from './ownerAnswers.js'
 
+/** One sitting on an issue: a fresh Claude Code session that works only these stages. */
+interface Phase {
+  stages: string[]
+  /** What Owner wants from this sitting, in Owner's words, for the LLM Owner. */
+  goal: string
+  /** The scripted Owner's lines: the first opens the session. */
+  scripted: string[]
+  /** A workflow retrospective right after this phase, before the next one. */
+  retro_after?: boolean
+}
+
 interface Scenario {
   name: string
   project: string
   objective: string
   measures: string[]
-  issues: { id: string; text: string }[]
+  issues: { id: string; text: string; phases?: Phase[] }[]
+  /** Files added to the project before its first commit, for example code with bugs to fix. */
+  files?: Record<string, string>
+  /** What a run must show. */
+  expects?: { update?: boolean; skip?: boolean; metric?: string }
   hidden_rules: string[]
   retro_after: number[]
   max_turns_per_issue: number
@@ -27,7 +42,6 @@ interface Scenario {
   seed_workflow?: Record<string, unknown>
   /** Give the project a local bare origin, so Agent can push a branch and merge it. */
   origin?: boolean
-  /** The run expects a late start to be asked for and judged. */
   /** Work done "in an earlier session": committed on a branch and pushed to origin before the run. */
   prepared_branch?: { name: string; message: string; files: Record<string, string> }
   extra_tools?: string[]
@@ -68,7 +82,6 @@ function seedWorkflow(home: string, project: string, scenario: Scenario, drillma
   writeFileSync(path.join(projectFolder, 'events.jsonl'), JSON.stringify(init) + '\n')
 }
 
-const usesDrillmasterRepository = (scenario: Scenario) => scenario.seed_workflow !== undefined || (scenario.scripted.setup ?? '').includes('{drillmaster_repository}')
 
 /** The subject of every commit on the Drillmaster repository's main branch. */
 function mainCommitSubjects(drillmasterRepository: string) {
@@ -83,6 +96,10 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
   const home = mkdtempSync(path.join(os.tmpdir(), 'dm-sim-home-'))
   const project = mkdtempSync(path.join(os.tmpdir(), `dm-sim-${scenario.project}-`))
   cpSync(path.join(SIM, 'projects', scenario.project), project, { recursive: true })
+  for (const [file, content] of Object.entries(scenario.files ?? {})) {
+    mkdirSync(path.dirname(path.join(project, file)), { recursive: true })
+    writeFileSync(path.join(project, file), content)
+  }
   const git = (...args: string[]) => execFileSync('git', args, { cwd: project, stdio: 'ignore' })
   git('init', '-q')
   git('add', '-A')
@@ -166,6 +183,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     [
       `You are Owner in a simulation. You own a small Node project and hired Drillmaster to run your AI developer, Agent, like a bootcamp. Your objective: "${scenario.objective}".`,
       'You care about these rules, but you NEVER state them up front. Only when Agent breaks one do you correct Agent:',
+      'Some issues are done over several sittings: you say which part of the work you want in each one (for example "only capture it today"), and you never ask for more than that sitting\'s part.',
       ...scenario.hidden_rules.map((rule) => `- ${rule}`),
       'Each turn you get what Agent just said. Reply with ONLY the message you send Agent: one or two short sentences, no preamble, no quotes.',
       '- Read the project files (Read, Glob, Grep) to check the work against your rules before you approve anything.',
@@ -206,45 +224,53 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     }
   }
 
+  const retrospective = async () => {
+    retros++
+    const versionBefore = foldState(await events()).workflow?.version ?? '0.0.0'
+    let said = await agent(scenario.scripted.retro[0] ?? "Let's do a workflow retrospective with the drillmaster retrospective skill.")
+    for (let turn = 1; turn < 4; turn++) {
+      if (compareVersions(foldState(await events()).workflow?.version ?? '0.0.0', versionBefore) > 0) break
+      const next =
+        ownerMode === 'scripted'
+          ? (scenario.scripted.retro[turn] ?? 'Please apply the proposals I approved.')
+          : await owner(said, 'This is a workflow retrospective. Agent asks you about each proposal in a form.')
+      said = await agent(next)
+    }
+  }
+
   try {
     if (!scenario.seed_workflow) await agent((scenario.scripted.setup ?? '').replace('{drillmaster_repository}', drillmasterRepository), false)
 
     for (const [i, issue] of scenario.issues.entries()) {
-      const lines = scenario.scripted.issues[i] ?? []
-      const opening = (lines[0] ?? 'Please do issue {id} with the drillmaster work skill: {text}').replace('{text}', issue.text).replace('{id}', issue.id)
       const startedAt = new Date().toISOString()
-      currentIssue = `The current issue: ${issue.id} ${issue.text}`
-      let said = await agent(opening)
-      // Owner reviews even delivered work: without gates, that is where Owner's corrections come.
-      for (let turn = 1; turn < scenario.max_turns_per_issue; turn++) {
-        const state = foldState(await events())
-        const issueItems = Object.values(state.workItems).filter((workItem) => workItem.started_at >= startedAt)
-        const done = issueItems.some((workItem) => workItem.status === 'delivered' && workItem.post_mortems.includes('agent'))
-        let next: string
-        if (ownerMode === 'scripted') {
-          const line = lines[turn]
-          if (line === undefined && done) break
-          next = line ?? 'Please finish: deliver it and write your post mortem.'
-        } else {
-          next = await owner(said, `The current issue: ${issue.id} ${issue.text}`)
-          if (done && /^(thanks|thank you)\b/i.test(next.trim())) break
-        }
-        said = await agent(next)
-      }
-
-      if (scenario.retro_after.includes(i + 1)) {
-        retros++
-        const versionBefore = foldState(await events()).workflow?.version ?? '0.0.0'
-        said = await agent(scenario.scripted.retro[0] ?? "Let's do a workflow retrospective with the drillmaster retrospective skill.")
-        for (let turn = 1; turn < 4; turn++) {
-          if (compareVersions(foldState(await events()).workflow?.version ?? '0.0.0', versionBefore) > 0) break
-          const next =
-            ownerMode === 'scripted'
-              ? (scenario.scripted.retro[turn] ?? 'Please apply the proposals I approved.')
-              : await owner(said, 'This is a workflow retrospective. Decide on the proposals by number.')
+      const phases: Phase[] = issue.phases ?? [{ stages: [], goal: 'Do the whole issue, and deliver it.', scripted: scenario.scripted.issues[i] ?? [] }]
+      for (const [phaseIndex, phase] of phases.entries()) {
+        const lastPhase = phaseIndex === phases.length - 1
+        // Each phase is a sitting of its own: a fresh session, which takes the work item up with work_resume.
+        if (issue.phases) agentSession = undefined
+        const fill = (line: string) => line.replace('{text}', issue.text).replace('{id}', issue.id).replace('{stages}', phase.stages.join(', '))
+        const lines = phase.scripted.map(fill)
+        currentIssue = `The current issue: ${issue.id} ${issue.text}${issue.phases ? `\nToday's sitting: ${fill(phase.goal)} When that is done, say "thanks" and nothing else.` : ''}`
+        let said = await agent(lines[0] ?? fill('Please do issue {id} with the drillmaster work skill: {text}'))
+        // Owner reviews even delivered work: without gates, that is where Owner's corrections come.
+        for (let turn = 1; turn < scenario.max_turns_per_issue; turn++) {
+          const item = Object.values(foldState(await events()).workItems).find((workItem) => workItem.started_at >= startedAt)
+          const delivered = item?.status === 'delivered' && item.post_mortems.includes('agent')
+          const sittingDone = lastPhase ? delivered : item !== undefined && (item.stage === null || !phase.stages.includes(String(item.stage)))
+          let next: string
+          if (ownerMode === 'scripted') {
+            const line = lines[turn]
+            if (line === undefined && sittingDone) break
+            next = line ?? (lastPhase ? 'Please finish: deliver it and write your post mortem.' : `Please finish stage ${phase.stages.join(', ')} for today.`)
+          } else {
+            next = await owner(said, currentIssue)
+            if (sittingDone && /^(thanks|thank you)\b/i.test(next.trim())) break
+          }
           said = await agent(next)
         }
+        if (phase.retro_after) await retrospective()
       }
+      if (scenario.retro_after.includes(i + 1)) await retrospective()
     }
   } catch (error) {
     log('Harness', `Run stopped: ${error instanceof Error ? error.message : String(error)}`)
@@ -257,7 +283,9 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
     ownerQuestions,
     issues: scenario.issues.length,
     retros,
-    repositoryCommits: usesDrillmasterRepository(scenario) ? mainCommitSubjects(drillmasterRepository) : undefined,
+    repositoryCommits: mainCommitSubjects(drillmasterRepository),
+    phasedIssues: scenario.issues.filter((issue) => issue.phases).map((issue) => ({ issue: issue.id, phases: issue.phases!.length })),
+    expects: scenario.expects ?? {},
   })
   const runFailingChecks = checks.filter((check) => !check.doesNotFailRun)
   const passed = runFailingChecks.every((check) => check.ok)

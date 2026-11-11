@@ -108,6 +108,6 @@
       ["Please do issue {id} with the drillmaster work skill: {text}", "Looks good."],
       ["Please do issue {id} with the drillmaster work skill: {text} I already did the code in an earlier session: branch issue-5 is pushed to origin, with its test. Check it, then start the work item late, at the Owner review step, with that evidence.", "Looks good."]
     ],
-    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Yes, approve all of them."]
+    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Please ask me about each proposal in the form."]
   }
 }

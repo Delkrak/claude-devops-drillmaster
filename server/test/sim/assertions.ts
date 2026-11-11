@@ -18,6 +18,9 @@ export interface RunFacts {
   repositoryCommits?: string[]
   issues: number
   retros: number
+  /** Issues done over several sittings, each a fresh session. */
+  phasedIssues?: { issue: string; phases: number }[]
+  expects?: { update?: boolean; skip?: boolean; metric?: string }
 }
 
 export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): { checks: Check[]; metrics: Record<string, unknown> } {
@@ -83,6 +86,33 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
   if (takeableMetrics.length > 0) {
     const recorded = events.filter((event) => event.type === 'metric_recorded')
     checks.push({ name: 'metrics recorded', ok: recorded.length > 0, detail: `${recorded.length} recorded; ${new Set(takeableMetrics).size} metrics were due at steps work items passed` })
+  }
+  for (const phased of facts.phasedIssues ?? []) {
+    const item = items.find((workItem) => workItem.issue.includes(phased.issue))
+    checks.push({
+      name: `issue ${phased.issue} was taken up again in each later sitting`,
+      ok: item !== undefined && item.resumed >= phased.phases - 1 && item.sessions.length >= phased.phases,
+      detail: item ? `${item.resumed} resumes, ${item.sessions.length} sessions, for ${phased.phases} sittings` : 'no work item',
+    })
+  }
+  if (facts.expects?.update) {
+    const updates = events.filter((event): event is Extract<DrillmasterEvent, { type: 'work_item_updated' }> => event.type === 'work_item_updated')
+    checks.push({
+      name: 'an open work item updated to a newer workflow at a step that allows it',
+      ok: updates.length > 0,
+      detail: updates.map((event) => `${event.work_item_id}: ${event.from_version} -> ${event.to_version}, kept ${event.kept.length}, resumes at ${event.resumes_at.stage ?? '-'}.${event.resumes_at.step ?? '-'}`).join('; ') || 'none',
+      // The retrospective decides what changes; when it changes nothing an update can't happen.
+      doesNotFailRun: changes.length === 0,
+    })
+  }
+  if (facts.expects?.skip) {
+    const skips = events.filter((event): event is Extract<DrillmasterEvent, { type: 'step_skip_decided' }> => event.type === 'step_skip_decided')
+    checks.push({ name: 'a skippable step was skipped', ok: skips.some((skip) => skip.accepted), detail: skips.map((skip) => `${skip.work_item_id} ${skip.stage}.${skip.step} ${skip.accepted ? 'skipped' : 'rejected'} by ${skip.by}`).join('; ') || 'none' })
+  }
+  if (facts.expects?.metric) {
+    const metric = facts.expects.metric
+    const without = delivered.filter((workItem) => !workItem.metrics[metric])
+    checks.push({ name: `every delivered work item has its ${metric}`, ok: without.length === 0, detail: delivered.map((workItem) => `${workItem.issue}: ${workItem.metrics[metric]?.value ?? 'none'}`).join(', ') })
   }
   if (facts.repositoryCommits) {
     const complete = items.filter((workItem) => workItem.status === 'delivered' && workItem.post_mortems.length === 2)

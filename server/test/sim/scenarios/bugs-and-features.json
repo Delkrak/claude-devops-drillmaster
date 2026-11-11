@@ -1,0 +1,114 @@
+{
+  "name": "bugs-and-features",
+  "project": "node-report",
+  "objective": "fix bugs and ship features without Owner stepping in",
+  "measures": ["owner_corrections_per_item", "gate_rejections_per_item"],
+  "expects": { "skip": true, "metric": "kind" },
+  "files": {
+    "src/summary.js": "import { revenue } from './report.js'\n\n// Summaries of the report rows.\n\nexport const totalUnits = (rows) => rows.reduce((sum, row) => sum + row.price, 0)\n\nexport const topProduct = (rows) => [...rows].sort((a, b) => revenue(a) - revenue(b))[0].product\n\nexport const averagePrice = (rows) => rows.reduce((sum, row) => sum + row.price, 0) / (rows.length + 1)\n\nexport const formatMoney = (amount) => `$${amount}`\n"
+  },
+  "seed_workflow": {
+    "version": "1.0.0",
+    "stages": [
+      {
+        "n": 1,
+        "name": "triage",
+        "purpose": "everyone knows what is wrong or wanted, and whether it is a bug or a feature",
+        "steps": [
+          {
+            "n": 1,
+            "name": "write down what is wrong or wanted",
+            "instruction": "Read the issue and the code it is about. Report what is wrong (for a bug) or wanted (for a feature), as an assumption where the issue leaves it open.",
+            "gate": "self",
+            "rules": [],
+            "report": ["what is wrong or wanted"]
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "name": "build",
+        "purpose": "the change works and is tested",
+        "steps": [
+          {
+            "n": 1,
+            "name": "reproduce the bug with a failing test",
+            "instruction": "For a bug: write a test under test/ that fails because of the bug, and show it failing. A feature has no bug to reproduce: skip this step with work_skip.",
+            "gate": "self",
+            "rules": ["test 1.2"],
+            "report": ["the failing test output"],
+            "skippable": "self"
+          },
+          {
+            "n": 2,
+            "name": "write the code and its tests",
+            "instruction": "Make the change, with tests under test/. Run npm test until it is green.",
+            "gate": "self",
+            "rules": ["test 1.1"],
+            "report": ["the test output"]
+          },
+          {
+            "n": 3,
+            "name": "document it for users",
+            "instruction": "When users see the change, say in README.md what they can now do. A change users don't see needs no documentation: ask to skip this step, and Drillmaster decides.",
+            "gate": "self",
+            "rules": [],
+            "report": ["what README.md now says"],
+            "skippable": "drillmaster"
+          }
+        ]
+      }
+    ],
+    "policies": [
+      {
+        "name": "test",
+        "rules": [
+          { "id": "1.1", "rule": "every change has a test, and npm test is green", "verified_by": "the npm test output" },
+          { "id": "1.2", "rule": "a bug fix starts with a test that fails because of the bug", "verified_by": "the failing test output, before the fix" }
+        ]
+      }
+    ],
+    "metrics": [
+      {
+        "name": "kind",
+        "categories": [
+          { "value": "bug", "description": "existing behaviour is wrong" },
+          { "value": "feature", "description": "new behaviour" }
+        ],
+        "at_step": "1.1",
+        "by": "agent",
+        "instruction": "Is this work item a bug fix or a feature?"
+      }
+    ],
+    "experiments": []
+  },
+  "issues": [
+    { "id": "#1", "text": "Feature: add a toCsv(rows) function in src/csv.js that turns the report rows into CSV with a header line." },
+    { "id": "#2", "text": "Bug: totalUnits(rows) in src/summary.js returns the sum of the prices, not of the units." },
+    { "id": "#3", "text": "Feature: add a byRegion(rows) function in src/regions.js that returns the revenue of each region." },
+    { "id": "#4", "text": "Bug: topProduct(rows) in src/summary.js returns the product with the least revenue instead of the most." },
+    { "id": "#5", "text": "Feature: add a toJson(rows) function in src/json.js that returns the rows as pretty-printed JSON, with revenue added to each row." },
+    { "id": "#6", "text": "Bug: averagePrice(rows) in src/summary.js is too low: it divides by one more than the number of rows." },
+    { "id": "#7", "text": "Feature: add a byProduct(rows) function in src/products.js that returns the units sold of each product." },
+    { "id": "#8", "text": "Bug: formatMoney(amount) in src/summary.js shows 2.5 as $2.5 instead of $2.50." }
+  ],
+  "hidden_rules": [
+    "Every change adds one line to CHANGES.md saying what changed.",
+    "A bug fix comes with a test that failed before the fix, and Agent shows that it failed."
+  ],
+  "retro_after": [3, 6, 8],
+  "max_turns_per_issue": 6,
+  "scripted": {
+    "issues": [
+      ["Please do issue #1 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Add a line to CHANGES.md saying what changed."],
+      ["Please do issue #2 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).", "Add a line to CHANGES.md, like last time."],
+      ["Please do issue #3 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."],
+      ["Please do issue #4 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."],
+      ["Please do issue #5 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."],
+      ["Please do issue #6 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."],
+      ["Please do issue #7 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."],
+      ["Please do issue #8 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."]
+    ],
+    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Please ask me about each proposal in the form."]
+  }
+}
