@@ -141,7 +141,7 @@ export interface AnswerOutcome {
  * Owner approves only by picking Approve and nothing more. A note, or an answer Owner typed, is a
  * rejection (a decline for a proposal), with Owner's words as the reason.
  */
-function approvedOnly(ownerAnswer: OwnerAnswer) {
+function readApproval(ownerAnswer: OwnerAnswer) {
   const approved = ownerAnswer.answer === APPROVE && !ownerAnswer.notes
   const reason = [ownerAnswer.answer === APPROVE || ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE ? '' : ownerAnswer.answer, ownerAnswer.notes]
     .filter(Boolean)
@@ -152,7 +152,7 @@ function approvedOnly(ownerAnswer: OwnerAnswer) {
 export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion, ownerAnswer: OwnerAnswer): AnswerOutcome {
   switch (question.kind) {
     case 'owner_gate': {
-      const { approved: accepted, reason } = approvedOnly(ownerAnswer)
+      const { approved: accepted, reason } = readApproval(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const workflow = workflowOfWorkItem(state, item)
       const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
@@ -184,7 +184,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       }
     }
     case 'proposal': {
-      const { approved, reason } = approvedOnly(ownerAnswer)
+      const { approved, reason } = readApproval(ownerAnswer)
       return {
         events: [
           {
@@ -201,7 +201,7 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       }
     }
     case 'step_skip': {
-      const { approved: accepted, reason } = approvedOnly(ownerAnswer)
+      const { approved: accepted, reason } = readApproval(ownerAnswer)
       const item = state.workItems[question.work_item_id]!
       const decided = decideSkip(state, item, { accepted, by: 'owner', via: 'question', why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}` })
       const { next, done, update, session_done: sessionDone } = decided.answer as { next: { stage: number | null; step: number | null }; done: boolean; session_done: boolean; update?: Parameters<typeof updateLine>[0] }

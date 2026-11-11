@@ -174,7 +174,6 @@ export class GitRepository {
     return texts
   }
 
-  /** A file's text on a ref, or undefined when the ref or the file doesn't exist. */
   async readFile(ref: string, filePath: string): Promise<string | undefined> {
     const { ok, stdout } = await this.git({ args: ['cat-file', 'blob', `${ref}:${filePath}`], allowFailure: true })
     return ok ? stdout : undefined

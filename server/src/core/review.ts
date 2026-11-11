@@ -109,7 +109,6 @@ export function readMetricAnswers(metrics: readonly WorkflowMetric[], answer: un
 
 export const SKIP_REVIEW_KIND = 'skip'
 
-/** Drillmaster judges whether a skippable step can be skipped for this work item. */
 export function buildSkipPrompt(workflow: WorkflowDocument, item: WorkItemState, request: StepSkipRequested, events: readonly DrillmasterEvent[]) {
   const step = stepAt(workflow, request.stage, request.step)!
   const traces = events.filter((event): event is WorkTrace => event.type === 'work_trace' && event.work_item_id === item.work_item_id).slice(-MAX_TRACES_IN_PROMPT)

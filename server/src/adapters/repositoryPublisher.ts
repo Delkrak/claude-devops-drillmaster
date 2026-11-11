@@ -69,7 +69,6 @@ export class RepositoryPublisher {
     await this.git.push(MAIN, this.ownsFileOrMainFile(workflowFile(this.place.folder)))
   }
 
-  /** Pushes a new pin to main: the Drillmaster version the project runs on. */
   async pushPin(drillmasterVersion: string) {
     await this.mainAsTheRemoteHasIt()
     await this.git.writeFiles(MAIN, { [pinFile(this.place.folder)]: JSON.stringify({ drillmaster_version: drillmasterVersion }, null, 2) + '\n' }, `${this.place.folder}: Drillmaster ${drillmasterVersion}`)

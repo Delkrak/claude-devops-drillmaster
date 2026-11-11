@@ -376,8 +376,6 @@ export class Drillmaster {
     this.ports = { ...ports, store: { ...ports.store, read: async (projectId) => (await ports.store.read(projectId)).map(migrateEvent), append: (projectId, event) => ports.store.append(projectId, event), projectIds: () => ports.store.projectIds() } }
   }
 
-  /** The project a work folder belongs to, as its `.drillmaster` file says. */
-  /** The key of the project a work folder belongs to, if it belongs to one. */
   projectKeyOf(projectDir: string) {
     return this.ports.projects.resolve(projectDir)?.key
   }
@@ -1064,7 +1062,6 @@ const namesOfStages = (workflow: WorkflowDocument, guids: readonly string[]) =>
 
 const stepNamesOf = (workflow: WorkflowDocument, guids: readonly string[]) => guids.map((guid) => refOfGuid(workflow, guid)?.name ?? guid)
 
-/** A work step reference, resolved in the work item's workflow. */
 function stepOfRef(workflow: WorkflowDocument, stepRef: string) {
   return stepPosition(resolveRef(workflow, stepRef, { impliedKind: 'step' }).name)!
 }

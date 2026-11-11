@@ -155,7 +155,6 @@ export interface WorkTrace extends EventEnvelope {
   work_item_id: string | null
   stage: number | null
   step: number | null
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   hook: string
   tool?: string
@@ -176,7 +175,6 @@ export interface WorkReported extends EventEnvelope {
   work_item_id: string
   stage: number | null
   step: number | null
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   kind: ReportKind
   text: string
@@ -198,7 +196,6 @@ export interface GateSubmitted extends EventEnvelope {
   work_item_id: string
   stage: number
   step: number
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   gate: 'self' | 'drillmaster' | 'owner'
   self_check: SelfCheck[]
@@ -216,7 +213,6 @@ export interface MetricRecorded extends EventEnvelope {
   work_item_id: string
   stage: number
   step: number
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   name: string
   value: string
@@ -234,7 +230,6 @@ export interface GateVerdict extends EventEnvelope {
   work_item_id: string
   stage: number
   step: number
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   accepted: boolean
   by: 'agent' | 'drillmaster' | 'owner'
@@ -250,7 +245,6 @@ export interface ReviewFailed extends EventEnvelope {
   work_item_id: string
   stage: number
   step: number
-  /** The work step's GUID, which stays with it across workflow versions. */
   step_guid?: string
   error: string
 }

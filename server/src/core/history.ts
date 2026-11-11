@@ -8,18 +8,18 @@ import type { WorkflowDocument } from './workflow.js'
 function definitionIn(workflow: WorkflowDocument, guid: string): { kind: RefKind; name: string; definition: unknown } | undefined {
   const ref = refOfGuid(workflow, guid)
   if (!ref) return undefined
-  const strip = <T extends object>(component: T) => Object.fromEntries(Object.entries(component).filter(([key]) => key !== 'guid' && key !== 'n' && key !== 'steps'))
+  const withoutPlacement = <T extends object>(component: T) => Object.fromEntries(Object.entries(component).filter(([key]) => key !== 'guid' && key !== 'n' && key !== 'steps'))
   switch (ref.kind) {
     case 'stage':
-      return { kind: ref.kind, name: ref.name, definition: strip(workflow.stages.find((stage) => stage.guid === guid)!) }
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.stages.find((stage) => stage.guid === guid)!) }
     case 'step':
-      return { kind: ref.kind, name: ref.name, definition: strip(workflow.stages.flatMap((stage) => stage.steps).find((step) => step.guid === guid)!) }
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.stages.flatMap((stage) => stage.steps).find((step) => step.guid === guid)!) }
     case 'policy':
       return { kind: ref.kind, name: ref.name, definition: { name: ref.name } }
     case 'rule':
-      return { kind: ref.kind, name: ref.name, definition: strip(workflow.policies.flatMap((policy) => policy.rules).find((rule) => rule.guid === guid)!) }
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.policies.flatMap((policy) => policy.rules).find((rule) => rule.guid === guid)!) }
     default:
-      return { kind: ref.kind, name: ref.name, definition: strip(workflow.metrics.find((metric) => metric.guid === guid)!) }
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.metrics.find((metric) => metric.guid === guid)!) }
   }
 }
 

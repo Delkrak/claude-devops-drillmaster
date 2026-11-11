@@ -7,7 +7,6 @@ export interface ServerHealth {
   project: string | null
 }
 
-/** What answers at `url`, when it is a Drillmaster server. */
 export async function drillmasterServerAt(url: string): Promise<ServerHealth | undefined> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })

@@ -50,7 +50,6 @@ export function stepPosition(name: string): { stage: number; step: number } | un
 
 export interface ResolveOptions {
   impliedKind?: RefKind
-  /** The tools a `tool` reference may name. */
   toolNames?: readonly string[]
 }
 
