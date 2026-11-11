@@ -202,15 +202,12 @@ OK.
    - the viewer per project, and `drillmaster open`.
 8. **Viewer:** (done: 8d1716b) step bars, trace links (`?event=`), history pages per component, feedback on
    Drillmaster, skips and updates.
-9. **Review, before the simulations.** The build stops here and waits for Owner:
+9. **Review, before the simulations.** (done: 0eac82e) An agent review, not a stop for Owner
+   (corrected by Owner; it was first written as a stop):
    - a code review of phases 1-8 (`/code-review` on the round's diff), with its findings fixed
      and committed;
    - a check of the build against this plan's decisions, one by one, noting anything built
-     differently;
-   - Owner walks through it with me in the viewer, on a seeded project: phases, an update, a
-     skip, feedback with references, the history pages;
-   - the simulations start only on Owner's OK, since they're the costly part. Anything Owner
-     changes is written into this plan before going on.
+     differently.
 10. **Simulations:**
    - phases across fresh sessions, each phase a new `claude -p` session using `work_resume`;
    - a bugs-and-features scenario, with skippable steps and a `kind` metric;
