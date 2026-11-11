@@ -32,11 +32,16 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
 
 **Every work item**
 
-4. **Owner** gives Agent an issue. The `UserPromptSubmit` hook records Owner's words as a work trace.
-5. **Agent** calls `work_start` with the issue and what it is about. It gets its token and the
-   first work step in full: the stage's purpose, the step's instruction, the gate, each rule with how
-   it is verified, what to report, the metrics to take, and the `work_gate` call to fill in. The
-   `PostToolUse` hook binds the session to the work item.
+4. **Owner** gives Agent an issue, and says which part of it this sitting is for (for example "only
+   capture it today"). The `UserPromptSubmit` hook records Owner's words as a work trace.
+5. **Agent** calls `work_start` with the issue, what it is about, and the work stages this session
+   works on. It gets its token and the first work step in full: the stage's purpose, the step's
+   instruction, the gate, each rule with how it is verified, what to report, the metrics to take,
+   and the `work_gate` call to fill in. The `PostToolUse` hook binds the session to the work item.
+   - **A later sitting** is a fresh session: `work_resume` takes the work item up for the stages
+     that session works on, with a new token that voids the old one. If the step it resumes at
+     allows an update and the workflow changed in between, the work item updates first.
+   - When the last stage of the sitting is done, the result says so, and Agent stops there.
 6. For each work step, in order:
    1. **Agent** does the work the step's instruction gives. Every tool call is recorded by the
       `PreToolUse` and `PostToolUse` hooks, with its exit status and the tail of its output.
