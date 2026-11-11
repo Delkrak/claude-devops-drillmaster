@@ -11,7 +11,7 @@ git init --bare -q --initial-branch=main /tmp/rec-drillmaster.git
 mkdir -p /tmp/rec-project && cd /tmp/rec-project && git init -q
 TOOLS="mcp__plugin_devops-drillmaster_drillmaster Bash(git:*) Bash(ls:*) Read"
 claude -p --plugin-dir <repo> --allowedTools $TOOLS \
-  "Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_corrections_per_item. The Drillmaster repository: /tmp/rec-drillmaster.git. Then start issue #1 'add a CONTRIBUTING.md' with work_start, check work_status, and stop there."
+  "Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_friction_per_item. The Drillmaster repository: /tmp/rec-drillmaster.git. Then start issue #1 'add a CONTRIBUTING.md' with work_start, check work_status, and stop there."
 claude -p --plugin-dir <repo> --allowedTools $TOOLS \
   "Take up issue #1 'add a CONTRIBUTING.md' again with work_resume, run ls, check work_status, and stop there."
 node <repo>/server/dist/cli.js inspect --json > /tmp/rec.json

@@ -66,6 +66,15 @@ describe('tool captures in the workflow', () => {
   })
 })
 
+describe('a command that failed', () => {
+  it('is traced as failed from PostToolUseFailure, and captured from its error', () => {
+    const failing = handleHook(foldState(events), 'PostToolUseFailure', { session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test' }, error: `Exit code 1\n${NODE_TEST}` }, false).events.find(
+      (event): event is WorkTrace => event.type === 'work_trace',
+    )!
+    expect(failing).toMatchObject({ hook: 'PostToolUseFailure', error: true, captures: [{ name: 'tests', lines: ['# tests 2', '# pass 1', '# fail 1'] }] })
+  })
+})
+
 describe("Claude Code's note on a command that changed directory", () => {
   it('is no part of what the command printed', () => {
     const trace = traceOf('Bash', 'cd /p && npm test', `${NODE_TEST}\nShell cwd was reset to /home/user/project`)

@@ -216,12 +216,12 @@
       {
         "name": "tests",
         "command": "npm (run )?test|node --test",
-        "keep": "|~ `^# (tests|pass|fail) ` | pattern `# <what> <count>`"
+        "keep": "|~ `^(# |ℹ )(tests|pass|fail) ` | pattern `<_> <what> <count>`"
       },
       {
         "name": "failures",
         "command": "npm (run )?test|node --test",
-        "keep": "|= `not ok`"
+        "keep": "|~ `^\\s*(not ok|✖)`"
       }
     ],
     "experiments": []

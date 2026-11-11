@@ -24,6 +24,7 @@ function session() {
     event({ type: 'project_initialized', dir: '/p', workflow: WORKFLOW_3 }),
     prompt('do issue #1', null),
     tool('Read', null),
+    tool('mcp__plugin_devops-drillmaster_drillmaster__workflow_get', null),
     ...start('wi_1', '#1'),
     tool('Edit', 'wi_1'),
     deliver('wi_1'),

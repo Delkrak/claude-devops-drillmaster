@@ -68,7 +68,7 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
     if (item.deliveredAt) continue
     switch (event.type) {
       case 'work_trace':
-        if (event.hook === 'PostToolUse') item.values.tool_calls_per_item++
+        if (event.hook === 'PostToolUse' || event.hook === 'PostToolUseFailure') item.values.tool_calls_per_item++
         break
       case 'gate_submitted':
         if (event.gate !== 'self') item.values.review_rounds_per_item++

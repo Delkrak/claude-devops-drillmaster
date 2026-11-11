@@ -115,7 +115,8 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     const gateQuestion = askedOwner.find((question) => question.question.startsWith(`Owner gate of ${item.work_item_id}`))
     expect(gateQuestion?.options[0]?.preview).toContain('## What Agent reports')
     const captured = (await events()).filter((e) => e.type === 'work_trace' && e.captures?.length)
-    expect(captured).toContainEqual(expect.objectContaining({ captures: [{ name: 'file', lines: ['content: bye'], fields: [] }] }))
+    // Agent may run more in the same call, so the capture keeps at least the file's line.
+    expect(captured).toContainEqual(expect.objectContaining({ captures: [expect.objectContaining({ name: 'file', lines: expect.arrayContaining(['content: bye']) })] }))
     const verdicts = (await events()).filter((e) => e.type === 'gate_verdict' && e.work_item_id === item.work_item_id)
     expect(verdicts).toContainEqual(expect.objectContaining({ by: 'owner', via: 'question', accepted: true }))
     expect(item).toMatchObject({ status: 'delivered', artifacts: [expect.objectContaining({ name: 'shot.png', media_type: 'image/png' })] })

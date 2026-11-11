@@ -24,7 +24,8 @@ export interface FrictionJudgement {
 
 const TAKE_UP_TOOL = /(?:^|__)(work_start|work_resume)$/
 const RETROSPECTIVE_TOOL = /(?:^|__)workflow_retrospective$/
-const DRILLMASTER_TOOL = /(?:^|__)(work_\w+|workflow_\w+)$/
+/** The Drillmaster calls that act, so they tell what an input led to; reading the workflow or a status does not. */
+const ACTING_DRILLMASTER_TOOL = /(?:^|__)(?!workflow_get$|work_status$)(work_\w+|workflow_\w+)$/
 /** Tools that change the work, so an input after delivery that one follows corrected it. */
 const WORK_CHANGING_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell)$/
 
@@ -78,7 +79,7 @@ export function ownerInputsOf(events: readonly DrillmasterEvent[]): OwnerInput[]
       if (latest) latest.changed_work_after = true
     }
     const open = openBySession.get(event.session_id)
-    if (!open || open.takesUp || !event.tool || !DRILLMASTER_TOOL.test(event.tool)) continue
+    if (!open || open.takesUp || !event.tool || !ACTING_DRILLMASTER_TOOL.test(event.tool)) continue
     const takeUp = TAKE_UP_TOOL.exec(event.tool)?.[1]
     if (takeUp) {
       open.input.role = takeUp === 'work_start' ? 'start' : 'resume'

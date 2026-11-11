@@ -20,7 +20,8 @@ export interface HookOutcome {
   output?: Record<string, unknown>
 }
 
-export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop'] as const
+/** PostToolUseFailure is how Claude Code reports a tool call that failed, such as a red test run, instead of PostToolUse. */
+export const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'SubagentStop'] as const
 
 const MAX_TRACED_INPUT_LENGTH = 2000
 const MAX_TRACED_OUTPUT_LINES = 20
@@ -153,17 +154,19 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     trace.tool = payload.tool_name
     trace.input = truncateForTrace(redactTokens(payload.tool_input))
   }
-  if (hookEvent === 'PostToolUse') {
-    const exitCode = exitCodeOf(payload.tool_response)
-    trace.error = toolResponseIsError(payload.tool_response) || (exitCode !== undefined && exitCode !== 0)
+  if (hookEvent === 'PostToolUse' || hookEvent === 'PostToolUseFailure') {
+    const failed = hookEvent === 'PostToolUseFailure'
+    const response = failed ? (payload.error ?? payload.tool_response) : payload.tool_response
+    const exitCode = exitCodeOf(response)
+    trace.error = failed || toolResponseIsError(response) || (exitCode !== undefined && exitCode !== 0)
     if (exitCode !== undefined) trace.exit_code = exitCode
     const workflow = item ? workflowOfWorkItem(state, item) : state.workflow
-    const captured = captureToolOutput(workflow, payload.tool_name, payload.tool_input, toolOutputText(payload.tool_response), (text) => redactTokens(text) as string)
+    const captured = captureToolOutput(workflow, payload.tool_name, payload.tool_input, toolOutputText(response), (text) => redactTokens(text) as string)
     if (captured?.captures.length) trace.captures = captured.captures
     if (captured?.foundNothing.length) trace.capture_found_nothing = captured.foundNothing
     if (captured?.mayBeShortened) trace.output_may_be_shortened = true
     if (!captured?.captures.length) {
-      const output = outputTailForTrace(redactTokens(payload.tool_response))
+      const output = outputTailForTrace(redactTokens(response))
       if (output) trace.output = output
     }
   }
