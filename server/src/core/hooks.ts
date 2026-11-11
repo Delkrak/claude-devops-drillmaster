@@ -1,6 +1,7 @@
 import type { NewEvent } from './events.js'
 import { decideOwnerAnswers, pendingOwnerQuestions, type OwnerQuestion } from './questions.js'
 import type { ProjectState, WorkItemState } from './state.js'
+import { captureToolOutput } from './toolCapture.js'
 import { atStep, workflowOfWorkItem } from './work.js'
 
 export interface HookPayload {
@@ -59,7 +60,7 @@ export function truncateForTrace(value: unknown) {
   return text.length > MAX_TRACED_INPUT_LENGTH ? `${text.slice(0, MAX_TRACED_INPUT_LENGTH)}...` : text
 }
 
-function toolResponseText(toolResponse: unknown): string | undefined {
+export function toolResponseText(toolResponse: unknown): string | undefined {
   if (toolResponse === undefined || toolResponse === null) return undefined
   if (typeof toolResponse === 'string') return toolResponse
   if (Array.isArray(toolResponse)) {
@@ -150,8 +151,15 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     const exitCode = exitCodeOf(payload.tool_response)
     trace.error = toolResponseIsError(payload.tool_response) || (exitCode !== undefined && exitCode !== 0)
     if (exitCode !== undefined) trace.exit_code = exitCode
-    const output = outputTailForTrace(redactTokens(payload.tool_response))
-    if (output) trace.output = output
+    const workflow = item ? workflowOfWorkItem(state, item) : state.workflow
+    const captured = captureToolOutput(workflow, payload.tool_name, payload.tool_input, toolResponseText(payload.tool_response), (text) => redactTokens(text) as string)
+    if (captured?.captures.length) trace.captures = captured.captures
+    if (captured?.foundNothing.length) trace.capture_found_nothing = captured.foundNothing
+    if (captured?.mayBeShortened) trace.output_may_be_shortened = true
+    if (!captured?.captures.length) {
+      const output = outputTailForTrace(redactTokens(payload.tool_response))
+      if (output) trace.output = output
+    }
   }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
   if (recordRaw) trace.raw = redactTokens(payload)

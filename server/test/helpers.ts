@@ -84,7 +84,7 @@ export const WORKFLOW_DM: WorkflowDocument = {
 /** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
 export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
   const project = folderKey(dir)
-  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], inputs: [], experiments: [] }
+  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] }
   await ports.store.append(project, { id: 'seed_0', at: '2026-11-01T00:00:00Z', type: 'project_initialized', dir, workflow: v0 })
   const major = Number(workflow.version.split('.')[0])
   for (let v = 1; v <= major; v++) {

@@ -25,7 +25,7 @@ export const ReflectionInput = z.object({ experiment: z.number().int().positive(
 export type FeedbackInput = z.infer<typeof FeedbackInput>
 
 export const FEEDBACK_REFS_HELP =
-  'refs name what it is about: "step 1.2", "stage 1", "rule pr 1.1", "policy pr", "input kind", or "tool work_deliver" for Drillmaster itself. Leave refs empty for the workflow as a whole.'
+  'refs name what it is about: "step 1.2", "stage 1", "rule pr 1.1", "policy pr", "input kind", "capture tests", or "tool work_deliver" for Drillmaster itself. Leave refs empty for the workflow as a whole.'
 
 /**
  * Resolves each entry's references in `workflow`. With `unknownRefs: 'refuse'` a reference to

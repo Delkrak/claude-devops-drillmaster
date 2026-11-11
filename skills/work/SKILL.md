@@ -67,6 +67,8 @@ Call `work_start({issue, description, stages, inputs})` before you touch anythin
    filled in from the step's answer:
    - `self_check` holds exactly one `{rule, accepted, evidence}` per rule the gate checks. The
      evidence is what you actually checked, such as a command and its output, not a promise.
+     When the workflow has a tool capture for the command (`workflow_get` lists them), its trace
+     keeps the output, and the gate links it: name the command you ran.
    - `text` is what the work step requires reporting.
    - **At an Owner gate**, leave `self_check` out: Owner judges it. `text` is what Owner should look
      at, and Owner sees it beside the question, with the assumptions you reported.

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { comparisonsOf, InvalidCondition, parseCondition } from './conditions.js'
+import { InvalidPipeline, parsePipeline } from './logPipeline.js'
 import { currentMeasureName, MEASURE_NAMES } from './measures.js'
 import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
@@ -71,6 +72,16 @@ export const WorkItemInput = z.object({
   instruction: z.string().min(1),
 })
 
+/** What the trace of a Bash or PowerShell call keeps of a matching command's output, instead of its last lines. */
+export const ToolCapture = z.object({
+  guid: Guid,
+  name: z.string().regex(/^[A-Za-z_][\w-]*$/, 'a tool capture is named with letters, digits, _ and -'),
+  /** A regular expression the command must match. */
+  command: z.string().min(1),
+  /** A pipeline in LogQL's syntax. */
+  keep: z.string().min(1),
+})
+
 export const WorkflowExperiment = z.object({
   id: z.number().int().positive(),
   change: z.string().min(1),
@@ -98,6 +109,7 @@ export const WorkflowDocument = z
     stages: z.array(WorkStage),
     policies: z.array(WorkPolicy),
     inputs: z.array(WorkItemInput),
+    tool_captures: z.array(ToolCapture),
     experiments: z.array(WorkflowExperiment),
   })
   .superRefine((workflow, refinement) => {
@@ -127,6 +139,22 @@ export const WorkflowDocument = z
       if (stage.if) for (const problem of conditionProblems(workflow, stage.if, { stage: stage.n, step: 0 })) issue(`the if of work stage ${stage.n}: ${problem}`)
       for (const step of stage.steps) {
         if (step.if) for (const problem of conditionProblems(workflow, step.if, { stage: stage.n, step: step.n })) issue(`the if of work step ${stage.n}.${step.n}: ${problem}`)
+      }
+    }
+    const captureNames = new Set<string>()
+    for (const capture of workflow.tool_captures) {
+      if (captureNames.has(capture.name)) issue(`tool capture "${capture.name}" is defined twice`)
+      captureNames.add(capture.name)
+      try {
+        new RegExp(capture.command)
+      } catch {
+        issue(`tool capture "${capture.name}": its command ${capture.command} is not a regular expression`)
+      }
+      try {
+        parsePipeline(capture.keep)
+      } catch (error) {
+        if (!(error instanceof InvalidPipeline)) throw error
+        issue(`tool capture "${capture.name}": ${error.message}`)
       }
     }
     const guids = guidsOf(workflow)
@@ -161,10 +189,11 @@ function conditionProblems(workflow: Pick<WorkflowDocument, 'inputs'>, text: str
 const isSetBefore = (setAt: { stage: number; step: number } | undefined, at: { stage: number; step: number }) =>
   setAt !== undefined && (setAt.stage < at.stage || (setAt.stage === at.stage && setAt.step < at.step))
 
-const guidsOf = (workflow: Pick<WorkflowDocument, 'stages' | 'policies' | 'inputs'>) => [
+const guidsOf = (workflow: Pick<WorkflowDocument, 'stages' | 'policies' | 'inputs' | 'tool_captures'>) => [
   ...workflow.stages.flatMap((stage) => [stage.guid, ...stage.steps.map((step) => step.guid)]),
   ...workflow.policies.flatMap((policy) => [policy.guid, ...policy.rules.map((rule) => rule.guid)]),
   ...workflow.inputs.map((input) => input.guid),
+  ...workflow.tool_captures.map((capture) => capture.guid),
 ]
 
 export type WorkflowDocument = z.infer<typeof WorkflowDocument>
@@ -174,12 +203,13 @@ export type WorkPolicy = z.infer<typeof WorkPolicy>
 export type PolicyRule = z.infer<typeof PolicyRule>
 export type Objective = z.infer<typeof Objective>
 export type WorkItemInput = z.infer<typeof WorkItemInput>
+export type ToolCapture = z.infer<typeof ToolCapture>
 export type WorkflowExperiment = z.infer<typeof WorkflowExperiment>
 
 export const FIRST_VERSION = '0.0.0'
 
 export const workflowZero = (objective: Objective): WorkflowDocument =>
-  WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], experiments: [] })
+  WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] })
 
 export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: string) {
   const [policyName, ruleId] = ruleRef.split(' ')
@@ -239,6 +269,10 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
       guid: guidFor(input.guid, previous?.inputs.find((candidate) => candidate.name === input.name)?.guid, `metric:${input.name}`),
       options: input.options ?? categories,
       set_at: input.set_at ?? atStep ?? (at ? `${at.stage}.${at.step}` : ''),
+    })),
+    tool_captures: (document.tool_captures ?? []).map((capture: Record<string, any>) => ({
+      ...capture,
+      guid: guidFor(capture.guid, previous?.tool_captures.find((candidate) => candidate.name === capture.name)?.guid, `capture:${capture.name}`),
     })),
     experiments: (document.experiments ?? []).map((experiment: Record<string, any>) => ({
       hypothesis: '',

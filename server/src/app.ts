@@ -806,7 +806,8 @@ export class Drillmaster {
     const readArtifacts = await Promise.all(artifactsToRead.map((artifactPath) => readArtifactFromWorkFolder(projectDir, artifactPath)))
 
     const outcome = await this.withProjectLock(projectDir, async (projectId, project) => {
-      const state = foldState(await this.ports.store.read(projectId))
+      const events = await this.ports.store.read(projectId)
+      const state = foldState(events)
       if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)
       const { token } = toolArgs as { token?: unknown }
       const item = typeof token === 'string' ? findWorkItemByTokenHash(state, hashToken(token)) : undefined
@@ -822,7 +823,9 @@ export class Drillmaster {
         case 'work_gate': {
           const { token: _token, step: stepRef, ...gateArgs } = parseToolArgs(WorkGateArgs, toolArgs)
           if (!item) throw new UserError(UNKNOWN_TOKEN, 403)
-          decision = work.handInGate(state, item, { ...gateArgs, ...stepOfRef(work.workflowOfWorkItem(state, item), stepRef) })
+          const at = stepOfRef(work.workflowOfWorkItem(state, item), stepRef)
+          const captureTraces = workTracesOf(events, item.work_item_id, at).filter((trace) => trace.captures?.length).map((trace) => trace.id)
+          decision = work.handInGate(state, item, { ...gateArgs, ...at }, captureTraces)
           break
         }
         case 'work_deliver': {

@@ -15,8 +15,11 @@ export interface GateAnswer {
   back_to?: Position | string
 }
 
+const formatCaptures = (trace: WorkTrace) =>
+  (trace.captures ?? []).map((capture) => `\n  captured ${capture.name} (by the workflow's tool capture): ${capture.lines.slice(0, 10).join(' | ')}`).join('')
+
 const formatTraceLine = (trace: WorkTrace) =>
-  `- ${trace.at} ${trace.hook}${trace.tool ? ` ${trace.tool}` : ''}${trace.input ? ` ${trace.input}` : ''}${trace.error ? ' (error)' : ''}${trace.exit_code !== undefined ? ` exit ${trace.exit_code}` : ''}${trace.output ? `\n  output (tail): ${trace.output.split('\n').slice(-5).join('\n  ')}` : ''}${trace.prompt ? ` Owner: "${trace.prompt}"` : ''}`
+  `- ${trace.id} ${trace.at} ${trace.hook}${trace.tool ? ` ${trace.tool}` : ''}${trace.input ? ` ${trace.input}` : ''}${trace.error ? ' (error)' : ''}${trace.exit_code !== undefined ? ` exit ${trace.exit_code}` : ''}${formatCaptures(trace)}${trace.output ? `\n  output (tail): ${trace.output.split('\n').slice(-5).join('\n  ')}` : ''}${trace.prompt ? ` Owner: "${trace.prompt}"` : ''}`
 
 export function buildGatePrompt(workflow: WorkflowDocument, item: WorkItemState, submission: GateSubmitted, events: readonly DrillmasterEvent[]) {
   const step = stepAt(workflow, submission.stage, submission.step)!

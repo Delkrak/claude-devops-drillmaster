@@ -3,11 +3,11 @@ import type { WorkflowDocument } from './workflow.js'
 
 /**
  * One reference framework for every component of a workflow: `<kind> <name>`, such as
- * `step 1.2`, `stage 1`, `rule pr 1.1`, `policy pr`, `input kind` or `tool work_gate`. Where a
+ * `step 1.2`, `stage 1`, `rule pr 1.1`, `policy pr`, `input kind`, `capture tests` or `tool work_gate`. Where a
  * field fixes the kind (a step's `rules`, work_gate's `step`), the kind may be left out.
  * Behind each reference is a GUID that stays with the component across workflow versions.
  */
-export const REF_KINDS = ['step', 'stage', 'rule', 'policy', 'input', 'tool'] as const
+export const REF_KINDS = ['step', 'stage', 'rule', 'policy', 'input', 'capture', 'tool'] as const
 export type RefKind = (typeof REF_KINDS)[number]
 
 export class InvalidReference extends Error {}
@@ -91,6 +91,11 @@ export function resolveRef(workflow: WorkflowDocument, text: string, options: Re
       if (!input) throw missing(`input "${name}"`)
       return { kind, name, ref: `input ${name}`, guid: input.guid, title: input.instruction }
     }
+    case 'capture': {
+      const capture = workflow.tool_captures.find((candidate) => candidate.name === name)
+      if (!capture) throw missing(`tool capture "${name}"`)
+      return { kind, name, ref: `capture ${name}`, guid: capture.guid, title: capture.keep }
+    }
     case 'tool': {
       if (!options.toolNames?.includes(name)) throw new InvalidReference(`There is no Drillmaster tool "${name}"${options.toolNames ? `; the tools are ${options.toolNames.join(', ')}` : ''}.`)
       return { kind, name, ref: `tool ${name}`, guid: null, title: name }
@@ -113,7 +118,9 @@ export function refOfGuid(workflow: WorkflowDocument, guid: string): ResolvedRef
     }
   }
   const input = workflow.inputs.find((candidate) => candidate.guid === guid)
-  return input ? { kind: 'input', name: input.name, ref: `input ${input.name}`, guid, title: input.instruction } : undefined
+  if (input) return { kind: 'input', name: input.name, ref: `input ${input.name}`, guid, title: input.instruction }
+  const capture = workflow.tool_captures.find((candidate) => candidate.guid === guid)
+  return capture ? { kind: 'capture', name: capture.name, ref: `capture ${capture.name}`, guid, title: capture.keep } : undefined
 }
 
 export const stepGuidAt = (workflow: WorkflowDocument, stage: number, step: number) =>

@@ -8,7 +8,7 @@ import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import type { PostMortemArgs } from './work.js'
-import { AT_START, bumpVersion, GateKind, InputOption, InputSetter, PolicyRule, SkipDecider, UpdateLevel, WorkflowDocument, WorkItemInput, type VersionLevel } from './workflow.js'
+import { AT_START, bumpVersion, GateKind, InputOption, InputSetter, PolicyRule, ToolCapture, SkipDecider, UpdateLevel, WorkflowDocument, WorkItemInput, type VersionLevel } from './workflow.js'
 
 export const RETRO_REVIEW_KIND = 'retrospective'
 export const POST_MORTEM_REVIEW_KIND = 'post_mortem'
@@ -31,6 +31,7 @@ const StepInput = z
   .strict()
 const RuleInput = PolicyRule.omit({ guid: true }).strict()
 const NewInput = WorkItemInput.omit({ guid: true }).strict()
+const NewToolCapture = ToolCapture.omit({ guid: true }).strict()
 /** An `if` to set, or "" to remove it. */
 const ChangedCondition = z.string()
 
@@ -127,6 +128,9 @@ export const WorkflowOp = z.preprocess(
       })
       .strict(),
     z.object({ op: z.literal('remove_input'), input: Ref }).strict(),
+    z.object({ op: z.literal('add_tool_capture'), capture: NewToolCapture }).strict(),
+    z.object({ op: z.literal('change_tool_capture'), capture: Ref, command: z.string().min(1).optional(), keep: z.string().min(1).optional() }).strict(),
+    z.object({ op: z.literal('remove_tool_capture'), capture: Ref }).strict(),
     z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
     z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
   ]),
@@ -199,6 +203,11 @@ function requireRule(workflow: WorkflowDocument, ruleRef: string) {
   const { guid } = resolveForChange(workflow, ruleRef, 'rule')
   const policy = workflow.policies.find((candidate) => candidate.rules.some((rule) => rule.guid === guid))!
   return { policy, ruleIndex: policy.rules.findIndex((rule) => rule.guid === guid) }
+}
+
+function requireToolCapture(workflow: WorkflowDocument, captureRef: string) {
+  const { guid } = resolveForChange(workflow, captureRef, 'capture')
+  return workflow.tool_captures.find((capture) => capture.guid === guid)!
 }
 
 function requireInput(workflow: WorkflowDocument, inputRef: string) {
@@ -323,6 +332,20 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
         workflow.inputs = workflow.inputs.filter((input) => input.guid !== removed.guid)
         break
       }
+      case 'add_tool_capture':
+        if (workflow.tool_captures.some((capture) => capture.name === op.capture.name)) throw new InvalidChange(`Tool capture "${op.capture.name}" already exists; change it instead.`)
+        workflow.tool_captures.push({ guid: makeGuid(), ...op.capture })
+        break
+      case 'change_tool_capture': {
+        const { op: _op, capture: captureRef, ...captureChanges } = op
+        Object.assign(requireToolCapture(workflow, captureRef), withoutUndefined(captureChanges))
+        break
+      }
+      case 'remove_tool_capture': {
+        const removed = requireToolCapture(workflow, op.capture)
+        workflow.tool_captures = workflow.tool_captures.filter((capture) => capture.guid !== removed.guid)
+        break
+      }
       case 'set_objective':
         workflow.objective = { text: op.text ?? workflow.objective.text, measures: op.measures ?? workflow.objective.measures }
         break
@@ -392,6 +415,9 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"add_input","input":{"name":"kind","options":[{"value":"bug","description":"existing behaviour is wrong"},{"value":"feature","description":"new behaviour"}],"set_at":"start","by":"agent|drillmaster|owner","instruction":"<how to choose the option>"}}   (set_at: "start" for work_start, or the step whose gate sets it, e.g. "1.1"; work can't go on without it)
 {"op":"change_input","input":"kind","instruction":"..."}   (any of options, set_at, by, instruction)
 {"op":"remove_input","input":"kind"}
+{"op":"add_tool_capture","capture":{"name":"tests","command":"npm (run )?test","keep":"|~ \`^# (tests|pass|fail) \` | pattern \`# <what> <count>\`"}}   (what the trace of a Bash or PowerShell call keeps of a matching command's output, instead of its last 20 lines: command is a regular expression, keep a pipeline in LogQL's syntax (https://grafana.com/docs/loki/latest/logql/): line filters |= != |~ !~, | json, | logfmt, | pattern, | regexp, field filters like | count > 0, and | line_format. Add one when a gate's claim about a command's output could not be checked)
+{"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
+{"op":"remove_tool_capture","capture":"tests"}
 {"op":"set_objective","text":"...","measures":["owner_friction_per_item"]}
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 

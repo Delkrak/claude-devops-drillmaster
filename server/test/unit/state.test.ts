@@ -44,6 +44,7 @@ describe('workflow_get views', () => {
       objective: WORKFLOW_2.objective,
       stages: [{ n: 1, name: 'build', purpose: 'the change works and is described', steps: 2 }],
       inputs: [],
+      tool_captures: [],
       experiments: WORKFLOW_2.experiments,
     })
   })

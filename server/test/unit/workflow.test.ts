@@ -10,6 +10,7 @@ describe('workflow document', () => {
       stages: [],
       policies: [],
       inputs: [],
+      tool_captures: [],
       experiments: [],
     })
   })

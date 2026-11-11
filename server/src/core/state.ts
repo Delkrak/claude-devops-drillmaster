@@ -308,6 +308,7 @@ export type WorkflowView =
       objective: WorkflowDocument['objective']
       stages: { n: number; name: string; purpose: string; if?: string; steps: number }[]
       inputs: WorkflowDocument['inputs']
+      tool_captures: WorkflowDocument['tool_captures']
       experiments: WorkflowDocument['experiments']
     }
   | { kind: 'stage'; version: string; stage: { n: number; name: string; purpose: string; if?: string }; steps: StepView[] }
@@ -375,6 +376,7 @@ export function viewWorkflow(state: ProjectState, query: WorkflowQuery): Workflo
     objective: workflow.objective,
     stages: workflow.stages.map((stage) => ({ n: stage.n, name: stage.name, purpose: stage.purpose, ...(stage.if ? { if: stage.if } : {}), steps: stage.steps.length })),
     inputs: workflow.inputs,
+    tool_captures: workflow.tool_captures,
     experiments: workflow.experiments,
   }
 }

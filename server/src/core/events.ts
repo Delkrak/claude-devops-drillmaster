@@ -163,7 +163,13 @@ export interface WorkTrace extends EventEnvelope {
   input?: string
   error?: boolean
   exit_code?: number
+  /** The last lines of what the tool printed, unless a tool capture kept what it printed instead. */
   output?: string
+  /** What the workflow's tool captures kept of a shell command's output. */
+  captures?: { name: string; lines: string[]; fields: Record<string, string>[] }[]
+  /** Tool captures whose command matched, but whose pipeline kept nothing. */
+  capture_found_nothing?: string[]
+  output_may_be_shortened?: boolean
   prompt?: string
   raw?: unknown
 }
@@ -201,6 +207,8 @@ export interface GateSubmitted extends EventEnvelope {
   gate: 'self' | 'drillmaster' | 'owner'
   self_check: SelfCheck[]
   text: string
+  /** The traces at this step whose tool captures kept output, as evidence for the gate. */
+  capture_traces?: string[]
 }
 
 export interface InputAnswer {

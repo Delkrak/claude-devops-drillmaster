@@ -92,15 +92,15 @@ wants the user interface changes later.
   pass.
 
 **Tool capture: what Agent's commands print, kept by workflow-level rules in LogQL's syntax:**
-- 🟧 The `PostToolUse` hook already receives Agent's `stdout` and `stderr`, for both the Bash and
+- 🟩 The `PostToolUse` hook already receives Agent's `stdout` and `stderr`, for both the Bash and
   the PowerShell tool. By default, a trace keeps the last 20 lines, redacted, and whether Claude
   Code reported the call as failed. The Drillmaster repository stays private; making it publishable
   is not a goal.
-- 🟧 The workflow has one `tool_captures` list for the whole project, not one per stage or step. A
+- 🟩 The workflow has one `tool_captures` list for the whole project, not one per stage or step. A
   command's output means the same wherever it runs, and the trace already records the step it ran
   at. A retrospective changes the list with `add_tool_capture`, `change_tool_capture`
   and `remove_tool_capture`, each a minor change.
-- 🟧 A rule is `{guid, name, command: "<regexp>", keep: "<LogQL pipeline>"}`. The `keep` pipeline
+- 🟩 A rule is `{guid, name, command: "<regexp>", keep: "<LogQL pipeline>"}`. The `keep` pipeline
   uses a subset of the log pipeline of Grafana Loki's LogQL
   (https://grafana.com/docs/loki/latest/logql/):
   - line filters: `|=`, `!=`, `|~`, `!~`;
@@ -111,16 +111,16 @@ wants the user interface changes later.
   It is implemented in `core/logPipeline.ts`, with no dependency, and the skills link to Loki's
   documentation. A pipeline outside the subset is refused when the workflow changes, with the
   part that isn't supported.
-- 🟧 When a rule matches Agent's command, it replaces the default 20 lines. The trace keeps what
+- 🟩 When a rule matches Agent's command, it replaces the default 20 lines. The trace keeps what
   the pipeline yields: fields and lines, still redacted. When it yields nothing, the trace keeps the
   default 20 lines and is marked "the rule found nothing", so a rule that no longer fits shows.
-- 🟧 The workflow starts with no rules, like the rest of it. A retrospective adds one when a gate
+- 🟩 The workflow starts with no rules, like the rest of it. A retrospective adds one when a gate
   claim couldn't be checked.
-- 🟧 Claude Code may shorten very long output before the hook sees it. The trace marks that it was
+- 🟩 Claude Code may shorten very long output before the hook sees it. The trace marks that it was
   shortened.
-- 🟧 The gate's record links to the tool captures of its step. Showing them in the viewer, as
+- 🟩 The gate's record links to the tool captures of its step. Showing them in the viewer, as
   "tests: pass 25, fail 0", waits for the viewer round.
-- 🟥 Agent keeps full agency. Nothing is run by the gate.
+- 🟩 Agent keeps full agency. Nothing is run by the gate.
 
 **Per-rule rejection counts:**
 - 🟥 The retrospective prompt lists gate rejections per rule.
@@ -226,10 +226,10 @@ One round, pressure-tested with both the scripted and the LLM Owner.
    - 🟩 the separate friction judge;
    - `owner_friction_per_item`, with migration;
    - the wording everywhere.
-3. 🟩 **Owner's questions side by side:** `preview` on every Owner question, the gate question's
+3. 🟩 **Owner's questions side by side** (1600b5f): `preview` on every Owner question, the gate question's
    content, no `self_check` on Owner gates, and the skills.
    - 🟩 the PreToolUse check that Owner is shown Drillmaster's question unchanged.
-4. 🟧 **Tool capture:**
+4. 🟩 **Tool capture:**
    - the hook keeps the output's tail, for Bash and PowerShell;
    - `core/logPipeline.ts` (the LogQL subset);
    - the workflow's `tool_captures` rules and their retrospective operations;
@@ -266,8 +266,8 @@ One round, pressure-tested with both the scripted and the LLM Owner.
   - 🟩 conditions: parsing, refusals (unknown input, unknown value, read before set), evaluation;
   - 🟩 migration of metrics to inputs, and of the old measure;
   - 🟩 attribution of Owner inputs, including the one-item-late case from the runs;
-  - 🟧 the LogQL subset: each filter, parser and `line_format`, and refusals of what's outside it;
-  - 🟧 tool capture: the default 20 lines, replaced by a rule's yield, and the fallback when it
+  - 🟩 the LogQL subset: each filter, parser and `line_format`, and refusals of what's outside it;
+  - 🟩 tool capture: the default 20 lines, replaced by a rule's yield, and the fallback when it
     yields nothing;
   - 🟩 changing an input: going back to a step that now applies, keeping passed steps;
   - 🟩 the PreToolUse check of an Owner question: unchanged passes, changed is blocked;

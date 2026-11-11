@@ -287,7 +287,8 @@ export function recordReport(workflow: WorkflowDocument, item: WorkItemState, ar
   return { events: [event], answer: { recorded: kind, stage: event.stage, step: event.step } }
 }
 
-export function handInGate(state: ProjectState, item: WorkItemState, args: GateArgs): Decision {
+/** `captureTraces` are the traces at the step whose tool captures kept output: the gate's evidence. */
+export function handInGate(state: ProjectState, item: WorkItemState, args: GateArgs, captureTraces: readonly string[] = []): Decision {
   refuseIfDelivered(item)
   const workflow = workflowOfWorkItem(state, item)
   if (item.stage === null) {
@@ -333,6 +334,7 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
     gate: step.gate,
     self_check: args.self_check,
     text: args.text,
+    ...(captureTraces.length ? { capture_traces: [...captureTraces] } : {}),
   }
   if (step.gate !== 'self') {
     return {

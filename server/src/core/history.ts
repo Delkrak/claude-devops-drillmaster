@@ -18,6 +18,8 @@ function definitionIn(workflow: WorkflowDocument, guid: string): { kind: RefKind
       return { kind: ref.kind, name: ref.name, definition: { name: ref.name } }
     case 'rule':
       return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.policies.flatMap((policy) => policy.rules).find((rule) => rule.guid === guid)!) }
+    case 'capture':
+      return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.tool_captures.find((capture) => capture.guid === guid)!) }
     default:
       return { kind: ref.kind, name: ref.name, definition: withoutPlacement(workflow.inputs.find((input) => input.guid === guid)!) }
   }

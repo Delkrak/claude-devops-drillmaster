@@ -228,6 +228,18 @@ step, and the step says who decides. Only the current step can be skipped; there
 own tools. Where a field fixes the kind, it is left out (`"step": "1.2"`). Behind each is a GUID
 that stays with the component across versions, so its history can be followed.
 
+**Tool capture.** The `PostToolUse` hook sees what Agent's commands print. By default a trace keeps
+the last 20 lines, redacted. The workflow's `tool_captures` rules say what to keep of a shell
+command (Bash or PowerShell) instead: `{"name": "tests", "command": "npm (run )?test", "keep":
+"|~ `^# (pass|fail) ` | pattern `# <what> <count>`"}`. `command` is a regular expression, and
+`keep` a pipeline in a subset of the log pipeline of Grafana Loki's
+[LogQL](https://grafana.com/docs/loki/latest/logql/): line filters (`|=`, `!=`, `|~`, `!~`), the
+parsers `json`, `logfmt`, `pattern` and `regexp`, field filters (`| count > 0`) and `line_format`.
+When a rule keeps nothing, the trace keeps the last 20 lines and says the rule found nothing. A
+gate's record links the traces at its step whose captures kept output, and a Drillmaster gate
+review sees them. Agent keeps full agency: nothing is run for it. A retrospective adds, changes and
+removes the rules, which start empty.
+
 **Owner inputs.** Owner's chat prompts are Owner inputs. Each belongs to what it leads to: one after
 which Agent calls `work_start` or `work_resume` starts or resumes that work item, one after which
 Agent calls `workflow_retrospective` belongs to the retrospective, and any other to the work item
