@@ -10,7 +10,8 @@ export interface WorkItemState {
   token_hash: string
   stage: number | null
   step: number | null
-  pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner'; review_failed?: string } | null
+  /** `text` is what Agent reported with the gate. */
+  pending_gate: { stage: number; step: number; gate: 'drillmaster' | 'owner'; text: string; review_failed?: string } | null
   gates_done: boolean
   status: 'active' | 'delivered'
   pr: string | null
@@ -21,6 +22,8 @@ export interface WorkItemState {
   started_at: string
   traces: number
   reports: number
+  /** What Agent reported taking as true without being told. */
+  assumptions: string[]
   rejections: number
   /** GUIDs of the steps whose gate passed, and of the steps skipped. */
   passed_step_guids: string[]
@@ -129,6 +132,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
           started_at: event.at,
           traces: 0,
           reports: 0,
+          assumptions: [],
           rejections: 0,
           passed_step_guids: [],
           skipped_step_guids: [],
@@ -142,14 +146,17 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       case 'work_reported': {
         const item = state.workItems[event.work_item_id]
-        if (item) item.reports++
+        if (item) {
+          item.reports++
+          if (event.kind === 'assumption') item.assumptions.push(event.text)
+        }
         break
       }
       case 'gate_submitted': {
         const item = state.workItems[event.work_item_id]
         if (item) {
           item.reports++
-          if (event.gate !== 'self') item.pending_gate = { stage: event.stage, step: event.step, gate: event.gate }
+          if (event.gate !== 'self') item.pending_gate = { stage: event.stage, step: event.step, gate: event.gate, text: event.text }
         }
         break
       }

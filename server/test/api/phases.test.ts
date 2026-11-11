@@ -37,7 +37,7 @@ describe('a work item in phases, one session each', () => {
     expect(lastOfStage.structuredContent).toMatchObject({ verdict: 'accepted', session_done: true, next: { stage: 2, step: 1 } })
     expect(textOf(lastOfStage)).toContain("**This session's stages are done.**")
     expect(textOf(lastOfStage)).not.toContain('## Work step 2.1')
-    expect(textOf(await tool('work_gate', { token: mondayToken, step: '2.1', self_check: check('pr 1.1'), text: 'PR #4' }))).toMatch(/in a stage this session doesn't work on; it works on stage 1 "build"/)
+    expect(textOf(await tool('work_gate', { token: mondayToken, step: '2.1', text: 'PR #4' }))).toMatch(/in a stage this session doesn't work on; it works on stage 1 "build"/)
 
     const review = await takeUp('work_resume', { issue: '#4', stages: ['2'] }, 'thursday')
     const { agent_token: thursdayToken } = review.structuredContent as { agent_token: string }
@@ -47,7 +47,7 @@ describe('a work item in phases, one session each', () => {
     expect(textOf(await tool('work_status', { token: mondayToken }))).toMatch(/Unknown token/)
     expect((await app.state('/projects/phases')).workItems[workItemId]).toMatchObject({ sessions: ['monday', 'thursday'], resumed: 1 })
 
-    expect((await tool('work_gate', { token: thursdayToken, step: '2.1', self_check: check('pr 1.1'), text: 'PR #4' })).structuredContent).toMatchObject({ verdict: 'pending', gate: 'owner' })
+    expect((await tool('work_gate', { token: thursdayToken, step: '2.1', text: 'PR #4' })).structuredContent).toMatchObject({ verdict: 'pending', gate: 'owner' })
     expect(await ownerAnswers(app, '/projects/phases', () => 'Approve', 'thursday')).toMatch(/Every work gate has passed/)
   })
 

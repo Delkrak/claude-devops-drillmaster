@@ -67,7 +67,7 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
   })
 
   it('waits at the Owner gate until Owner decides it in AskUserQuestion', async () => {
-    const owner = await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
+    const owner = await r({ action: 'gate', step: '2.1', text: 'PR #40' })
     expect(owner).toMatchObject({ verdict: 'pending', gate: 'owner' })
 
     const chat = await hook('UserPromptSubmit', { prompt: 'looks good, ship it' })
@@ -75,7 +75,7 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
     expect(await tool('work_status', { token })).toMatchObject({ pending_gate: { gate: 'owner' } })
     expect(await ownerAnswers(app, PROJECT, () => 'the header row is missing', SESSION)).toMatch(/rejected.*"the header row is missing"/)
 
-    expect(await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'header added' }], text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
+    expect(await r({ action: 'gate', step: '2.1', text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
     expect(await ownerAnswers(app, PROJECT, () => 'Approve', SESSION)).toMatch(/approved.*deliver/)
 
     const status = await tool('work_status', { token })

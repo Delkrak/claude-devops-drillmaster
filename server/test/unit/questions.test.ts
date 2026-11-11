@@ -31,7 +31,7 @@ const base = asEvents([
   { type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 2, accepted: true, by: 'agent', why: 'ok', rule: null, next: { stage: 2, step: 1 }, done: false },
   { type: 'gate_submitted', work_item_id: 'wi_1', stage: 2, step: 1, gate: 'owner', self_check: [], text: 'PR #40' },
 ])
-const GATE_QUESTION = 'Owner gate of wi_1 (#7), work step 2.1 "Owner approves": does the work meet pr 1.1?'
+const GATE_QUESTION = 'Owner gate of wi_1 (#7), step 2.1 "Owner approves": is this what you want? What you approve is beside the options.'
 const INPUT_QUESTION = 'Input "value" for wi_1 (#7): How much is this worth to you?'
 
 const hook = (events: DrillmasterEvent[], hookEvent: string, payload: Record<string, unknown>) => handleHook(foldState(events), hookEvent, { session_id: 's1', ...payload }, false)
@@ -51,11 +51,21 @@ describe("Owner's pending questions", () => {
       question: INPUT_QUESTION,
       header: 'value',
       options: [
-        { label: 'low', description: 'nice to have' },
-        { label: 'high', description: 'Owner needs it' },
+        { label: 'low', description: 'nice to have', preview: expect.stringContaining('How much is this worth to you?') },
+        { label: 'high', description: 'Owner needs it', preview: expect.stringContaining('How much is this worth to you?') },
       ],
       multiSelect: false,
     })
+  })
+
+  it("shows beside an Owner gate what Owner approves: Agent's report, the assumptions, and the rules", () => {
+    const withAssumption = [...base, ...asEvents([{ type: 'work_reported', work_item_id: 'wi_1', stage: 1, step: 1, kind: 'assumption', text: 'CSV uses ; as separator' }])]
+    const gate = pendingOwnerQuestions(foldState(withAssumption)).find((question) => question.kind === 'owner_gate')!
+    const preview = gate.options[0]!.preview!
+    expect(gate.options[1]!.preview).toBe(preview)
+    expect(preview).toContain('## What Agent reports\nPR #40')
+    expect(preview).toContain('## Assumptions Agent made\n- CSV uses ; as separator')
+    expect(preview).toContain('## The rules it must meet\n- pr 1.1: the PR says what it changes (verified by reading the PR description)')
   })
 
   it('asks one question per open proposal', () => {
@@ -78,8 +88,8 @@ describe("Owner's pending questions", () => {
         question: 'Proposal 1 of retro_1: add a lint step. Approve it?',
         header: 'Proposal 1',
         options: [
-          { label: 'Approve', description: 'Owner fixed lint Hypothesis: no more lint fixes' },
-          { label: 'Decline', description: 'Leave the workflow as it is. A note on Approve declines it too.' },
+          { label: 'Approve', description: 'Apply it as a workflow experiment.', preview: expect.stringContaining('## Why\nOwner fixed lint\n\n## What should happen\nno more lint fixes') },
+          { label: 'Decline', description: 'Leave the workflow as it is. A note on Approve declines it too.', preview: expect.stringContaining('On owner_friction_per_item') },
         ],
       }),
     ])
@@ -87,16 +97,30 @@ describe("Owner's pending questions", () => {
 })
 
 describe('Owner decides through AskUserQuestion', () => {
-  const askedEvents = [...base, ...asEvents(ask(base, 'tu_1', { questions: [{ question: GATE_QUESTION }, { question: INPUT_QUESTION }] }).events)]
+  const pendingAsk = askUserQuestionInput(pendingOwnerQuestions(foldState(base)))
+  const askedEvents = [...base, ...asEvents(ask(base, 'tu_1', pendingAsk).events)]
 
   it('records the clean call in PreToolUse', () => {
     expect(askedEvents.filter((event) => event.type === 'owner_asked')).toEqual([expect.objectContaining({ tool_use_id: 'tu_1', questions: [GATE_QUESTION, INPUT_QUESTION] })])
   })
 
   it('refuses a call whose input already carries the answers', () => {
-    const outcome = ask(base, 'tu_2', { questions: [{ question: GATE_QUESTION }], answers: { [GATE_QUESTION]: 'Approve' } })
+    const outcome = ask(base, 'tu_2', { questions: pendingAsk.questions.slice(0, 1), answers: { [GATE_QUESTION]: 'Approve' } })
     expect(outcome.output).toMatchObject({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' } })
     expect(outcome.events.some((event) => event.type === 'owner_asked')).toBe(false)
+  })
+
+  it("blocks a call that changes Drillmaster's question, and lets Agent's own questions through", () => {
+    const [gate, input] = pendingAsk.questions
+    const withoutPreview = { ...gate!, options: gate!.options.map(({ preview: _preview, ...option }) => option) }
+    const blocked = ask(base, 'tu_3', { questions: [withoutPreview, input] })
+    expect(blocked.output).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: expect.stringContaining('option "Approve" is missing its preview') } })
+    expect(blocked.events.map((event) => event.type)).toEqual(['work_trace'])
+    const reworded = ask(base, 'tu_4', { questions: [{ ...gate!, question: 'Shall we ship #7?' }] })
+    expect((reworded.output as any).hookSpecificOutput.permissionDecisionReason).toContain(`the question with header "Owner gate" is not one Drillmaster asks; ask "${GATE_QUESTION}" word for word`)
+    const own = ask(base, 'tu_5', { questions: [{ question: 'Which CSV separator do you want?', header: 'Separator', options: [{ label: ';', description: 'semicolon' }, { label: ',', description: 'comma' }], multiSelect: false }] })
+    expect(own.output).toBeUndefined()
+    expect(own.events.map((event) => event.type)).toEqual(['work_trace'])
   })
 
   it("records Owner's choices, and tells Agent", () => {

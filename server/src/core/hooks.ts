@@ -1,5 +1,5 @@
 import type { NewEvent } from './events.js'
-import { decideOwnerAnswers, pendingOwnerQuestions } from './questions.js'
+import { decideOwnerAnswers, pendingOwnerQuestions, type OwnerQuestion } from './questions.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { atStep, workflowOfWorkItem } from './work.js'
 
@@ -169,8 +169,37 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
 const ASK_USER_QUESTION = 'AskUserQuestion'
 
 interface AskUserQuestionInput {
-  questions?: { question?: unknown }[]
+  questions?: { question?: unknown; header?: unknown; options?: { label?: unknown; description?: unknown; preview?: unknown }[] }[]
   answers?: Record<string, unknown>
+}
+
+const denyAsk = (reason: string) => ({
+  events: [],
+  output: { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Drillmaster: ${reason}` } },
+})
+
+/**
+ * What differs between a question Agent asks and Drillmaster's pending question it stands for: one
+ * with the text or the header of a pending question. Owner must see Drillmaster's question as it is.
+ */
+function changesToPendingQuestions(asked: NonNullable<AskUserQuestionInput['questions']>, pending: readonly OwnerQuestion[]): string[] {
+  return asked.flatMap((question) => {
+    const sameText = pending.find((candidate) => candidate.question === question.question)
+    const sameHeader = pending.filter((candidate) => candidate.header === question.header)
+    if (!sameText && sameHeader.length === 0) return []
+    if (!sameText) return [`the question with header "${String(question.header)}" is not one Drillmaster asks; ask ${sameHeader.map((candidate) => `"${candidate.question}"`).join(' or ')} word for word`]
+    const options = question.options ?? []
+    const optionChanges = sameText.options.flatMap((expected, index) => {
+      const given = options[index]
+      if (!given || given.label !== expected.label) return [`option ${index + 1} must be "${expected.label}"`]
+      return [
+        ...(given.description !== expected.description ? [`option "${expected.label}" has another description`] : []),
+        ...((given.preview ?? undefined) !== expected.preview ? [`option "${expected.label}" ${given.preview === undefined ? 'is missing its preview' : 'has another preview'}`] : []),
+      ]
+    })
+    const extra = options.length > sameText.options.length ? [`it has ${options.length - sameText.options.length} option(s) too many`] : []
+    return [...optionChanges, ...extra].map((change) => `in "${sameText.question.slice(0, 80)}", ${change}`)
+  })
 }
 
 /**
@@ -178,24 +207,16 @@ interface AskUserQuestionInput {
  * Owner by filling them in. A missed PreToolUse leaves the decision pending.
  */
 function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId: string, payload: HookPayload): { events: NewEvent[]; output?: Record<string, unknown> } {
-  const pendingQuestionTexts = new Set(pendingOwnerQuestions(state).map((question) => question.question))
+  const pendingQuestions = pendingOwnerQuestions(state)
+  const pendingQuestionTexts = new Set(pendingQuestions.map((question) => question.question))
   const toolUseId = typeof payload.tool_use_id === 'string' ? payload.tool_use_id : undefined
   const input = (payload.tool_input ?? {}) as AskUserQuestionInput
   if (hookEvent === 'PreToolUse') {
+    const changes = changesToPendingQuestions(input.questions ?? [], pendingQuestions)
+    if (changes.length) return denyAsk(`Owner must see Drillmaster's question as it is, so this call is blocked: ${changes.join('; ')}. Pass ask_owner from the result (work_status shows it) exactly as it is.`)
     const askedTexts = (input.questions ?? []).map((question) => question.question).filter((text): text is string => typeof text === 'string' && pendingQuestionTexts.has(text))
     if (askedTexts.length === 0 || !toolUseId) return { events: [] }
-    if (Object.keys(input.answers ?? {}).some((text) => pendingQuestionTexts.has(text))) {
-      return {
-        events: [],
-        output: {
-          hookSpecificOutput: {
-            hookEventName: 'PreToolUse',
-            permissionDecision: 'deny',
-            permissionDecisionReason: "Drillmaster: Owner answers this question, not you. Ask it again without `answers`.",
-          },
-        },
-      }
-    }
+    if (Object.keys(input.answers ?? {}).some((text) => pendingQuestionTexts.has(text))) return denyAsk('Owner answers this question, not you. Ask it again without `answers`.')
     return { events: [{ type: 'owner_asked', session_id: sessionId, tool_use_id: toolUseId, questions: askedTexts }] }
   }
   if (hookEvent !== 'PostToolUse' || !toolUseId) return { events: [] }

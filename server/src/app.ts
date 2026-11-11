@@ -137,7 +137,7 @@ const WorkGateArgs = z
   .object({
     token: tokenField,
     step: StepRefArg,
-    self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()),
+    self_check: z.array(z.object({ rule: z.string().min(1), accepted: z.boolean(), evidence: textField }).strict()).default([]),
     text: textField,
     inputs: z.array(InputAnswerArgs).optional(),
   })
@@ -292,7 +292,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'work_gate',
     description:
-      "Hands in the work gate of the current work step (step, e.g. \"1.2\"), once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks; text is what the step requires reporting; inputs sets the work item inputs that are yours to set at this step. Returns the verdict and the next work step in full.",
+      "Hands in the work gate of the current work step (step, e.g. \"1.2\"), once its work is done. self_check holds exactly one {rule, accepted, evidence} per rule the gate checks, and is left out at an Owner gate, which Owner judges; text is what the step requires reporting, and at an Owner gate what Owner should look at; inputs sets the work item inputs that are yours to set at this step. Returns the verdict and the next work step in full.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -302,7 +302,7 @@ export const TOOLS: ToolDefinition[] = [
         text: { type: 'string' },
         inputs: inputAnswersProperty('at this step'),
       },
-      required: ['token', 'step', 'self_check', 'text'],
+      required: ['token', 'step', 'text'],
     },
   },
   {

@@ -68,6 +68,8 @@ Call `work_start({issue, description, stages, inputs})` before you touch anythin
    - `self_check` holds exactly one `{rule, accepted, evidence}` per rule the gate checks. The
      evidence is what you actually checked, such as a command and its output, not a promise.
    - `text` is what the work step requires reporting.
+   - **At an Owner gate**, leave `self_check` out: Owner judges it. `text` is what Owner should look
+     at, and Owner sees it beside the question, with the assumptions you reported.
    - `inputs` sets each work item input that is yours to set at the step: one of its options, and
      why.
 
@@ -82,11 +84,13 @@ Call `work_start({issue, description, stages, inputs})` before you touch anythin
 ## Asking Owner
 
 When a result says **Ask Owner now**, call AskUserQuestion with exactly the input it gives: the
-same questions, word for word, and no `answers`. Owner answers; you can't, and an answer you fill
-in is refused. Ask from the main conversation, because subagents can't use AskUserQuestion.
+same questions, options and previews, word for word, and no `answers`. Owner answers; you can't,
+and an answer you fill in is refused. Ask from the main conversation, because subagents can't use
+AskUserQuestion.
 
-- Before asking at an Owner gate, show Owner what they need to judge: the PR, what changed, and how
-  it was verified.
+- Each option's `preview` shows Owner, beside the question, what they decide on. A call that
+  changes or leaves out any of it is blocked, so Owner always sees Drillmaster's question as it is.
+  Your own questions to Owner, with other headers, are yours to word.
 - Owner either approves or not. Approve with nothing added approves; a note, or an answer Owner
   typed, rejects, with Owner's words as the reason. Drillmaster records it and tells you the outcome
   and what comes next.

@@ -309,8 +309,11 @@ export function handInGate(state: ProjectState, item: WorkItemState, args: GateA
   refuseOutsideSessionStages(workflow, item, args)
   refuseUnlessStepApplies(workflow, item, args.stage, args.step)
   const step = stepAt(workflow, args.stage, args.step)!
+  if (step.gate === 'owner' && args.self_check.length > 0) {
+    throw new Refused(`Step ${args.stage}.${args.step} has an Owner gate: Owner judges it, against ${step.rules.length ? step.rules.join(', ') : 'what Owner wants'}. Hand it in with no self_check, and with text saying what Owner should look at.`)
+  }
   const checkedRules = args.self_check.map((check) => check.rule)
-  const missingRules = step.rules.filter((ruleRef) => !checkedRules.includes(ruleRef))
+  const missingRules = step.gate === 'owner' ? [] : step.rules.filter((ruleRef) => !checkedRules.includes(ruleRef))
   const unreferencedRules = checkedRules.filter((ruleRef) => !step.rules.includes(ruleRef))
   if (missingRules.length || unreferencedRules.length || new Set(checkedRules).size !== checkedRules.length) {
     throw new Refused(

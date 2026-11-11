@@ -60,9 +60,10 @@ describe('rendering the next work step', () => {
 
   it('names each rule with how it is verified, and says who judges the gate', () => {
     const step = renderStep(WORKFLOW_3, 2, 1)
-    expect(step).toContain('**Gate:** owner (Owner approves it).')
+    expect(step).toContain('**Gate:** owner (Owner judges it, in AskUserQuestion, with your report and the assumptions you reported beside the question; no self check).')
     expect(step).toContain('- `pr 1.1`: the PR says what it changes. Verified by: reading the PR description.')
-    expect(step).toContain('"rule": "pr 1.1"')
+    expect(step).not.toContain('"self_check"')
+    expect(renderStep(WORKFLOW_3, 1, 2)).toContain('"rule": "pr 1.1"')
   })
 
   it('says when a step has no instruction yet', () => {

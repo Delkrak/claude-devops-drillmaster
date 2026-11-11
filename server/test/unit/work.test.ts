@@ -78,11 +78,12 @@ describe('work gates', () => {
   it('leaves an Owner gate pending, and blocks the next gate and delivery', () => {
     const toReview = asEvents([{ type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 2, accepted: true, by: 'agent', why: 'ok', rule: null, next: { stage: 2, step: 1 }, done: false }])
     const state = run(toReview)
-    const decision = handInGate(state, state.workItems.wi_1!, { stage: 2, step: 1, self_check: [check('pr 1.1')], text: 'PR #40' })
+    expect(() => handInGate(state, state.workItems.wi_1!, { stage: 2, step: 1, self_check: [check('pr 1.1')], text: 'PR #40' })).toThrow(/Owner gate: Owner judges it, against pr 1.1\. Hand it in with no self_check/)
+    const decision = handInGate(state, state.workItems.wi_1!, { stage: 2, step: 1, self_check: [], text: 'PR #40' })
     expect(decision.answer).toMatchObject({ verdict: 'pending', gate: 'owner' })
     const pending = run([...toReview, ...asEvents(decision.events)])
-    expect(pending.workItems.wi_1!.pending_gate).toEqual({ stage: 2, step: 1, gate: 'owner' })
-    expect(() => handInGate(pending, pending.workItems.wi_1!, { stage: 2, step: 1, self_check: [check('pr 1.1')], text: 'again' })).toThrow(/pending/)
+    expect(pending.workItems.wi_1!.pending_gate).toEqual({ stage: 2, step: 1, gate: 'owner', text: 'PR #40' })
+    expect(() => handInGate(pending, pending.workItems.wi_1!, { stage: 2, step: 1, self_check: [], text: 'again' })).toThrow(/pending/)
     expect(() => deliverWorkItem(pending.workItems.wi_1!, DELIVERY)).toThrow(/pending/)
   })
 

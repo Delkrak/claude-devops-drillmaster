@@ -50,7 +50,7 @@ describe('a work item through build and review', () => {
   })
 
   it('waits at the Owner gate and refuses delivery meanwhile', async () => {
-    const owner = await r({ action: 'gate', step: '2.1', self_check: [{ rule: 'pr 1.1', accepted: true, evidence: 'PR #40' }], text: 'PR #40' })
+    const owner = await r({ action: 'gate', step: '2.1', text: 'PR #40' })
     expect(owner.value).toMatchObject({ verdict: 'pending', gate: 'owner' })
     expect((await r({ action: 'deliver', pr: '#40' })).value).toMatch(/pending/)
   })

@@ -74,20 +74,20 @@ wants the user interface changes later.
   Objectives and experiments that name the old measure are migrated on read.
 
 **Owner's questions show what they ask about, side by side:**
-- 🟥 Every Owner question (gate, skip, proposal, input) puts its content in the options'
+- 🟩 Every Owner question (gate, skip, proposal, input) puts its content in the options'
   `preview`, which AskUserQuestion shows beside the options.
-- 🟥 An Owner gate asks "Is this what you want?", and its preview shows three things:
+- 🟩 An Owner gate asks "Is this what you want?", and its preview shows three things:
   - what Agent reported at the step;
   - the assumptions reported on the item;
   - the rules, in words.
-- 🟥 A skip shows Agent's reason and the step. A proposal shows its change, purpose and
+- 🟩 A skip shows Agent's reason and the step. A proposal shows its change, purpose and
   hypothesis.
-- 🟥 Owner gates take no `self_check` from Agent.
-- 🟥 The work skill tells Agent to pass `preview` through as it is.
-- 🟧 The `PreToolUse` hook checks it: an AskUserQuestion call during a pending Owner question must
+- 🟩 Owner gates take no `self_check` from Agent.
+- 🟩 The work skill tells Agent to pass `preview` through as it is.
+- 🟩 The `PreToolUse` hook checks it: an AskUserQuestion call during a pending Owner question must
   carry Drillmaster's question, options and previews unchanged. Otherwise the hook blocks the call
   and tells Agent what differs. Owner always sees exactly what Drillmaster wrote.
-- 🟧 The hook tells the two apart by the header: a question with the header of a pending
+- 🟩 The hook tells the two apart by the header: a question with the header of a pending
   Drillmaster question (Owner gate, Skip step, Proposal, Input) is checked. Agent's own questions
   pass.
 
@@ -221,14 +221,14 @@ One round, pressure-tested with both the scripted and the LLM Owner.
    - `set_at: "start"` in `work_start`;
    - 🟩 changing an input, and going back;
    - the retrospective operations and their prompt.
-2. 🟩 **Owner inputs and friction:**
+2. 🟩 **Owner inputs and friction** (4550250):
    - attribution by the call an input leads to;
    - 🟩 the separate friction judge;
    - `owner_friction_per_item`, with migration;
    - the wording everywhere.
-3. 🟥 **Owner's questions side by side:** `preview` on every Owner question, the gate question's
+3. 🟩 **Owner's questions side by side:** `preview` on every Owner question, the gate question's
    content, no `self_check` on Owner gates, and the skills.
-   - 🟧 the PreToolUse check that Owner is shown Drillmaster's question unchanged.
+   - 🟩 the PreToolUse check that Owner is shown Drillmaster's question unchanged.
 4. 🟧 **Tool capture:**
    - the hook keeps the output's tail, for Bash and PowerShell;
    - `core/logPipeline.ts` (the LogQL subset);
@@ -270,7 +270,7 @@ One round, pressure-tested with both the scripted and the LLM Owner.
   - 🟧 tool capture: the default 20 lines, replaced by a rule's yield, and the fallback when it
     yields nothing;
   - 🟩 changing an input: going back to a step that now applies, keeping passed steps;
-  - 🟧 the PreToolUse check of an Owner question: unchanged passes, changed is blocked;
+  - 🟩 the PreToolUse check of an Owner question: unchanged passes, changed is blocked;
   - 🟥 per-rule counts.
 - **API tests:**
   - 🟩 a feature item skips the bug steps by condition, and the other way round;

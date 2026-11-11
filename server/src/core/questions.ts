@@ -2,7 +2,7 @@ import type { NewEvent } from './events.js'
 import { resolveRef, stepGuidAt, stepPosition } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import { atStep, decideSkip, describeMove, describeUpdate, inputEventsWithMove, moveOn, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
-import { AT_START, type WorkItemInput } from './workflow.js'
+import { AT_START, findRule, type WorkflowDocument, type WorkItemInput } from './workflow.js'
 
 /** AskUserQuestion takes at most this many questions per call. */
 export const MAX_QUESTIONS_PER_ASK = 4
@@ -16,6 +16,8 @@ export const DECLINE = 'Decline'
 export interface QuestionOption {
   label: string
   description: string
+  /** Markdown AskUserQuestion shows beside the options: what Owner decides on. */
+  preview?: string
 }
 
 export type OwnerQuestion = {
@@ -32,6 +34,32 @@ export type OwnerQuestion = {
 
 const header = (text: string) => text.slice(0, MAX_HEADER_LENGTH)
 
+const bulletsOr = (lines: readonly string[], none: string) => (lines.length ? lines.map((line) => `- ${line}`) : [`- ${none}`])
+
+/** What Owner approves at an Owner gate: Agent's report, the assumptions on the work item, and the rules. */
+function ownerGatePreview(workflow: WorkflowDocument, item: WorkItemState, stage: number, stepNumber: number, report: string) {
+  const step = stepAt(workflow, stage, stepNumber)
+  const rules = (step?.rules ?? []).map((ruleRef) => {
+    const rule = findRule(workflow, ruleRef)
+    return rule ? `${ruleRef}: ${rule.rule} (verified by ${rule.verified_by})` : ruleRef
+  })
+  return [
+    `## ${item.issue}: step ${stage}.${stepNumber} "${step?.name ?? ''}"`,
+    ...(item.description ? ['', item.description] : []),
+    '',
+    '## What Agent reports',
+    report.trim() || 'Nothing.',
+    '',
+    '## Assumptions Agent made',
+    ...bulletsOr(item.assumptions, 'none'),
+    '',
+    '## The rules it must meet',
+    ...bulletsOr(rules, 'none: judge it by what you want'),
+  ].join('\n')
+}
+
+const withPreview = (options: QuestionOption[], preview: string) => options.map((option) => ({ ...option, preview }))
+
 function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuestion | undefined {
   const gate = item.pending_gate
   if (gate?.gate !== 'owner') return undefined
@@ -42,12 +70,15 @@ function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuest
     work_item_id: item.work_item_id,
     stage: gate.stage,
     step: gate.step,
-    question: `Owner gate of ${item.work_item_id} (${item.issue}), work step ${gate.stage}.${gate.step} "${step?.name ?? ''}": does the work meet ${step?.rules.length ? step.rules.join(', ') : 'what you expect'}?`,
+    question: `Owner gate of ${item.work_item_id} (${item.issue}), step ${gate.stage}.${gate.step} "${step?.name ?? ''}": is this what you want? What you approve is beside the options.`,
     header: 'Owner gate',
-    options: [
-      { label: APPROVE, description: 'The work meets the rules: it moves on. A note makes it a rejection.' },
-      { label: REJECT, description: 'It goes back. Say what to fix in a note, or type it.' },
-    ],
+    options: withPreview(
+      [
+        { label: APPROVE, description: 'This is what you want: the work moves on. A note makes it a rejection.' },
+        { label: REJECT, description: 'It goes back. Say what to change in a note, or type it.' },
+      ],
+      ownerGatePreview(workflow, item, gate.stage, gate.step, gate.text),
+    ),
     multiSelect: false,
   }
 }
@@ -58,6 +89,15 @@ function stepSkipQuestion(state: ProjectState, item: WorkItemState): OwnerQuesti
   const skip = item.pending_skip
   if (skip?.decided_by !== 'owner') return undefined
   const step = stepAt(workflowOfWorkItem(state, item), skip.stage, skip.step)
+  const preview = [
+    `## ${item.issue}: skip step ${skip.stage}.${skip.step} "${step?.name ?? ''}"?`,
+    '',
+    '## Why Agent wants to skip it',
+    skip.why,
+    '',
+    '## What the step asks for',
+    step?.instruction || 'No instruction.',
+  ].join('\n')
   return {
     kind: 'step_skip',
     work_item_id: item.work_item_id,
@@ -65,10 +105,13 @@ function stepSkipQuestion(state: ProjectState, item: WorkItemState): OwnerQuesti
     step: skip.step,
     question: `Skip step ${skip.stage}.${skip.step} "${step?.name ?? ''}" of ${item.work_item_id} (${item.issue})? Agent says: ${quote(skip.why, MAX_QUOTED_JUSTIFICATION_LENGTH)}`,
     header: 'Skip step',
-    options: [
-      { label: APPROVE, description: 'The step is not needed for this work item: it moves on. A note makes it a rejection.' },
-      { label: REJECT, description: 'Agent does the step. Say why in a note, or type it.' },
-    ],
+    options: withPreview(
+      [
+        { label: APPROVE, description: 'The step is not needed for this work item: it moves on. A note makes it a rejection.' },
+        { label: REJECT, description: 'Agent does the step. Say why in a note, or type it.' },
+      ],
+      preview,
+    ),
     multiSelect: false,
   }
 }
@@ -85,15 +128,34 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
       proposal: proposal.id,
       question: `Proposal ${proposal.id} of ${retro.retro_id}: ${proposal.change}. Approve it?`,
       header: header(`Proposal ${proposal.id}`),
-      options: [
-        { label: APPROVE, description: `${proposal.purpose}${proposal.hypothesis ? ` Hypothesis: ${proposal.hypothesis}` : ''}`.trim() || 'Apply it as a workflow experiment.' },
-        { label: DECLINE, description: 'Leave the workflow as it is. A note on Approve declines it too.' },
-      ],
+      options: withPreview(
+        [
+          { label: APPROVE, description: 'Apply it as a workflow experiment.' },
+          { label: DECLINE, description: 'Leave the workflow as it is. A note on Approve declines it too.' },
+        ],
+        proposalPreview(proposal),
+      ),
       multiSelect: false as const,
     }))
 }
 
 /** Owner's inputs of a work item that are due, set at work_start or at a step it passed, and not set yet. */
+function proposalPreview(proposal: ProjectState['retros'][string]['proposals'][number]) {
+  return [
+    `## Proposal ${proposal.id}: ${proposal.change}`,
+    '',
+    '## Why',
+    proposal.purpose || 'Not said.',
+    '',
+    '## What should happen',
+    proposal.hypothesis || 'Not said.',
+    ...(proposal.null_hypothesis ? ['', '## What would show it made no difference', proposal.null_hypothesis] : []),
+    '',
+    `## How it is judged`,
+    `On ${proposal.measure}${proposal.target !== undefined && proposal.target !== null ? `, aiming for ${proposal.target}` : ''}, after ${proposal.judge_after ?? 3} delivered work items.`,
+  ].join('\n')
+}
+
 function ownerInputQuestions(state: ProjectState, item: WorkItemState): OwnerQuestion[] {
   const workflow = workflowOfWorkItem(state, item)
   const done = new Set([...item.passed_step_guids, ...item.skipped_step_guids])
@@ -107,7 +169,10 @@ function ownerInputQuestions(state: ProjectState, item: WorkItemState): OwnerQue
       input: input.name,
       question: `Input "${input.name}" for ${item.work_item_id} (${item.issue}): ${input.instruction}`,
       header: header(input.name),
-      options: input.options.map((option) => ({ label: option.value, description: option.description })),
+      options: withPreview(
+        input.options.map((option) => ({ label: option.value, description: option.description })),
+        [`## ${item.issue}: ${input.name}`, ...(item.description ? ['', item.description] : []), '', `## The question`, input.instruction].join('\n'),
+      ),
       multiSelect: false as const,
     }))
 }

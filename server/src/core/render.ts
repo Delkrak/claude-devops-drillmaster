@@ -24,11 +24,15 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
   const gateArgs = {
     token: '<your agent_token>',
     step: stepName(stageNumber, stepNumber),
-    self_check: step.rules.map((ruleRef) => ({ rule: ruleRef, accepted: true, evidence: '<what shows it, e.g. a command and its output>' })),
-    text: step.report.length ? `<${step.report.join('; ')}>` : '<what you did>',
+    ...(step.gate === 'owner' ? {} : { self_check: step.rules.map((ruleRef) => ({ rule: ruleRef, accepted: true, evidence: '<what shows it, e.g. a command and its output>' })) }),
+    text: step.gate === 'owner' ? `<what Owner should look at${step.report.length ? `: ${step.report.join('; ')}` : ''}>` : step.report.length ? `<${step.report.join('; ')}>` : '<what you did>',
     ...(agentInputs.length ? { inputs: agentInputs.map((input) => ({ name: input.name, value: input.options.map((option) => option.value).join('|'), explanation: '<why>' })) } : {}),
   }
-  const gateWho = { self: 'you judge it yourself', drillmaster: 'Drillmaster judges it from your report and the work traces', owner: 'Owner approves it' }[step.gate]
+  const gateWho = {
+    self: 'you judge it yourself',
+    drillmaster: 'Drillmaster judges it from your report and the work traces',
+    owner: 'Owner judges it, in AskUserQuestion, with your report and the assumptions you reported beside the question; no self check',
+  }[step.gate]
   const skipWho = { self: 'you decide', drillmaster: 'Drillmaster decides', owner: 'Owner decides' }
   return [
     `## Work step ${stageNumber}.${stepNumber}: ${step.name}`,
@@ -53,7 +57,7 @@ export function renderStep(workflow: WorkflowDocument, stageNumber: number, step
       ? ['', '**Running experiments:**', ...workflow.experiments.map((experiment) => `- #${experiment.id} ${experiment.change}: ${experiment.hypothesis || experiment.purpose}`)]
       : []),
     '',
-    'When the work is done, hand in the gate with `work_gate`, one self check per rule:',
+    step.gate === 'owner' ? 'When the work is done, hand in the gate with `work_gate`:' : 'When the work is done, hand in the gate with `work_gate`, one self check per rule:',
     '```json',
     JSON.stringify(gateArgs, null, 2),
     '```',

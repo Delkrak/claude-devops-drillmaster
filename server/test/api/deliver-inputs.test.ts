@@ -54,7 +54,7 @@ describe('work item inputs and delivery', () => {
   })
 
   it('delivers with a summary and an image artifact, and refuses a git-ignored file', async () => {
-    await app.callTool(work.dir, 'work_gate', { token, step: '2.1', self_check: check('pr 1.1'), text: 'PR #41' })
+    await app.callTool(work.dir, 'work_gate', { token, step: '2.1', text: 'PR #41' })
     await ownerAnswers(app, work.dir, () => 'Approve')
     const ignored = await app.callTool(work.dir, 'work_deliver', { token, pr: '#41', summary: 's', artifacts: ['private.txt'] })
     expect(ignored).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/ignored by git/) }] })

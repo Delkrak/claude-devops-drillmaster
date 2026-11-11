@@ -51,10 +51,12 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
       - **Self gate:** accepted or rejected at once.
       - **Drillmaster gate:** the reviewer (`claude -p`) judges it from the rules, the work reports
         and the work traces.
-      - **Owner gate:** pending. The result gives the exact AskUserQuestion to ask, and Owner
-        approves or not there: Approve alone approves, and a note or a typed answer rejects, with
-        Owner's words as the reason. The hooks record the answer as the verdict. Owner's chat
-        messages never decide: they are Owner inputs.
+      - **Owner gate:** handed in with no self check, and pending. The result gives the exact
+        AskUserQuestion to ask, with what Owner approves beside the options: Agent's report, the
+        assumptions Agent reported and the rules. The `PreToolUse` hook blocks a call that changes
+        it. Owner approves or not there: Approve alone approves, and a note or a typed answer
+        rejects, with Owner's words as the reason. The hooks record the answer as the verdict.
+        Owner's chat messages never decide: they are Owner inputs.
    4. The result shows the next step in full, or where a rejection sends the work back to.
    5. At the end of each work stage, the work item's events are committed and pushed to its own
       branch in the Drillmaster repository.
@@ -244,8 +246,8 @@ Each work gate is judged by the level of the chain of command it belongs to:
 - **Self gate:** Agent's own self check decides it at once.
 - **Drillmaster gate:** a headless `claude -p` reviewer judges it. It gets the rules, the new and
   past work reports, and the work traces. It runs with no tools and no MCP, and needs no API key.
-- **Owner gate:** it stays pending until Owner decides it, in AskUserQuestion or in their own
-  words. Agent can't answer for Owner: an AskUserQuestion that already carries answers is refused,
+- **Owner gate:** it stays pending until Owner decides it in AskUserQuestion, with what Owner
+  approves shown beside the question. Agent can't answer for Owner: an AskUserQuestion that already carries answers is refused,
   and answers only count for a question the PreToolUse hook saw asked.
 
 The hooks (`hooks/hooks.json`) record every action and every Owner prompt as a work trace. They

@@ -110,7 +110,7 @@ export default async function setup() {
   await call({ token: one.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'The PR says what it changes.' })
   await call({ token: one.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds CSV export, with a What section' })
-  await call({ token: one.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/csv.js' })
+  await call({ token: one.agent_token, action: 'gate', step: '2.1', text: 'look at src/csv.js' })
   await ownerAnswers(app, DEMO_DIR, () => 'Approve', 'demo')
   await call({ token: one.agent_token, action: 'deliver', pr: '#40', summary: 'CSV export with a header line; the test checks the header.', artifacts: ['after.png'] })
   await call({ token: one.agent_token, action: 'post_mortem', keep: [{ refs: ['step 1.1'], text: 'the gates' }], change: [{ refs: ['tool work_deliver'], text: 'take more file types' }], experiment_reflections: [{ experiment: 1, text: 'experiment 1 helped' }] })
@@ -124,7 +124,7 @@ export default async function setup() {
   await call({ token: two.agent_token, action: 'gate', step: '1.1', self_check: check('test 1.1'), text: 'green', inputs: size })
   reviewer.enqueue('gate', { accepted: true, rule: null, why: 'ok' })
   await call({ token: two.agent_token, action: 'gate', step: '1.2', self_check: check('pr 1.1'), text: 'adds JSON export' })
-  await call({ token: two.agent_token, action: 'gate', step: '2.1', self_check: check('pr 1.1'), text: 'look at src/json.js' })
+  await call({ token: two.agent_token, action: 'gate', step: '2.1', text: 'look at src/json.js' })
 
   const server = await listen(app, VIEWER_PORT, projectId(DEMO_DIR))
   const runServer = await listen(app, RUN_VIEWER_PORT, projectId(runDir))
