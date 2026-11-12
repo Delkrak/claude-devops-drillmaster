@@ -13,12 +13,13 @@ TOOLS="mcp__plugin_devops-drillmaster_drillmaster Bash(git:*) Bash(ls:*) Read"
 claude -p --plugin-dir <repo> --allowedTools $TOOLS \
   "Set up Drillmaster with the drillmaster setup skill. Objective: ship features without Owner stepping in. Measure: owner_friction_per_item. The Drillmaster repository: /tmp/rec-drillmaster.git. Then start issue #1 'add a CONTRIBUTING.md' with work_start, check work_status, and stop there."
 claude -p --plugin-dir <repo> --allowedTools $TOOLS \
-  "Take up issue #1 'add a CONTRIBUTING.md' again with work_resume, run ls, check work_status, and stop there."
+  "Take up issue #1 'add a CONTRIBUTING.md' again with work_resume, run ls, then run ls no-such-file (it fails, on purpose), check work_status, and stop there."
 node <repo>/server/dist/cli.js inspect --json > /tmp/rec.json
 ```
 
 From `/tmp/rec.json`, write one fixture per hook and tool: `{ "event": e.hook, "payload": e.raw }`.
-Name each file `recorded-<hook>[-<tool>].json`.
+Name each file `recorded-<hook>[-<tool>].json`. The failing `ls` gives the `PostToolUseFailure`
+fixture.
 
 Before you commit, replace your home directory and your username in every string with `user`.
 Claude Code also encodes the username into the transcript folder names.

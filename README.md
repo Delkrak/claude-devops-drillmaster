@@ -44,7 +44,8 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
    - When the last stage of the sitting is done, the result says so, and Agent stops there.
 6. For each work step, in order:
    1. **Agent** does the work the step's instruction gives. Every tool call is recorded by the
-      `PreToolUse` and `PostToolUse` hooks, with its exit status and the tail of its output.
+      `PreToolUse` and `PostToolUse` hooks (`PostToolUseFailure` when it failed), with what the
+      workflow's tool captures keep of its output, or else its last lines.
    2. **Agent** reports in real time with `work_report`: impediments, better ways, decisions,
       questions and assumptions.
    3. **Agent** hands in the gate with `work_gate`, with one self check per rule, and the work item inputs it sets.
@@ -263,7 +264,8 @@ Each work gate is judged by the level of the chain of command it belongs to:
   and answers only count for a question the PreToolUse hook saw asked.
 
 The hooks (`hooks/hooks.json`) record every action and every Owner prompt as a work trace. They
-cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and SubagentStop. A project
+cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure (a tool call
+that failed, such as a red test run), Stop and SubagentStop. A project
 without a workflow is never traced.
 
 Until the package is published, build it once, then load the plugin from this folder:

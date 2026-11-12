@@ -1,0 +1,24 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "f4529894-f7fa-4613-b649-0ffdabddde8a",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\f4529894-f7fa-4613-b649-0ffdabddde8a.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "184e665d-15de-4874-ab5a-ffa7f7b0b5fd",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Skill",
+    "tool_input": {
+      "skill": "devops-drillmaster:work"
+    },
+    "tool_response": {
+      "success": true,
+      "commandName": "devops-drillmaster:work"
+    },
+    "tool_use_id": "toolu_014mZ9fJMM2VFPpwiBaAk7dN",
+    "duration_ms": 4
+  }
+}

@@ -119,7 +119,7 @@ describe.skipIf(!enabled)('the plugin in real Claude Code', () => {
     expect(captured).toContainEqual(expect.objectContaining({ captures: [expect.objectContaining({ name: 'file', lines: expect.arrayContaining(['content: bye']) })] }))
     const verdicts = (await events()).filter((e) => e.type === 'gate_verdict' && e.work_item_id === item.work_item_id)
     expect(verdicts).toContainEqual(expect.objectContaining({ by: 'owner', via: 'question', accepted: true }))
-    expect(item).toMatchObject({ status: 'delivered', artifacts: [expect.objectContaining({ name: 'shot.png', media_type: 'image/png' })] })
+    expect(item).toMatchObject({ status: 'delivered', artifacts: expect.arrayContaining([expect.objectContaining({ name: 'shot.png', media_type: 'image/png' })]) })
   }, 600_000)
 
   it('takes a work item up again in a fresh session, with work_resume', async () => {

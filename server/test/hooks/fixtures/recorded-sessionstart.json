@@ -1,9 +1,9 @@
 {
   "event": "SessionStart",
   "payload": {
-    "session_id": "1ff1342b-f780-45cd-b7e9-cc32f64ab21f",
-    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec3-project\\1ff1342b-f780-45cd-b7e9-cc32f64ab21f.jsonl",
-    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project",
+    "session_id": "8e04e001-cf17-4b9a-a92a-2379f790bf38",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\8e04e001-cf17-4b9a-a92a-2379f790bf38.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
     "hook_event_name": "SessionStart",
     "source": "startup"
   }

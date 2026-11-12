@@ -1,0 +1,23 @@
+{
+  "event": "PostToolUseFailure",
+  "payload": {
+    "session_id": "8e04e001-cf17-4b9a-a92a-2379f790bf38",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\8e04e001-cf17-4b9a-a92a-2379f790bf38.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "e289983a-505c-4f91-b4ee-b211506ac849",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUseFailure",
+    "tool_name": "PowerShell",
+    "tool_input": {
+      "command": "ls no-such-file",
+      "description": "List a nonexistent file (expected to fail)"
+    },
+    "tool_use_id": "toolu_01B1NN6Py9zr19EwUMsRJWMx",
+    "error": "Exit code 1\nls : Cannot find path '/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project\\no-such-file' because it does not exist.\r\nAt line:1 char:302\r\n+ ... PSStyle.OutputRendering = 'PlainText' } catch {} } }; ls no-such-file\r\n+                                                           ~~~~~~~~~~~~~~~\r\n    + CategoryInfo          : ObjectNotFound: (/home/user\\...ct\\no-such-file:String) [Get-ChildItem], ItemNotFound \r\n   Exception\r\n    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetChildItemCommand",
+    "is_interrupt": false,
+    "duration_ms": 487
+  }
+}

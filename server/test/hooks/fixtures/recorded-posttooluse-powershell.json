@@ -1,10 +1,10 @@
 {
   "event": "PostToolUse",
   "payload": {
-    "session_id": "1ff1342b-f780-45cd-b7e9-cc32f64ab21f",
-    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec3-project\\1ff1342b-f780-45cd-b7e9-cc32f64ab21f.jsonl",
-    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project",
-    "prompt_id": "c65d2647-77f4-428a-8d30-f28e274752ea",
+    "session_id": "8e04e001-cf17-4b9a-a92a-2379f790bf38",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\8e04e001-cf17-4b9a-a92a-2379f790bf38.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "e289983a-505c-4f91-b4ee-b211506ac849",
     "permission_mode": "auto",
     "effort": {
       "level": "high"
@@ -13,15 +13,15 @@
     "tool_name": "PowerShell",
     "tool_input": {
       "command": "ls",
-      "description": "List project directory contents"
+      "description": "List files in project directory"
     },
     "tool_response": {
-      "stdout": "    Directory: /home/user\\.claude\\jobs\\7f73c306\\tmp\\rec3\\project\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\n-a----        11/11/2026   7:37 PM            119 .drillmaster                                                         \r\n-a----        11/11/2026   7:36 PM              6 README.md",
+      "stdout": "    Directory: /home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\n-a----        11/12/2026   1:07 AM            119 .drillmaster                                                         \r\n-a----        11/12/2026   1:07 AM              6 README.md",
       "stderr": "",
       "interrupted": false,
       "isImage": false
     },
-    "tool_use_id": "toolu_01Qp1dB5HRroVxBaihZXUDF7",
-    "duration_ms": 972
+    "tool_use_id": "toolu_01C4mEsNGaWf7wdKYB9JyXVy",
+    "duration_ms": 2265
   }
 }
