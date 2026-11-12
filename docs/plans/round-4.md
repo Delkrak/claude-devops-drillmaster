@@ -246,13 +246,13 @@ One round, pressure-tested with both the scripted and the LLM Owner.
    renamed words.
 7. 🟩 **The new scenario** (7d9eb6f): `pipeline-bugs-and-features.json`, the checks it needs (skipped by
    condition, tool capture fields, friction judged), and the old scenarios migrated.
-8. 🟩 **Review, before the simulations (an agent review):**
+8. 🟩 **Review, before the simulations (an agent review)** (18d7182):
    - `/code-review` on the round's diff, with its findings fixed and committed;
    - a check of the build against this plan's decisions, one by one.
-9. 🟥 **Simulations:**
+9. 🟩 **Simulations** (81aabbc, f7379cd):
    - `pipeline-bugs-and-features`, with the scripted and the LLM Owner;
    - `phases-update` with the LLM Owner again, for the friction judgment across phases.
-10. 🟥 **Finish:**
+10. 🟩 **Finish** (fc489cf and the commit that marks this plan built):
     - a clean-code pass;
     - hook fixtures re-recorded, including a Bash call that fails;
     - plugin tests in real Claude Code, including an Owner gate with a preview;
@@ -281,8 +281,8 @@ One round, pressure-tested with both the scripted and the LLM Owner.
   - 🟩 experiment `affects`, and a refused baseline;
   - 🟩 the friction measure from a post mortem.
 - 🟩 **Playwright:** the existing tests pass with the renames.
-- 🟥 **The plugin in real Claude Code:** an Owner gate whose AskUserQuestion shows the preview.
-- 🟧 **The plugin in real Claude Code:** a Bash trace with tool capture fields.
-- 🟥 **Simulations:** all hard checks pass in `pipeline-bugs-and-features`, with the scripted and
+- 🟩 **The plugin in real Claude Code:** an Owner gate whose AskUserQuestion shows the preview.
+- 🟩 **The plugin in real Claude Code:** a Bash trace with tool capture fields.
+- 🟩 **Simulations:** all hard checks pass in `pipeline-bugs-and-features`, with the scripted and
   the LLM Owner, and in `phases-update` with the LLM Owner.
-- 🟥 `claude plugin validate .`, plus local CI on Windows and on Linux in Docker.
+- 🟩 `claude plugin validate .`, plus local CI on Windows and on Linux in Docker.
