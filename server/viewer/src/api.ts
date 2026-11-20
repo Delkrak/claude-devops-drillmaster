@@ -26,7 +26,8 @@ export function usePolled<T>(load: () => Promise<T>, reloadKey: string, refreshM
     const refresh = () =>
       load()
         .then((data) => mounted && setState({ status: 'ready', data }))
-        .catch((error: unknown) => mounted && setState({ status: 'error', error: error instanceof Error ? error.message : String(error) }))
+        // A failed refresh keeps what the page showed; only a first load that fails shows the error.
+        .catch((error: unknown) => mounted && setState((shown) => (shown.status === 'ready' ? shown : { status: 'error', error: error instanceof Error ? error.message : String(error) })))
     void refresh()
     const timer = refreshMs === null ? undefined : setInterval(refresh, refreshMs)
     return () => {

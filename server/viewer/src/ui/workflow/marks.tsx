@@ -29,7 +29,7 @@ const styles = stylex.create({
   condition: { fill: colors.dim, fontFamily: font.sans, fontSize: font.sizeSm },
 })
 
-const explained = (tip: string) => ({ 'data-tip': tip, role: 'img', 'aria-label': tip })
+const explained = (tip: string) => ({ 'data-tip': tip, role: 'img', 'aria-label': tip, style: { cursor: 'help' } })
 
 export const Line = ({ from, to }: { from: number; to: number }) => (to > from ? <path d={`M${AXIS} ${from} V${to}`} {...stylex.props(styles.line)} /> : null)
 export const Branch = ({ from, to, x }: { from: number; to: number; x: number }) => <path d={branch(from, to, x)} {...stylex.props(styles.line)} />

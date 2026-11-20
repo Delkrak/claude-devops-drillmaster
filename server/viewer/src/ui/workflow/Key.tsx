@@ -32,6 +32,8 @@ const styles = stylex.create({
   orangeStroke: { fill: 'none', stroke: colors.orange, strokeWidth: '2px' },
   dimFill: { fill: colors.dim },
   dimDotted: { stroke: colors.dim, strokeWidth: '2px', strokeDasharray: '2 4' },
+  glyph: { fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy, fill: colors.line },
+  sandGlyph: { fill: colors.sand },
 })
 
 function Entry({ swatch, word, tone }: { swatch: ReactNode; word: string; tone?: 'sand' | 'orange' }) {
@@ -61,6 +63,8 @@ export function Key() {
         }
         word="Drillmaster reviews"
       />
+      <Entry swatch={<text x="9" y="14" textAnchor="middle" {...stylex.props(styles.glyph)}>✓</text>} word="Drillmaster passed" />
+      <Entry swatch={<text x="9" y="14" textAnchor="middle" {...stylex.props(styles.glyph, styles.sandGlyph)}>↩</text>} word="Drillmaster sent back" tone="sand" />
       <Entry swatch={<circle cx="9" cy="9" r="4.5" {...stylex.props(styles.lineFill)} />} word="work item" />
       <Entry swatch={<circle cx="9" cy="9" r="6.5" {...stylex.props(styles.orangeStroke)} />} word="you stepped in" tone="orange" />
       <Entry swatch={<rect x="3" y="8" width="12" height="3" rx="1.5" {...stylex.props(styles.dimFill)} />} word="delivered" />

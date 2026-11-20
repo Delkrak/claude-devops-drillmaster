@@ -2,7 +2,7 @@ import type { WorkflowPage } from '../../types'
 import { ITEM_COLUMN, itemBoxWidth, OVERVIEW_ROW, PROBLEM_COLUMN } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
 import { AfterDeliveryLine, DeliveryBar, FrictionRing, ItemBox, Line, StageLabel, StageRule, StageTick } from '../../ui/workflow/marks'
-import { describeItems } from './describe'
+import { describeItems, unplacedTip } from './describe'
 
 /** The whole pipeline in one screen: a row per stage, then delivery, then what came after it. */
 export function Overview({ page }: { page: WorkflowPage }) {
@@ -27,7 +27,8 @@ export function Overview({ page }: { page: WorkflowPage }) {
       <StageRule y={deliveryY} />
       <Line from={deliveryY} to={deliveryY + OVERVIEW_ROW / 2} />
       <DeliveryBar y={deliveryY + OVERVIEW_ROW / 2} />
-      <ItemBox dotX={ITEM_COLUMN} y={deliveryY + OVERVIEW_ROW / 2} count={page.delivered} tip={`${page.delivered} work items delivered`} testId="delivered" />
+      {page.delivered > 0 && <ItemBox dotX={ITEM_COLUMN} y={deliveryY + OVERVIEW_ROW / 2} count={page.delivered} tip={`${page.delivered} work items delivered`} testId="delivered" />}
+      {page.friction.unplaced > 0 && <FrictionRing x={PROBLEM_COLUMN} y={deliveryY + OVERVIEW_ROW / 2} count={page.friction.unplaced} tip={unplacedTip(page.friction.unplaced)} />}
       {page.waiting_to_deliver.length > 0 && (
         <ItemBox
           dotX={ITEM_COLUMN - itemBoxWidth(page.delivered) - 16}

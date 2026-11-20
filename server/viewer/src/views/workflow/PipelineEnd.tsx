@@ -2,7 +2,7 @@ import type { WorkflowPage } from '../../types'
 import { ITEM_COLUMN, itemBoxWidth, PROBLEM_COLUMN } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
 import { AfterDeliveryLine, DeliveryBar, FrictionRing, ItemBox, Line, StageRule } from '../../ui/workflow/marks'
-import { describeItems } from './describe'
+import { describeItems, unplacedTip } from './describe'
 
 const DELIVERY_Y = 40
 const AFTER_Y = 70
@@ -14,7 +14,8 @@ export function PipelineEnd({ page }: { page: WorkflowPage }) {
     <Drawing height={HEIGHT} testId="pipeline-end">
       <Line from={0} to={DELIVERY_Y} />
       <DeliveryBar y={DELIVERY_Y} />
-      <ItemBox dotX={ITEM_COLUMN} y={DELIVERY_Y} count={page.delivered} tip={`${page.delivered} work items delivered`} testId="delivered" />
+      {page.delivered > 0 && <ItemBox dotX={ITEM_COLUMN} y={DELIVERY_Y} count={page.delivered} tip={`${page.delivered} work items delivered`} testId="delivered" />}
+      {page.friction.unplaced > 0 && <FrictionRing x={PROBLEM_COLUMN} y={DELIVERY_Y} count={page.friction.unplaced} tip={unplacedTip(page.friction.unplaced)} />}
       {page.waiting_to_deliver.length > 0 && (
         <ItemBox dotX={ITEM_COLUMN - itemBoxWidth(page.delivered) - 16} y={DELIVERY_Y} count={page.waiting_to_deliver.length} tip={describeItems(page.waiting_to_deliver, 'waiting to be delivered')} />
       )}
