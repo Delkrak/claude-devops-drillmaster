@@ -1,0 +1,1489 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drillmaster - work item</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700&family=Big+Shoulders+Stencil+Display:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root{--ground:#0F1311;--rule:#232A25;--line:#D9DED6;--ahead:#3A443C;--dim:#8E998F;--sand:#E3C97E;--orange:#FF7A1A;--panel:#151B17}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--ground);color:var(--line);font-family:'Barlow',sans-serif}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:20px;height:52px;padding:0 28px;background:var(--ground);border-bottom:1px solid var(--rule)}
+  .brand{font-family:'Big Shoulders Stencil Display';font-weight:800;font-size:20px;letter-spacing:.1em;color:var(--dim);text-decoration:none}
+  .aside{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:13px;color:var(--dim)}
+  .aside a{color:var(--line);font-weight:700}
+  .find{width:84px;height:30px;padding:0 10px;border-radius:15px;border:1px solid var(--rule);background:transparent;color:var(--line);font:600 14px Barlow}
+  .find::placeholder{color:var(--dim)}
+  main{width:900px;margin:0 auto;padding:40px 0 calc(50vh - 120px)}
+  .title{display:flex;align-items:baseline;gap:14px;padding:0 44px 6px}
+  .issue{font-size:30px;font-weight:700}
+  .kind{font-size:16px;font-weight:600;color:var(--dim)}
+  .status{margin-left:auto;font-size:15px;font-weight:600;color:var(--dim)}
+  .status b{color:var(--line)}
+  .what{padding:0 44px 26px;font-size:14px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--rule)}
+
+  /* the route: one block per step (or split), the line drawn through each block */
+  .block{position:relative}
+  .block>.seg{position:absolute;left:448.5px;width:3px;border-radius:2px}
+  .seg.done{background:var(--line)} .seg.ahead{background:var(--ahead)} .seg.after{width:0;left:449px;border-left:2.5px dotted var(--dim);border-radius:0}
+  .block>svg{position:relative;display:block}
+  .stage-rule{border-top:1px solid var(--rule)}
+  .row{cursor:pointer;outline:none}
+  .row:focus-visible .hit{stroke:var(--line);stroke-width:1.5}
+  .hit{fill:transparent}
+  .row:hover .hit{fill:rgba(217,222,214,.04)}
+  [data-tip]{cursor:help}
+
+  /* drilling in: one level at a time, right of the line, under the step's name */
+  .panels{display:flow-root}
+  .panel{position:relative;margin:0 0 18px 480px;width:390px;font-size:14px;line-height:1.45}
+  .panel .lvl{padding:2px 0 10px}
+  .panel .lvl+.lvl{border-top:1px solid var(--rule);padding-top:12px}
+  .label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:8px 0 2px}
+  .label.sand{color:var(--sand)} .label.orange{color:var(--orange)}
+  .panel p{margin:0 0 6px}
+  .quote{color:var(--line);font-weight:600}
+  .more{display:inline-block;margin-top:6px;padding:4px 12px;border-radius:14px;border:1px solid var(--rule);background:transparent;color:var(--line);font:700 13px Barlow;cursor:pointer}
+  .more:hover,.more:focus-visible{border-color:var(--dim);outline:none}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--dim);white-space:pre-wrap;word-break:break-word;margin:2px 0 8px}
+  .call{display:grid;grid-template-columns:44px 1fr;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--rule)}
+  .call .t{color:var(--dim)} .call b{font-weight:700} .call .in{grid-column:2;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--dim);word-break:break-all}
+
+  .key{position:fixed;right:24px;bottom:18px;z-index:4;display:flex;flex-direction:column;gap:7px;padding:12px 16px;border-radius:12px;background:rgba(20,26,22,.92);border:1px solid var(--rule);font-size:12.5px;font-weight:600;color:var(--dim)}
+  .key span{display:inline-flex;align-items:center;gap:8px}
+  .tip{position:fixed;z-index:9;pointer-events:none;max-width:40ch;padding:5px 10px;border-radius:6px;background:#E9EDE6;color:#111;font-size:13px;font-weight:600;display:none}
+</style></head><body>
+<header>
+  <a class="brand" href="#">DRILLMASTER</a>
+  <div class="aside" id="aside"></div>
+</header>
+<main id="main"></main>
+<div class="key" id="key"></div>
+<div class="tip" id="tip"></div>
+<script>
+// Two work items from the recorded run (server/test/viewer/fixtures/reviewed-run.json), made by item-moment.ts.
+window.ITEMS={};
+window.ITEMS['2']={
+ "at": "2026-11-20T20:47:33.558Z",
+ "issue": "#2",
+ "kind": "bug",
+ "description": "Bug: totalUnits(rows) in src/summary.js sums row.price instead of row.units, so it returns the sum of the prices (for the report rows 15, not 22). Expected result: totalUnits(rows) returns the sum of the units, shown by a test that fails before the fix and passes after.",
+ "status": "delivered",
+ "started_at": "2026-11-20T18:54:43.974Z",
+ "workflow_version": "1.0.0",
+ "here": null,
+ "stages": [
+  {
+   "n": 1,
+   "name": "capture",
+   "steps": [
+    {
+     "n": 1,
+     "name": "write down what is wrong or wanted",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:54:55.102Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [
+       {
+        "kind": "assumption",
+        "text": "Scope is totalUnits only. The other likely bugs in src/summary.js (topProduct sorts ascending, averagePrice divides by length + 1) are left for their own issues."
+       },
+       {
+        "kind": "assumption",
+        "text": "totalUnits([]) stays 0 (the reduce starts at 0); no other behaviour changes."
+       },
+       {
+        "kind": "impediment",
+        "text": "Owner told me on #1 that every change needs a line in CHANGES.md, but the workflow has no step or rule for it. I will add the line as part of this work item anyway."
+       }
+      ],
+      "submitted": "Wrong: src/summary.js totalUnits = rows.reduce((sum, row) => sum + row.price, 0) adds up price, not units. For the report rows it returns 2.5 + 2.5 + 10 = 15 instead of 12 + 7 + 3 = 22. There is no test for it today.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:54:44.075Z",
+       "tool": "work_start",
+       "did": "#2",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:54:50.405Z",
+       "tool": "work_report",
+       "did": "assumption: Scope is totalUnits only. The other likely bugs in src/summary.js (topProduct sorts ascending, av…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:54:51.564Z",
+       "tool": "work_report",
+       "did": "assumption: totalUnits([]) stays 0 (the reduce starts at 0); no other behaviour changes.",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:54:52.906Z",
+       "tool": "work_report",
+       "did": "impediment: Owner told me on #1 that every change needs a line in CHANGES.md, but the workflow has no step or…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:54:55.203Z",
+       "tool": "work_gate",
+       "did": "step 1.1",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "name": "refine",
+   "steps": [
+    {
+     "n": 1,
+     "name": "find the cause",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:01.242Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "src/summary.js:5: `export const totalUnits = (rows) => rows.reduce((sum, row) => sum + row.price, 0)`. The reducer adds row.price, a copy of the field used in averagePrice, so it sums prices. It should add row.units: `sum + row.units`.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:01.338Z",
+       "tool": "work_gate",
+       "did": "step 2.1",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "name": "write the spec",
+     "gate": "owner",
+     "if": "kind == 'feature'",
+     "when": "kind is feature",
+     "alternative": {
+      "input": "kind",
+      "value": "feature"
+     },
+     "status": "skipped",
+     "happened": {
+      "skip": {
+       "by": "condition",
+       "why": "step 2.2 \"write the spec\" applies only when kind == 'feature', and kind is bug."
+      },
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "name": "build",
+   "steps": [
+    {
+     "n": 1,
+     "name": "reproduce the bug with a failing test",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:13.285Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "New test/summary.test.js: 'totalUnits is the sum of the units' expects totalUnits(rows) === 22 and fails with 15 !== 22 before the fix; 'totalUnits of no rows is 0' passes. npm test: 9 tests, 8 pass, 1 fail.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "test 1.2",
+        "accepted": true,
+        "evidence": "Ran `npm test` (node --test) before the fix: tests 9, pass 8, fail 1. Failing: 'totalUnits is the sum of the units' (test/summary.test.js:6), AssertionError 15 !== 22 - the 15 is the sum of the prices, the bug."
+       }
+      ],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 9",
+         "ℹ pass 8",
+         "ℹ fail 1"
+        ]
+       },
+       {
+        "tool": "Bash",
+        "name": "failures",
+        "lines": [
+         "✖ totalUnits is the sum of the units (0.8184ms)",
+         "✖ failing tests:",
+         "✖ totalUnits is the sum of the units (0.8184ms)"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:06.659Z",
+       "tool": "Write",
+       "did": "test/summary.test.js",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:08.600Z",
+       "tool": "Bash",
+       "did": "cd . && npm test 2>&1 | grep -vE '^\\s+at ' | tail -40",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:13.373Z",
+       "tool": "work_gate",
+       "did": "step 3.1",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "name": "write the code and its tests",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:25.609Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "src/summary.js:5: totalUnits now adds row.units instead of row.price (one-word change). Tests in test/summary.test.js from step 3.1.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "test 1.1",
+        "accepted": true,
+        "evidence": "Ran `npm test` (node --test) after the fix: tests 9, pass 9, fail 0. The fix is covered by test/summary.test.js ('totalUnits is the sum of the units', 'totalUnits of no rows is 0')."
+       }
+      ],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 9",
+         "ℹ pass 9",
+         "ℹ fail 0"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:18.797Z",
+       "tool": "Edit",
+       "did": "src/summary.js",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:20.120Z",
+       "tool": "Bash",
+       "did": "cd . && npm test 2>&1 | tail -11",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:25.699Z",
+       "tool": "work_gate",
+       "did": "step 3.2",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 3,
+     "name": "document it for users",
+     "gate": "self",
+     "if": "kind == 'feature' || user_visible == 'yes'",
+     "when": "kind is feature or user visible is yes",
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:35.956Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [
+       {
+        "kind": "decision",
+        "text": "Added a CHANGES.md line for #2 at step 3.3, next to the README change."
+       }
+      ],
+      "submitted": "README.md has a new \"Summaries\" section: totalUnits(rows) returns the total units sold (22 for the report rows); it used to return the sum of the prices (15), and that is fixed. Also, per Owner's instruction, CHANGES.md has the line \"#2: fixed totalUnits(rows) in src/summary.js, which summed the prices instead of the units.\"",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:30.992Z",
+       "tool": "Edit",
+       "did": "README.md",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:31.937Z",
+       "tool": "Edit",
+       "did": "CHANGES.md",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:34.306Z",
+       "tool": "work_report",
+       "did": "decision: Added a CHANGES.md line for #2 at step 3.3, next to the README change.",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:36.064Z",
+       "tool": "work_gate",
+       "did": "step 3.3",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "name": "test",
+   "steps": [
+    {
+     "n": 1,
+     "name": "run the full suite",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:47.381Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "npm test: tests 9, pass 9, fail 0, cancelled 0, skipped 0, todo 0.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "test 1.1",
+        "accepted": true,
+        "evidence": "Ran `npm test` (node --test): tests 9, pass 9, fail 0, cancelled 0, skipped 0."
+       }
+      ],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 9",
+         "ℹ pass 9",
+         "ℹ fail 0"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:41.719Z",
+       "tool": "Bash",
+       "did": "cd . && npm test 2>&1 | tail -8",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:47.475Z",
+       "tool": "work_gate",
+       "did": "step 4.1",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "name": "check the spec's examples by hand",
+     "gate": "self",
+     "if": "kind == 'feature'",
+     "when": "kind is feature",
+     "alternative": {
+      "input": "kind",
+      "value": "feature"
+     },
+     "status": "skipped",
+     "happened": {
+      "skip": {
+       "by": "condition",
+       "why": "step 4.2 \"check the spec's examples by hand\" applies only when kind == 'feature', and kind is bug."
+      },
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    },
+    {
+     "n": 3,
+     "name": "show the bug is fixed",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:55:58.191Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "`node --test test/summary.test.js`: 'totalUnits is the sum of the units' passes now (failed before with 15 !== 22); tests 2, pass 2, fail 0.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 2",
+         "ℹ pass 2",
+         "ℹ fail 0"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:55:52.355Z",
+       "tool": "Bash",
+       "did": "cd . && node --test test/summary.test.js 2>&1 | head -6",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:55:58.284Z",
+       "tool": "work_gate",
+       "did": "step 4.3",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 4,
+     "name": "have the change reviewed",
+     "gate": "drillmaster",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T18:56:35.070Z",
+        "by": "drillmaster",
+        "accepted": true,
+        "why": "The traces confirm the report: src/summary.js line 5 changes row.price to row.units and nothing else in that file; the new test/summary.test.js expects 22 and 0 and failed before the fix (ev_6ccfe97f) and passes after (ev_4a8124a9, ev_60fb2505); README gets +6 lines and CHANGES.md +1 line, both describing only #2. docs/change-2.diff was rebuilt against the 23-line README and 3-line CHANGES.md from #1 (matching the originalFile in ev_7181665a and ev_f90c0c89), so it holds only #2's changes, and the CHANGES line follows Owner's instruction, which Agent reported (ev_04dbf9cf, ev_e43aea44)."
+       }
+      ],
+      "reports": [
+       {
+        "kind": "impediment",
+        "text": "#1 was delivered as \"local\" and left uncommitted, so `git diff` for #2 mixes in #1's README section and CHANGES line. I built docs/change-2.diff by hand: git diff for src/summary.js and test/summary.test.js, and git diff --no-index of README.md and CHANGES.md against their #1 versions. The workflow does not say how local deliveries are kept apart (a commit or branch per work item would solve it)."
+       }
+      ],
+      "submitted": "Issue #2: totalUnits(rows) in src/summary.js returned the sum of the prices, not of the units.\nChanged: src/summary.js:5 now sums row.units; new test/summary.test.js (totalUnits(rows) === 22, totalUnits([]) === 0); README.md \"Summaries\" section saying what was fixed; CHANGES.md line for #2 (Owner's instruction: every change needs one). Diff of #2 alone in docs/change-2.diff. Nothing else changed.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "review 1.1",
+        "accepted": true,
+        "evidence": "docs/change-2.diff holds only #2's changes: src/summary.js line 5 `row.price` -> `row.units` (1 line); new test/summary.test.js (2 tests); README.md +6 lines (\"Summaries\" section); CHANGES.md +1 line for #2. The README CSV section and CHANGES #1 line in the working tree are #1's, uncommitted. topProduct and averagePrice are untouched. npm test: 9 pass, 0 fail; the new test failed with 15 !== 22 before the fix."
+       }
+      ],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T18:56:00.053Z",
+       "tool": "Bash",
+       "did": "cd . && git add -N test/summary.test.js CHANGES.md && git diff -- src/summary.js test/summary.test.js README.…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:56:08.783Z",
+       "tool": "Bash",
+       "did": "cd . && T=$(mktemp -d) && mkdir -p \"$T/a\" \"$T/b\" && head -n 23 README.md > \"$T/a/README.md\" && head -n 3 CHAN…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:56:15.350Z",
+       "tool": "work_report",
+       "did": "impediment: #1 was delivered as \"local\" and left uncommitted, so `git diff` for #2 mixes in #1's README secti…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T18:56:35.174Z",
+       "tool": "work_gate",
+       "did": "step 4.4",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "friction": [
+  {
+   "at": "2026-11-20T18:57:14.475Z",
+   "prompt": "You said the test failed before the fix, but you didn't show it. Show me the actual failing test output from the code before the fix.",
+   "after_delivery": true,
+   "why": "The expected result required a test shown to fail before the fix, and Agent delivered claiming this without showing the failing output, so Owner had to step in to demand the missing evidence.",
+   "placed": {
+    "step": "3.1",
+    "why": "Step 3.1 exists to reproduce the bug with a failing test, so it should have recorded the test's actual failing output against the unfixed code. Owner had to ask for that evidence after delivery."
+   },
+   "not_placed_why": null
+  }
+ ],
+ "delivered": {
+  "at": "2026-11-20T18:56:40.403Z",
+  "summary": "Fixed issue #2: totalUnits(rows) in src/summary.js now adds row.units instead of row.price, so the report rows give 22 instead of 15. New test/summary.test.js failed before the fix (15 !== 22) and passes after. README.md has a \"Summaries\" section saying what was fixed, and CHANGES.md has a #2 line. Verified by: npm test (9 tests, 9 pass, 0 fail), re-running the bug's test, and Drillmaster's review of docs/change-2.diff, which holds only #2's changes. Uncommitted in the working tree, alongside #1; no real PR.",
+  "post_mortems": [
+   {
+    "author": "agent",
+    "keep": [
+     "Writing the failing test first proved the bug (15 !== 22) before any code changed, and the same test proved the fix at 4.3.",
+     "Naming the cause line before the fix kept the change to one word in one line.",
+     "The feature-only steps (2.2 spec, 4.2 examples) were skipped automatically for a bug, so no Owner gate was needed and Owner did not have to step in."
+    ],
+    "change": [
+     "Owner requires a CHANGES.md line for every change (said on #1), but no step asks for it. Add it to step 3.3's instruction, or as a rule checked at 4.4, and make it apply to every work item, not only to features or user-visible ones.",
+     "Local deliveries stay uncommitted, so the next work item's git diff mixes in the previous one's changes; I had to build docs/change-2.diff by hand. Give each work item its own commit or branch at delivery, so the diff for review is clean.",
+     "For a bug, 4.3 re-runs the test 4.1 has just run green as part of the full suite. 4.3 could be folded into 4.1 by naming the bug's test in 4.1's self check."
+    ]
+   },
+   {
+    "author": "drillmaster",
+    "keep": [
+     "Reporting each open point as an assumption worked. Agent fixed the scope to totalUnits only and named the two other likely bugs (topProduct sorting ascending, averagePrice dividing by length + 1) instead of fixing them silently. That kept the review in 4.4 simple to judge against 'nothing else'.",
+     "Setting kind at start and conditioning steps on it worked. The spec and spec-example steps were skipped by condition with a stated reason, with no Owner involvement and no wasted work on a one-word bug fix.",
+     "Requiring a failing test before the fix, together with the tool captures, made red-then-green provable rather than claimed. The captures (ev_6ccfe97f before, ev_4a8124a9 and ev_60fb2505 after) are what the Drillmaster verdict in 4.4 cited.",
+     "The Drillmaster review gate checked the report against the traces: the one-line change, the test, the README and CHANGES lines, and that the hand-built diff matched #1's file versions. It accepted on the first submission. The item met the objective: zero Owner friction and zero gate rejections.",
+     "Agent used impediment and decision reports to surface workflow gaps (CHANGES.md, mixed local deliveries) as it hit them, instead of working around them silently. Those reports are what this post mortem is built from."
+    ],
+    "change": [
+     "Owner told Agent on #1 that every change needs a line in CHANGES.md, but the workflow still has no step or rule for it. Agent had to carry the instruction from memory and fold it into 3.3 (ev_04dbf9cf, ev_e43aea44). Step 3.3 is also conditional on kind == 'feature' || user_visible == 'yes', so a non-visible bug fix would skip it and lose the CHANGES line. Change: add a policy rule, e.g. 'changes 1.1: every change has a line in CHANGES.md naming its issue', checked in 4.4. Also add an unconditional step, or make 3.3's README part conditional and its CHANGES part unconditional.",
+     "#1 was delivered as 'local' and left uncommitted, so git diff for #2 mixed in #1's README section and CHANGES line. Agent first wrote a mixed docs/change-2.diff, then rebuilt it by hand with head -n 23 / head -n 3 copies and git diff --no-index. That is fragile and only correct because the line counts happened to be known. Change: make work_deliver with pr 'local' commit the work item's changes, or put each work item on its own branch. Then 4.4 can say 'hand in git diff <base>..HEAD' and the diff is mechanical.",
+     "For a bug, the suite ran green at 3.2, again at 4.1, and the bug's test ran again at 4.3. Between those runs only README.md and CHANGES.md changed. Step 4.3 adds no evidence that 4.1's capture does not already hold. Change: drop 4.3 and have 4.1's self check name the 3.1 test as passing in the captured run. Alternatively, keep 4.3 only if docs or other code can change after 3.2.",
+     "The other likely bugs Agent found in src/summary.js live only in an assumption report on this item, where nobody will pick them up. Change: give step 1.1 (or work_deliver) a way to record follow-up issues found out of scope, so they reach Owner's backlog instead of being lost."
+    ]
+   }
+  ]
+ }
+};
+window.ITEMS['5']={
+ "at": "2026-11-20T19:10:16.785Z",
+ "issue": "#5",
+ "kind": "feature",
+ "description": "Feature: the report has no JSON export. Add a toJson(rows) function in src/json.js that returns the report rows as pretty-printed JSON text, with each row's revenue (revenue(row) = units * price from src/report.js) added to it. Expected result: toJson(rows) returns readable JSON of the rows including revenue, covered by tests.",
+ "status": "active",
+ "started_at": "2026-11-20T19:08:10.192Z",
+ "workflow_version": "2.1.0",
+ "here": {
+  "stage": 4,
+  "step": 4
+ },
+ "stages": [
+  {
+   "n": 1,
+   "name": "capture",
+   "steps": [
+    {
+     "n": 1,
+     "name": "write down what is wrong or wanted",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:08:28.323Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [
+       {
+        "kind": "assumption",
+        "text": "\"Pretty-printed\" means JSON.stringify with 2-space indentation, as an array of row objects, with no trailing newline."
+       },
+       {
+        "kind": "assumption",
+        "text": "revenue is added as the last key of each row, computed with the existing revenue(row) (units * price), unrounded and as a number. If a row already has a revenue key, the computed value replaces it. The input rows are not changed (no mutation)."
+       },
+       {
+        "kind": "assumption",
+        "text": "toJson([]) returns \"[]\". toJson only returns a string; it writes no file and has no CLI."
+       },
+       {
+        "kind": "better_way",
+        "text": "Following my #4 post mortem, I copied README.md and CHANGES.md outside the repo (Temp/pre5) before any edit, so the #5-only diff is a plain git diff --no-index against them, with nothing to reconstruct. New files (src/json.js, test/json.test.js, docs/spec-5.md) need no baseline."
+       }
+      ],
+      "submitted": "Wanted: new src/json.js exporting toJson(rows), which returns the report rows as pretty-printed JSON text, each row with an added revenue field (revenue(row) = units * price from src/report.js). For the report rows the revenues are 30, 17.5 and 30. Today the only export is toCsv in src/csv.js, which has no revenue column. Open points (indentation, key position, overwriting an existing revenue key, mutation, empty input, trailing newline) are reported as assumptions.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:08:10.290Z",
+       "tool": "work_start",
+       "did": "#5",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:15.425Z",
+       "tool": "Bash",
+       "did": "cd . && D=. && mkdir -p \"$D\" && cp README.md CHANGES.md \"$D/\" && ls \"$D\" && node -e \"console.log(JSON.stringi…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:20.885Z",
+       "tool": "work_report",
+       "did": "assumption: \"Pretty-printed\" means JSON.stringify with 2-space indentation, as an array of row objects, with …",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:22.433Z",
+       "tool": "work_report",
+       "did": "assumption: revenue is added as the last key of each row, computed with the existing revenue(row) (units * pr…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:23.650Z",
+       "tool": "work_report",
+       "did": "assumption: toJson([]) returns \"[]\". toJson only returns a string; it writes no file and has no CLI.",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:25.633Z",
+       "tool": "work_report",
+       "did": "better_way: Following my #4 post mortem, I copied README.md and CHANGES.md outside the repo (Temp/pre5) befor…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:28.424Z",
+       "tool": "work_gate",
+       "did": "step 1.1",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "name": "refine",
+   "steps": [
+    {
+     "n": 1,
+     "name": "find the cause",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "skipped",
+     "happened": {
+      "skip": {
+       "by": "condition",
+       "why": "step 2.1 \"find the cause\" applies only when kind == 'bug', and kind is feature."
+      },
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    },
+    {
+     "n": 2,
+     "name": "write the spec",
+     "gate": "owner",
+     "if": "kind == 'feature'",
+     "when": "kind is feature",
+     "alternative": {
+      "input": "kind",
+      "value": "feature"
+     },
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:09:05.102Z",
+        "by": "owner",
+        "accepted": true,
+        "why": "Owner approved."
+       }
+      ],
+      "reports": [],
+      "submitted": "Spec: docs/spec-5.md. New src/json.js exports toJson(rows) -> JSON string of the rows, each with revenue (units * price, from src/report.js) added. Plus a README section and a CHANGES.md line; nothing else changes.\nExample: the 3 report rows give a JSON array of 3 objects, e.g. the first is {\"region\": \"North\", \"product\": \"Widget\", \"units\": 12, \"price\": 2.5, \"revenue\": 30}, indented 2 spaces; revenues 30, 17.5, 30.\nChoices: (1) JSON.stringify with 2-space indent, an array, no trailing newline; (2) revenue as the last key, a number, unrounded; (3) an existing revenue key is replaced by the computed value; (4) input rows are not mutated; (5) toJson([]) -> \"[]\"; (6) returns a string only, no file or CLI.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:08:39.143Z",
+       "tool": "Write",
+       "did": "docs/spec-5.md",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:08:41.910Z",
+       "tool": "work_gate",
+       "did": "step 2.2",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:05.101Z",
+       "tool": "AskUserQuestion",
+       "did": "{\"questions\":[{\"question\":\"Owner gate of wi_4a6dbbce (#5), step 2.2 \\\"write the spec\\\": is this what you want…",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "name": "build",
+   "steps": [
+    {
+     "n": 1,
+     "name": "reproduce the bug with a failing test",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "skipped",
+     "happened": {
+      "skip": {
+       "by": "condition",
+       "why": "step 3.1 \"reproduce the bug with a failing test\" applies only when kind == 'bug', and kind is feature."
+      },
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    },
+    {
+     "n": 2,
+     "name": "write the code and its tests",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:09:35.980Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "New src/json.js: toJson(rows) = JSON.stringify(rows.map(row => ({ ...row, revenue: revenue(row) })), null, 2): copies each row, adds revenue last (or replaces it in place), 2-space indent, no trailing newline. New test/json.test.js: exact pretty-printed output for the report rows; existing revenue replaced, keeping key order; input not mutated; [] -> \"[]\".\n\nTests shown failing first, as printed:\n✖ toJson pretty-prints the report rows with revenue added last (actual was the one-line JSON without revenue)\n✖ toJson replaces an existing revenue key with the computed value (+ revenue: 999 / - revenue: 6)\nℹ tests 4 / pass 2 / fail 2   (stub: JSON.stringify(rows))\n✖ toJson does not change the input rows (input gained revenue: 6)   (mutating stub)",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "test 1.1",
+        "accepted": true,
+        "evidence": "Ran `npm test` (node --test): tests 20, pass 20, fail 0. Before the code: against a stub `JSON.stringify(rows)`, `node --test test/json.test.js` failed 2 of 4 (pretty-print/revenue; replace existing revenue 999 vs 6); against a mutating stub the no-mutation test failed (input gained revenue: 6). test/json.test.js has 4 tests."
+       }
+      ],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 4",
+         "ℹ pass 2",
+         "ℹ fail 2"
+        ]
+       },
+       {
+        "tool": "Bash",
+        "name": "failures",
+        "lines": [
+         "✖ toJson pretty-prints the report rows with revenue added last (1.1277ms)",
+         "✖ toJson replaces an existing revenue key with the computed value (0.9354ms)",
+         "✖ failing tests:",
+         "✖ toJson pretty-prints the report rows with revenue added last (1.1277ms)",
+         "  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:",
+         "    actual: '[{\"region\":\"North\",\"product\":\"Widget\",\"units\":12,\"price\":2.5},{\"region\":\"South\",\"product\":\"Widget\",\"units\":7,\"price\":2.5},{\"region\":\"North\",\"product\":\"Gadget\",\"units\":3,\"price\":10}]',",
+         "    expected: '[\\n  {\\n    \"region\": \"North\",\\n    \"product\": \"Widget\",\\n    \"units\": 12,\\n    \"price\": 2.5,\\n    \"revenue\": 30\\n  },\\n  {\\n    \"region\": \"South\",\\n    \"product\": \"Widget\",\\n    \"units\": 7,\\n    \"price\": 2.5,\\n    \"revenue\": 17.5\\n  },\\n  {\\n    \"region\": \"North\",\\n    \"product\": \"Ga...",
+         "✖ toJson replaces an existing revenue key with the computed value (0.9354ms)",
+         "  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:",
+         "    actual: [ { revenue: 999, units: 2, price: 3 } ],",
+         "    expected: [ { revenue: 6, units: 2, price: 3 } ],"
+        ]
+       },
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 1",
+         "ℹ pass 0",
+         "ℹ fail 1"
+        ]
+       },
+       {
+        "tool": "Bash",
+        "name": "failures",
+        "lines": [
+         "✖ toJson does not change the input rows (1.4703ms)",
+         "✖ failing tests:",
+         "✖ toJson does not change the input rows (1.4703ms)",
+         "  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:"
+        ]
+       },
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 4",
+         "ℹ tests 20",
+         "ℹ pass 20",
+         "ℹ fail 0"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:09:13.039Z",
+       "tool": "Write",
+       "did": "test/json.test.js",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:14.557Z",
+       "tool": "Bash",
+       "did": "cd . && printf \"export const toJson = (rows) => JSON.stringify(rows)\\n\" > src/json.js && node --test test/jso…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:21.046Z",
+       "tool": "Edit",
+       "did": "test/json.test.js",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:23.002Z",
+       "tool": "Bash",
+       "did": "cd . && printf \"export const toJson = (rows) => { for (const r of rows) r.revenue = r.units * r.price; return…",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:27.489Z",
+       "tool": "Write",
+       "did": "src/json.js",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:28.927Z",
+       "tool": "Bash",
+       "did": "cd . && node --test test/json.test.js 2>&1 | head -5 && echo \"--- full suite:\" && npm test 2>&1 | tail -8",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:36.094Z",
+       "tool": "work_gate",
+       "did": "step 3.2",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 3,
+     "name": "document it for users",
+     "gate": "self",
+     "if": "kind == 'feature' || user_visible == 'yes'",
+     "when": "kind is feature or user visible is yes",
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:09:42.955Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "README.md has a new \"JSON export\" section: toJson(rows) from src/json.js returns the report rows as pretty-printed JSON (2-space indent) with each row's revenue added as a revenue field, with a usage example showing the first row's output, and notes that input rows are not changed, an existing revenue field is replaced, and toJson([]) is '[]'.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:09:41.537Z",
+       "tool": "Edit",
+       "did": "README.md",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:43.053Z",
+       "tool": "work_gate",
+       "did": "step 3.3",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 4,
+     "name": "add the CHANGES.md line",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:09:53.032Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "CHANGES.md line: \"- #5: added `toJson(rows)` in `src/json.js`, which returns the rows as pretty-printed JSON with revenue added to each row.\"",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "changes 1.1",
+        "accepted": true,
+        "evidence": "`git diff --no-index pre5/CHANGES.md CHANGES.md` (pre5 copied before any #5 edit) adds exactly one line: '+- #5: added `toJson(rows)` in `src/json.js`, which returns the rows as pretty-printed JSON with revenue added to each row.' It names #5 and what changed."
+       }
+      ],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:09:47.045Z",
+       "tool": "Edit",
+       "did": "CHANGES.md",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:47.913Z",
+       "tool": "Bash",
+       "did": "cd /home/user/AppData/Local/Temp && git diff --no-index pre5/CHANGES.md dm-sim-node-report-9tBHow/CHANGES.md …",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:09:53.141Z",
+       "tool": "work_gate",
+       "did": "step 3.4",
+       "failed": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "name": "test",
+   "steps": [
+    {
+     "n": 1,
+     "name": "run the full suite",
+     "gate": "self",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:10:03.010Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "npm test: tests 20, pass 20, fail 0, cancelled 0, skipped 0, todo 0.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [
+       {
+        "rule": "test 1.1",
+        "accepted": true,
+        "evidence": "Ran `npm test` (node --test) after the README and CHANGES edits: tests 20, pass 20, fail 0, cancelled 0, skipped 0."
+       }
+      ],
+      "captures": [
+       {
+        "tool": "Bash",
+        "name": "tests",
+        "lines": [
+         "ℹ tests 20",
+         "ℹ pass 20",
+         "ℹ fail 0"
+        ]
+       }
+      ]
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:09:56.757Z",
+       "tool": "Bash",
+       "did": "cd . && npm test 2>&1 | tail -8",
+       "failed": false
+      },
+      {
+       "at": "2026-11-20T19:10:03.115Z",
+       "tool": "work_gate",
+       "did": "step 4.1",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 2,
+     "name": "check the spec's examples by hand",
+     "gate": "self",
+     "if": "kind == 'feature'",
+     "when": "kind is feature",
+     "alternative": {
+      "input": "kind",
+      "value": "feature"
+     },
+     "status": "passed",
+     "happened": {
+      "skip": null,
+      "verdicts": [
+       {
+        "at": "2026-11-20T19:10:16.785Z",
+        "by": "agent",
+        "accepted": true,
+        "why": "Self check passed."
+       }
+      ],
+      "reports": [],
+      "submitted": "Ran with node --input-type=module -e:\n1. toJson(rows) printed the 23-line JSON array: North/Widget/12/2.5/revenue 30, South/Widget/7/2.5/revenue 17.5, North/Gadget/3/10/revenue 30, 2-space indent, revenue last, no trailing newline. Compared in node with the spec's ```json block read from docs/spec-5.md: identical (23 lines each, === true). (A first comparison with awk extracted nothing because of shell-escaped backticks; I redid it in node.)\n2. toJson([]) printed \"[]\" - matches choice 5.",
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": [
+      {
+       "at": "2026-11-20T19:10:11.491Z",
+       "tool": "Bash",
+       "did": "cd . && node --input-type=module -e \"\nimport { readFileSync } from 'node:fs'\nimport { toJson } from './src/js…",
+       "failed": false
+      }
+     ]
+    },
+    {
+     "n": 3,
+     "name": "show the bug is fixed",
+     "gate": "self",
+     "if": "kind == 'bug'",
+     "when": "kind is bug",
+     "alternative": {
+      "input": "kind",
+      "value": "bug"
+     },
+     "status": "skipped",
+     "happened": {
+      "skip": {
+       "by": "condition",
+       "why": "step 4.3 \"show the bug is fixed\" applies only when kind == 'bug', and kind is feature."
+      },
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    },
+    {
+     "n": 4,
+     "name": "have the change reviewed",
+     "gate": "drillmaster",
+     "if": null,
+     "when": null,
+     "alternative": null,
+     "status": "here",
+     "happened": {
+      "skip": null,
+      "verdicts": [],
+      "reports": [],
+      "submitted": null,
+      "waiting": null
+     },
+     "evidence": {
+      "self_check": [],
+      "captures": []
+     },
+     "calls": []
+    }
+   ]
+  }
+ ],
+ "friction": [],
+ "delivered": null
+};
+</script>
+<script>
+const C={ground:'#0F1311',line:'#D9DED6',ahead:'#3A443C',dim:'#8E998F',sand:'#E3C97E',orange:'#FF7A1A',rule:'#232A25'};
+const W=900,AXIS=450,ROW=46,SPLIT=34,ITEM_X=AXIS-70,PROBLEM_X=AXIS+44;
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const time=iso=>iso.slice(11,16);
+const which=new URLSearchParams(location.search).get('item')||'2';
+const I=window.ITEMS[which];
+
+// ---- the stops, as on the Workflow page; faded when skipped, dim when still ahead
+const kindOf=s=>s.gate==='owner'?'approve':s.gate==='drillmaster'?'review':s.if?'if':'always';
+const STOP_TIP={always:'always runs',if:'runs only if its condition holds',approve:'you approve this step',review:'Drillmaster reviews this step'};
+function stop(x,y,s){
+  const k=kindOf(s),op=s.status==='skipped'?.28:s.status==='ahead'?.5:1;
+  const tip=STOP_TIP[k]+(s.when?': only when '+s.when:'');
+  const g=(inner)=>'<g opacity="'+op+'" data-tip="'+esc(tip)+'">'+inner+'</g>';
+  if(k==='approve')return g('<path d="M'+x+' '+(y-13)+' L'+(x+13)+' '+y+' L'+x+' '+(y+13)+' L'+(x-13)+' '+y+' Z" fill="'+C.ground+'" stroke="'+C.sand+'" stroke-width="2.5" stroke-linejoin="round"/>');
+  if(k==='review')return g('<circle cx="'+x+'" cy="'+y+'" r="14" fill="'+C.ground+'" stroke="'+C.line+'" stroke-width="2"/><rect x="'+(x-5.5)+'" y="'+(y-5.5)+'" width="11" height="11" rx="2" fill="'+C.line+'"/>');
+  return g('<rect x="'+(x-8)+'" y="'+(y-8)+'" width="16" height="16" rx="4" fill="'+(k==='if'?C.ground:C.line)+'" stroke="'+C.line+'" stroke-width="2.5"/>');
+}
+// what a step's name says under it: skipped and why, where it waits, or nothing
+function note(s){
+  if(s.status==='skipped')return 'skipped: only when '+s.when;
+  if(s.status==='here')return s.happened.waiting==='drillmaster'?'waiting for Drillmaster\'s review':s.happened.waiting==='owner'?'waiting for you':'Agent is working here';
+  return '';
+}
+function label(x,y,side,s){
+  const lx=side==='l'?x-26:x+26,a=side==='l'?'end':'start';
+  const fill=s.status==='skipped'||s.status==='ahead'?C.dim:C.line,op=s.status==='skipped'?.55:1;
+  let out='<text x="'+lx+'" y="'+(y+5)+'" text-anchor="'+a+'" font-size="16" font-weight="700" fill="'+fill+'" opacity="'+op+'">'+esc(s.name)+'</text>';
+  const n=note(s);
+  if(n)out+='<text x="'+lx+'" y="'+(y+23)+'" text-anchor="'+a+'" font-size="12.5" fill="'+(s.status==='here'?C.sand:C.dim)+'" opacity="'+(s.status==='skipped'?.75:1)+'">'+esc(n)+'</text>';
+  return out;
+}
+// work item side: where the item is now, and Drillmaster's pass; problem side: work sent back
+function marks(x,y,s,side){
+  let out='';
+  const passed=s.happened.verdicts.filter(v=>v.by==='drillmaster'&&v.accepted).length;
+  const back=s.happened.verdicts.filter(v=>!v.accepted&&v.by!=='agent').length;
+  if(s.status==='here'){const w=50;out+='<g data-tip="'+esc(I.issue+' is here now')+'"><rect x="'+(ITEM_X+12-w)+'" y="'+(y-11)+'" width="'+w+'" height="22" rx="11" fill="none" stroke="'+C.line+'" stroke-width="1.5"/><circle cx="'+ITEM_X+'" cy="'+y+'" r="5" fill="'+C.line+'"/><text x="'+(ITEM_X-10)+'" y="'+(y+5)+'" text-anchor="end" font-size="13" font-weight="700" fill="'+C.line+'">'+esc(I.issue)+'</text></g>';}
+  if(passed)out+='<text data-tip="Drillmaster passed it here" x="'+(side==='l'?x-26-s.name.length*8.6-16:x-24)+'" y="'+(y+5)+'" text-anchor="end" font-size="13" font-weight="700" fill="'+C.line+'">&#10003;</text>';
+  if(s.frictions&&s.frictions.length){const rx=side==='r'?x+26+s.name.length*8.6+24:x+30;out+='<g data-tip="you stepped in '+s.frictions.length+' time'+(s.frictions.length>1?'s':'')+'; this step should have caught it"><circle cx="'+rx+'" cy="'+y+'" r="14" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+rx+'" y="'+(y+5)+'" text-anchor="middle" font-size="13" font-weight="700" fill="'+C.orange+'">'+s.frictions.length+'</text></g>'}
+  if(back)out+='<text data-tip="sent back '+back+' times here" x="'+PROBLEM_X+'" y="'+(y+5)+'" font-size="13" font-weight="700" fill="'+C.sand+'">&#8617; '+back+'</text>';
+  return out;
+}
+const lineState=s=>s.status==='ahead'||s.status==='here'?'ahead':'done';
+
+// ---- the route, block by block
+const main=document.getElementById('main');
+const kindWord=I.kind?I.kind:'';
+const status=I.status==='delivered'
+  ?'delivered <b>'+new Date(I.delivered.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'</b>'
+  :(()=>{for(const st of I.stages)for(const s of st.steps)if(s.status==='here')return 'in progress at <b>'+esc(s.name)+'</b>';return 'waiting to be delivered'})();
+main.innerHTML='<div class="title"><span class="issue">'+esc(I.issue)+'</span><span class="kind">'+esc(kindWord)+'</span><span class="status">'+status+'</span></div>'
+  +'<div class="what" data-tip="'+esc(I.description)+'">'+esc(I.description)+'</div>';
+
+const altOf=s=>s.alternative;
+function groups(steps){const out=[];for(let i=0;i<steps.length;i++){const a=altOf(steps[i]),b=steps[i+1]&&altOf(steps[i+1]);if(a&&b&&a.input===b.input&&a.value!==b.value){out.push([steps[i],steps[i+1]]);i++}else out.push(steps[i])}return out}
+const fork=(y0,y1,x)=>{const r=SPLIT;return 'M'+AXIS+' '+y0+' C'+AXIS+' '+(y0+r/2)+' '+x+' '+(y0+r/2)+' '+x+' '+(y0+r)+' V'+(y1-r)+' C'+x+' '+(y1-r/2)+' '+AXIS+' '+(y1-r/2)+' '+AXIS+' '+y1};
+
+let blocks=[];
+function block(html,height,top,bottom,rows){
+  const el=document.createElement('div');el.className='block';
+  el.innerHTML='<i class="seg '+top+'" style="top:0;height:'+(height/2)+'px"></i><i class="seg '+bottom+'" style="top:'+(height/2)+'px;bottom:0"></i>'
+    +'<svg width="'+W+'" height="'+height+'" viewBox="0 0 '+W+' '+height+'">'+html+'</svg><div class="panels"></div>';
+  main.appendChild(el);
+  for(const r of rows||[])wireRow(el,r);
+  return el;
+}
+// a clickable step: its hit area, opening its panel under the block
+function hitArea(id,y,h,s,st,inner){return '<g class="row" tabindex="0" role="button" aria-label="'+esc(st.n+'.'+s.n+' '+s.name)+'" data-row="'+id+'"><rect class="hit" x="30" y="'+(y-h/2)+'" width="'+(W-60)+'" height="'+h+'" rx="8"/>'+(inner||'')+'</g>'}
+
+for(const st of I.stages)for(const s of st.steps){s.ref=st.n+'.'+s.n;s.frictions=I.friction.filter(f=>f.placed&&f.placed.step===s.ref)}
+for(const st of I.stages){
+  let first=true;
+  for(const g of groups(st.steps)){
+    const stageLabel=first?'<text x="44" y="'+(first?30:0)+'" font-size="13" font-weight="700" letter-spacing="2" fill="'+C.dim+'">'+String(st.n).padStart(2,'0')+'</text><text x="74" y="30" font-size="15" font-weight="500" fill="'+C.dim+'">'+esc(st.name)+'</text>':'';
+    if(Array.isArray(g)){
+      const [l,r]=g,y0=first?16:4,h=y0+SPLIT*2+ROW+14,y=y0+SPLIT+ROW/2,y1=y0+SPLIT*2+ROW;
+      const taken=s=>s.status!=='skipped';
+      const path=(x,s)=>'<path d="'+fork(y0,y1,x)+'" fill="none" stroke="'+(s.status==='skipped'?C.ahead:lineState(s)==='ahead'?C.ahead:C.line)+'" stroke-width="3" stroke-linecap="round" opacity="'+(s.status==='skipped'?.6:1)+'"/>';
+      // the taken branch is drawn last, over the other
+      const order=taken(l)?[[r,AXIS+SPLIT*2-4],[l,AXIS-SPLIT*2+4]]:[[l,AXIS-SPLIT*2+4],[r,AXIS+SPLIT*2-4]];
+      let html=stageLabel;
+      for(const [s,x] of order)html+=path(x,s);
+      for(const [s,x] of [[l,AXIS-SPLIT*2+4],[r,AXIS+SPLIT*2-4]]){const side=s===l?'l':'r';html+=hitArea(st.n+'.'+s.n,y,ROW,s,st,stop(x,y,s)+label(x,y,side,s)+marks(x,y,s,side))}
+      const both=g.some(s=>lineState(s)==='ahead')?'ahead':'done';
+      const el=block(html,h,lineState(l)==='ahead'&&lineState(r)==='ahead'?'ahead':'done',both,[]);
+      el.querySelectorAll('.seg').forEach(seg=>{seg.style.display='none'});
+      // the line only above and below the split
+      el.insertAdjacentHTML('afterbegin','<i class="seg done" style="top:0;height:'+y0+'px"></i><i class="seg '+both+'" style="top:'+y1+'px;bottom:0"></i>');
+      if(first)el.classList.add('stage-rule');
+      for(const s of g)wireRow(el,{id:st.n+'.'+s.n,s,st});
+    }else{
+      const s=g,top=first?16:0,h=top+ROW+(note(s)?8:0),y=top+ROW/2;
+      const html=stageLabel+hitArea(st.n+'.'+s.n,y,ROW,s,st,stop(AXIS,y,s)+label(AXIS,y,'r',s)+marks(AXIS,y,s,'r'));
+      const above=s.status==='ahead'?'ahead':'done',below=s.status==='passed'||s.status==='skipped'?'done':'ahead';
+      const el=block(html,h,above,below,[{id:st.n+'.'+s.n,s,st}]);
+      if(first)el.classList.add('stage-rule');
+    }
+    first=false;
+  }
+}
+// the end: delivered, and where Owner stepped in after it
+{
+  const d=I.delivered,after=I.friction.filter(f=>f.after_delivery&&!f.placed),during=I.friction.filter(f=>!f.after_delivery);
+  let html='<rect x="'+(AXIS-14)+'" y="18" width="28" height="4" rx="2" fill="'+(d?C.dim:C.ahead)+'" data-tip="delivered"/>';
+  if(d)html+=hitArea('delivered',20,36,{name:'delivered'},{n:''},'<text x="'+(AXIS+26)+'" y="25" font-size="15" font-weight="600" fill="'+C.dim+'">delivered</text>');
+  if(d&&after.length)html+='<g data-tip="you stepped in '+after.length+' times after delivery" class="row" tabindex="0" role="button" aria-label="you stepped in after delivery" data-row="after"><circle cx="'+PROBLEM_X+'" cy="66" r="14" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+PROBLEM_X+'" y="71" text-anchor="middle" font-size="13" font-weight="700" fill="'+C.orange+'">'+after.length+'</text></g>';
+  const el=block(html,d?100:40,I.status==='delivered'?'done':'ahead','after',[]);
+  el.querySelector('.seg.after').style.top='22px';
+  el.classList.add('stage-rule');
+  if(!d)el.querySelector('.seg.after').remove();
+  if(d)wireRow(el,{id:'delivered',delivered:d});
+  if(after.length)wireRow(el,{id:'after',friction:after});
+}
+
+// ---- drilling in
+function happenedHtml(s){
+  const h=s.happened;let out='';
+  for(const f of s.frictions||[])out+='<span class="label orange">you stepped in'+(f.after_delivery?' after delivery':'')+' · '+time(f.at)+'</span><p class="quote">“'+esc(f.prompt)+'”</p><span class="label">why it counts as friction</span><p>'+esc(f.why)+'</p><span class="label">why this step should have caught it</span><p>'+esc(f.placed.why)+'</p>';
+  if(h.skip)out+='<span class="label">skipped</span><p>Only when '+esc(s.when)+'. '+esc(I.issue)+' is a '+esc(I.kind)+'.</p>';
+  for(const v of h.verdicts){
+    const who=v.by==='drillmaster'?'Drillmaster':v.by==='owner'?'You':'Agent\'s own check';
+    out+='<span class="label'+(v.accepted?'':' sand')+'">'+(v.accepted?'passed':'sent back')+' · '+who+' · '+time(v.at)+'</span>';
+    if(v.by!=='agent')out+='<p>'+esc(v.why)+'</p>';
+  }
+  if(h.waiting)out+='<span class="label sand">'+(h.waiting==='drillmaster'?'waiting for Drillmaster\'s review':'waiting for you')+'</span>';
+  else if(s.status==='here')out+='<span class="label sand">Agent is working on this step</span>'+(s.calls.length?'':'<p>Nothing reported here yet.</p>');
+  if(h.submitted)out+='<span class="label">Agent reported</span><p>'+esc(h.submitted)+'</p>';
+  for(const r of h.reports)out+='<span class="label">'+esc(r.kind)+'</span><p>'+esc(r.text)+'</p>';
+  if(!out)out='<p style="color:var(--dim)">Not reached yet.</p>';
+  return out;
+}
+function evidenceHtml(s){
+  const e=s.evidence;let out='';
+  for(const c of e.self_check)out+='<span class="label">'+(c.accepted?'&#10003; ':'&#10007; ')+'Agent checked rule '+esc(c.rule)+'</span><p>'+esc(c.evidence)+'</p>';
+  for(const c of e.captures)out+='<span class="label">'+esc(c.name==='tests'?'test totals':c.name==='failures'?'failing tests':c.name)+', as the tool printed them</span><div class="mono">'+[...new Set(c.lines)].map(esc).join('\n')+'</div>';
+  return out||'<p style="color:var(--dim)">No evidence kept for this step.</p>';
+}
+function callsHtml(s){return s.calls.map(c=>'<div class="call"><span class="t">'+time(c.at)+'</span><b>'+esc(c.tool)+(c.failed?' <span style="color:var(--sand)">failed</span>':'')+'</b><span class="in">'+esc(c.did)+'</span></div>').join('')}
+function frictionHtml(list){return list.map(f=>'<span class="label orange">you stepped in · '+time(f.at)+'</span><p class="quote">“'+esc(f.prompt)+'”</p>'+(f.why?'<span class="label">why it counts as friction</span><p>'+esc(f.why)+'</p>':'')).join('')}
+function deliveredHtml(d){
+  let out='<span class="label">delivered · '+time(d.at)+'</span><p>'+esc(d.summary)+'</p>';
+  for(const p of d.post_mortems){
+    out+='<span class="label">'+(p.author==='drillmaster'?'Drillmaster':'Agent')+': keep</span>'+p.keep.map(t=>'<p>'+esc(t)+'</p>').join('');
+    if(p.change.length)out+='<span class="label sand">'+(p.author==='drillmaster'?'Drillmaster':'Agent')+': change</span>'+p.change.map(t=>'<p>'+esc(t)+'</p>').join('');
+  }
+  return out;
+}
+function wireRow(el,r){
+  const g=el.querySelector('[data-row="'+r.id+'"]');if(!g)return;
+  const panels=el.querySelector('.panels');
+  const toggle=()=>{
+    const open=panels.querySelector('[data-for="'+r.id+'"]');
+    if(open){open.remove();return}
+    const p=document.createElement('div');p.className='panel';p.dataset.for=r.id;
+    if(r.friction){p.innerHTML='<div class="lvl">'+frictionHtml(r.friction)+'</div>';panels.appendChild(p);return}
+    if(r.delivered){p.innerHTML='<div class="lvl">'+deliveredHtml(r.delivered)+'</div>';panels.appendChild(p);return}
+    const s=r.s;
+    p.innerHTML='<div class="lvl">'+happenedHtml(s)+'</div>';
+    const hasEvidence=s.evidence.self_check.length||s.evidence.captures.length;
+    const deeper=(level)=>{
+      if(level===2&&hasEvidence){const b=button('the evidence ›',()=>{b.remove();p.insertAdjacentHTML('beforeend','<div class="lvl">'+evidenceHtml(s)+'</div>');deeper(3)});p.lastElementChild.appendChild(b)}
+      else if(level<=3&&s.calls.length){const b=button('every tool call · '+s.calls.length+' ›',()=>{b.remove();p.insertAdjacentHTML('beforeend','<div class="lvl">'+callsHtml(s)+'</div>')});p.lastElementChild.appendChild(b)}
+    };
+    if(s.status!=='skipped'&&s.status!=='ahead')deeper(2);
+    panels.appendChild(p);
+  };
+  g.addEventListener('click',toggle);
+  g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle()}});
+}
+function button(text,onClick){const b=document.createElement('button');b.className='more';b.textContent=text;b.addEventListener('click',onClick);return b}
+
+// ---- header: a past moment names itself; find a work item by its number
+const aside=document.getElementById('aside');
+const moment=I.status==='delivered'?'':new Date(I.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC · workflow '+I.workflow_version+' <a href="#">now</a>';
+aside.innerHTML=(moment?'<span>'+moment+'</span>':'')+'<a href="#">work items</a><input class="find" id="find" placeholder="# find" aria-label="find a work item by its number">';
+document.getElementById('find').addEventListener('keydown',e=>{if(e.key==='Enter'){const n=e.target.value.replace(/\D/g,'');if(window.ITEMS[n])location.search='?item='+n}});
+
+// ---- key and tips, as on the Workflow page
+const sw=(inner,word,color)=>'<span style="color:'+(color||C.dim)+'"><svg width="18" height="18" viewBox="0 0 18 18">'+inner+'</svg>'+word+'</span>';
+const all=I.stages.flatMap(st=>st.steps),has={
+  always:all.some(s=>kindOf(s)==='always'),if:all.some(s=>kindOf(s)==='if'),approve:all.some(s=>kindOf(s)==='approve'),review:all.some(s=>kindOf(s)==='review'),
+  passed:all.some(s=>s.happened.verdicts.some(v=>v.by==='drillmaster'&&v.accepted)),back:all.some(s=>s.happened.verdicts.some(v=>!v.accepted&&v.by!=='agent')),
+  skipped:all.some(s=>s.status==='skipped'),ahead:all.some(s=>s.status==='ahead'||s.status==='here'),here:all.some(s=>s.status==='here'),friction:I.friction.length>0};
+const only=(on,html)=>on?html:'';
+document.getElementById('key').innerHTML=
+  only(has.always,sw('<rect x="3" y="3" width="12" height="12" rx="3" fill="'+C.line+'"/>','always'))
+ +only(has.if,sw('<rect x="3.5" y="3.5" width="11" height="11" rx="3" fill="none" stroke="'+C.line+'" stroke-width="1.8"/>','if'))
+ +only(has.approve,sw('<path d="M9 2 L16 9 L9 16 L2 9 Z" fill="none" stroke="'+C.sand+'" stroke-width="1.8"/>','you approve',C.sand))
+ +only(has.review,sw('<circle cx="9" cy="9" r="7" fill="none" stroke="'+C.line+'" stroke-width="1.6"/><rect x="6" y="6" width="6" height="6" rx="1" fill="'+C.line+'"/>','Drillmaster reviews'))
+ +only(has.passed,sw('<text x="9" y="14" text-anchor="middle" font-size="13" font-weight="700" fill="'+C.line+'">&#10003;</text>','Drillmaster passed'))
+ +only(has.back,sw('<text x="9" y="14" text-anchor="middle" font-size="13" font-weight="700" fill="'+C.sand+'">&#8617;</text>','sent back',C.sand))
+ +only(has.skipped,sw('<rect x="3" y="3" width="12" height="12" rx="3" fill="'+C.line+'" opacity=".28"/>','skipped'))
+ +only(has.ahead,sw('<path d="M9 1 V17" stroke="'+C.ahead+'" stroke-width="3"/>','not reached yet'))
+ +only(has.here,sw('<circle cx="9" cy="9" r="4.5" fill="'+C.line+'"/>','where it is now'))
+ +only(has.friction,sw('<circle cx="9" cy="9" r="6.5" fill="none" stroke="'+C.orange+'" stroke-width="2"/>','you stepped in',C.orange));
+const tip=document.getElementById('tip');
+document.addEventListener('mousemove',e=>{const m=e.target.closest&&e.target.closest('[data-tip]');if(!m){tip.style.display='none';return}tip.textContent=m.getAttribute('data-tip');tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-340)+'px';tip.style.top=Math.min(e.clientY+14,innerHeight-40)+'px'});
+addEventListener('scroll',()=>{tip.style.display='none'},{passive:true});
+history.scrollRestoration='manual';
+</script>
+</body></html>
