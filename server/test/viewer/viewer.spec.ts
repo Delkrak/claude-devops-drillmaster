@@ -1,146 +1,67 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { RUN_VIEWER_PORT, VIEWER_PORT } from './port.js'
 import { DEMO_DIR } from './global-setup.js'
 
-const RUN_VIEWER = `http://127.0.0.1:${RUN_VIEWER_PORT}/`
+const RUN_VIEWER = `http://127.0.0.1:${RUN_VIEWER_PORT}`
+/** The moment the accepted mock shows: docs/design/workflow.html. */
+const MOCK_MOMENT = '2026-11-20T19:10:16.785Z'
 
-test('opens on the one project its server serves, and no other', async ({ page, request }) => {
+const servedProject = async (page: Page, server: string) => ((await (await page.request.get(`${server}/api/served`)).json()) as { project: string }).project
+const walkStep = (page: Page, name: string) => page.getByTestId('walk-step').filter({ has: page.getByText(name, { exact: true }) })
+
+test('opens on the Workflow page of the one project its server serves, and no other', async ({ page, request }) => {
   await page.goto('/')
-  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
-  await expect(page).toHaveURL(/#\/p\/gates-demo-[0-9a-f]+\/overview$/)
-  await page.goto(RUN_VIEWER)
-  await expect(page.getByTestId('project-title')).toContainText('dm-sim-node-report')
-  const runProject = new URL(page.url()).hash.split('/')[2]!
-  expect((await request.get(`/api/projects/${runProject}`)).status()).toBe(404)
+  await expect(page).toHaveURL(/#\/p\/gates-demo-[0-9a-f]+\/workflow$/)
+  await expect(page.getByTestId('workflow-overview')).toBeVisible()
+  const runProject = await servedProject(page, RUN_VIEWER)
+  expect((await request.get(`/api/projects/${runProject}/workflow`)).status()).toBe(404)
 })
 
-test("navigates from a project's overview through every tab", async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
-  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
-  await expect(page.getByTestId('now')).toContainText('owner gate pending')
-
-  await page.getByRole('tab', { name: 'Workflow' }).click()
-  await expect(page).toHaveURL(/#\/p\/.+\/workflow$/)
-  await expect(page.getByTestId('stage')).toHaveCount(2)
-  await expect(page.getByTestId('step').filter({ hasText: 'describe the PR' })).toContainText('Drillmaster gate')
-  await expect(page.getByTestId('experiment')).toContainText('baseline 1.5')
-  await expect(page.getByTestId('experiment')).toContainText('Hypothesis: A test step means Owner stops asking for tests')
-  await expect(page.getByTestId('experiment')).toContainText('target 0.5')
-  await expect(page.getByTestId('stage').first()).toContainText('the change works and says what it does')
-  await expect(page.getByTestId('definition-of-done').first()).toContainText('test 1.1 the tests run green before a PR')
-  await expect(page.getByTestId('definition-of-done').first()).toContainText('pr 1.1 the PR says what it changes')
-  await expect(page.getByTestId('instruction').first()).toContainText('Write a test for the change')
-  await expect(page.getByTestId('input')).toContainText('set by agent at step 1.1')
-  await expect(page.getByTestId('input-option')).toHaveCount(2)
-  await page.getByRole('combobox', { name: 'Workflow version' }).selectOption('0.0.0')
-  await expect(page.getByTestId('workflow')).toContainText('No work stages yet')
-
-  await page.getByRole('tab', { name: 'Work items' }).click()
-  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
-
-  await page.getByRole('tab', { name: 'Retrospectives' }).click()
-  await expect(page.getByTestId('empty')).toContainText('No workflow retrospective yet')
-
-  await page.getByRole('tab', { name: 'Measures' }).click()
-  await expect(page.getByTestId('measures')).toContainText('Experiment 1 baseline')
-  await expect(page.getByTestId('measure-by-input').first()).toContainText('By size')
-  await expect(page.getByTestId('measure-by-input').first()).toContainText('small')
+test('lands on the overview alone; the walkthrough comes into frame below it', async ({ page }) => {
+  await page.goto(`${RUN_VIEWER}/`)
+  const viewport = page.viewportSize()!
+  await expect(page.getByTestId('workflow-overview')).toBeInViewport()
+  await expect(page.getByTestId('stage-row')).toHaveCount(5)
+  const firstStage = await page.getByTestId('walk-stage').first().boundingBox()
+  expect(firstStage!.y).toBeGreaterThanOrEqual(viewport.height)
+  await page.getByTestId('walk-stage').first().scrollIntoViewIfNeeded()
+  await expect(page.getByTestId('walk-stage').first()).toBeInViewport()
 })
 
-test("a work item's page shows its gates, post mortems and a searchable added step", async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
-  await page.getByRole('tab', { name: 'Work items' }).click()
-  await page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#1 CSV export' }).click()
-
-  await expect(page.getByTestId('item-title')).toContainText('#1 CSV export')
-  await expect(page.getByTestId('description')).toContainText('Owner wants the report as CSV')
-  await expect(page.getByTestId('summary')).toContainText('the test checks the header')
-  await expect(page.getByTestId('item-inputs')).toContainText('size: small (by agent)')
-  const image = page.getByTestId('artifact').locator('img')
-  await expect(image).toHaveAttribute('alt', 'after.png')
-  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(1)
-  await expect(page.getByTestId('post-mortem-agent')).toContainText('step 1.1the gates')
-  await expect(page.getByTestId('post-mortem-agent').getByTestId('feedback-ref')).toHaveText(['step 1.1', 'tool work_deliver'])
-  await expect(page.getByTestId('post-mortem-agent')).toContainText('#1: experiment 1 helped')
-  await expect(page.getByTestId('post-mortem-drillmaster')).toContainText('Ask for CHANGES.md in a rule')
-  await expect(page.getByTestId('verdict').filter({ hasText: 'rejected by drillmaster' })).toBeVisible()
-  await expect(page.getByTestId('verdict').filter({ hasText: 'accepted by owner' })).toBeVisible()
-
-  await page.getByRole('searchbox', { name: 'Search the timeline' }).fill('added_step')
-  await expect(page.getByTestId('timeline-entry')).toHaveCount(1)
-  await expect(page.getByTestId('report-added_step')).toBeVisible()
-  await expect(page.getByTestId('timeline')).toContainText('you forgot CHANGES.md')
-
-  await page.getByRole('searchbox', { name: 'Search the timeline' }).fill('')
-  const all = await page.getByTestId('timeline-entry').count()
-  await page.getByRole('button', { name: /^actions/ }).click()
-  await expect(page.getByTestId('timeline-entry')).not.toHaveCount(all)
-  await page.getByRole('link', { name: 'Work items' }).click()
-  await expect(page.getByTestId('work-items-table')).toBeVisible()
+test("shows the recorded run at the mock's moment: #5 at Drillmaster's review, 4 delivered, 2 step-ins after delivery", async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  const overview = page.getByTestId('workflow-overview')
+  await expect(overview.getByTestId('item-box')).toHaveAttribute('data-tip', '1 work item here now: #5')
+  await expect(overview.getByTestId('delivered')).toHaveAttribute('data-tip', '4 work items delivered')
+  await expect(overview.getByTestId('friction-ring')).toHaveAttribute('data-tip', 'you stepped in 2 times after delivery')
+  const review = walkStep(page, 'have the change reviewed')
+  await expect(review.getByTestId('stop')).toHaveAttribute('data-kind', 'review')
+  await expect(review.getByTestId('item-box')).toHaveAttribute('data-tip', '1 work item here now: #5')
+  await expect(review.getByTestId('reviews-passed')).toHaveText('✓ 4')
 })
 
-test('shows a real simulated run: its retrospective, applied proposals and measures', async ({ page }) => {
-  await page.goto(RUN_VIEWER)
-  await page.getByRole('tab', { name: 'Retrospectives' }).click()
-  await expect(page.getByTestId('proposal').first()).toContainText('applied')
-  await page.getByRole('tab', { name: 'Work items' }).click()
-  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(3)
-  await page.getByRole('tab', { name: 'Measures' }).click()
-  await expect(page.getByRole('img', { name: 'owner_friction_per_item per work item' })).toBeVisible()
+test('explains a symbol when the pointer rests on it', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  const spec = walkStep(page, 'write the spec')
+  await spec.scrollIntoViewIfNeeded()
+  await spec.getByTestId('stop').hover()
+  await expect(page.getByTestId('tip')).toHaveText("you approve this step: kind == 'feature'")
+  await expect(page.getByTestId('key')).toContainText('Drillmaster reviews')
+})
+
+test("shows the demo's work sent back by Drillmaster, the item at Owner's gate, and the step-in after delivery", async ({ page }) => {
+  await page.goto('/')
+  await expect(walkStep(page, 'describe the PR').getByTestId('reviews-sent-back')).toHaveText('↩ 1')
+  await expect(walkStep(page, 'Owner approves').getByTestId('item-box')).toHaveAttribute('data-tip', '1 work item here now: #2 JSON export')
+  await expect(page.getByTestId('workflow-overview').getByTestId('friction-ring')).toHaveAttribute('data-tip', 'you stepped in 1 times after delivery')
 })
 
 test('follows a live session: a new work item appears without reloading', async ({ page, request }) => {
   await page.goto('/')
-  await expect(page.getByTestId('project-title')).toContainText('gates-demo')
-  await page.getByRole('tab', { name: 'Work items' }).click()
-  await expect(page.getByTestId('work-items-table').locator('tbody tr')).toHaveCount(2)
+  const firstStage = page.getByTestId('stage-row').first()
+  await expect(firstStage.getByTestId('item-box')).toHaveCount(0)
   await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_start', arguments: { issue: '#3 live', description: 'started while the viewer is open' } } })
-  await expect(page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#3 live' })).toBeVisible({ timeout: 10_000 })
-})
-
-test('marks each work step in the timeline, and links to a single entry', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('tab', { name: 'Work items' }).click()
-  await page.getByTestId('work-items-table').locator('tbody tr', { hasText: '#1 CSV export' }).click()
-  const bars = page.getByTestId('step-bar')
-  await expect(bars.first()).toHaveText('Step 1.1 run the tests')
-  await expect(bars.filter({ hasText: 'Step 2.1 Owner approves' })).toHaveCount(1)
-  const rejection = page.getByTestId('timeline-entry').filter({ hasText: 'rejected by drillmaster' })
-  await rejection.getByTitle('Link to this entry').click()
-  await expect(page).toHaveURL(/\?event=/)
-  await page.reload()
-  await expect(page.locator('[data-highlighted]')).toContainText('rejected by drillmaster')
-})
-
-test("follows a step through the versions, with the feedback that names it and what happened at it", async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('tab', { name: 'Workflow' }).click()
-  await expect(page.getByTestId('skippable')).toContainText('skippable: owner decides')
-  await expect(page.getByTestId('update-step')).toContainText('updates first on a minor change')
-  await page.getByTestId('step-history').filter({ hasText: 'run the tests' }).click()
-  await expect(page.getByTestId('history-title')).toHaveText('step 1.1')
-  await expect(page.getByTestId('history-version').first()).toContainText('added')
-  await expect(page.getByTestId('history-feedback')).toContainText("agent's post mortem: the gates")
-  await expect(page.getByTestId('history-activity')).toContainText('accepted by agent')
-  await page.getByTestId('history-activity').getByRole('link').first().click()
-  await expect(page.locator('[data-highlighted]')).toBeVisible()
-})
-
-test('collects the feedback on Drillmaster itself', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('drillmaster-feedback')).toContainText('tool work_delivertake more file types')
-})
-
-test('follows the dark theme from the tokens', async ({ browser }) => {
-  const background = async (colorScheme: 'light' | 'dark') => {
-    const page = await browser.newPage({ colorScheme })
-    await page.goto('/')
-    await expect(page.getByTestId('project-title')).toBeVisible()
-    const color = await page.getByRole('main').evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)
-    await page.close()
-    return color
-  }
-  expect(await background('light')).not.toBe(await background('dark'))
+  await expect(firstStage.getByTestId('item-box')).toHaveAttribute('data-tip', '1 work item here now: #3 live', { timeout: 10_000 })
 })

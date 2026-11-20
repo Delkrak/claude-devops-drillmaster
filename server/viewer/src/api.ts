@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ComponentHistory, ProjectView, WorkItemView } from './types'
+import type { WorkflowPage } from './types'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -10,16 +10,15 @@ async function getJson<T>(path: string): Promise<T> {
 
 export const api = {
   served: () => getJson<{ project: string | null }>('/api/served'),
-  project: (id: string) => getJson<ProjectView>(`/api/projects/${encodeURIComponent(id)}`),
-  history: (id: string, guid: string) => getJson<ComponentHistory>(`/api/projects/${encodeURIComponent(id)}/history/${encodeURIComponent(guid)}`),
-  workItem: (id: string, item: string) => getJson<WorkItemView>(`/api/projects/${encodeURIComponent(id)}/items/${encodeURIComponent(item)}`),
+  workflow: (id: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(id)}/workflow${at ? `?at=${encodeURIComponent(at)}` : ''}`),
 }
 
 export const REFRESH_MS = 4000
 
 export type Loaded<T> = { status: 'loading' } | { status: 'error'; error: string } | { status: 'ready'; data: T }
 
-export function usePolled<T>(load: () => Promise<T>, reloadKey: string): Loaded<T> {
+/** Loads, then loads again every `refreshMs` while the page is open; once only when it is null. */
+export function usePolled<T>(load: () => Promise<T>, reloadKey: string, refreshMs: number | null = REFRESH_MS): Loaded<T> {
   const [state, setState] = useState<Loaded<T>>({ status: 'loading' })
   useEffect(() => {
     let mounted = true
@@ -29,12 +28,12 @@ export function usePolled<T>(load: () => Promise<T>, reloadKey: string): Loaded<
         .then((data) => mounted && setState({ status: 'ready', data }))
         .catch((error: unknown) => mounted && setState({ status: 'error', error: error instanceof Error ? error.message : String(error) }))
     void refresh()
-    const timer = setInterval(refresh, REFRESH_MS)
+    const timer = refreshMs === null ? undefined : setInterval(refresh, refreshMs)
     return () => {
       mounted = false
       clearInterval(timer)
     }
     // `load` changes identity on every render; `reloadKey` says when it really changed.
-  }, [reloadKey])
+  }, [reloadKey, refreshMs])
   return state
 }

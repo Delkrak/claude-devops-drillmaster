@@ -26,8 +26,8 @@ export default async function setup() {
   writeFileSync(path.join(DEMO_DIR, 'after.png'), Buffer.from(PNG_1X1, 'base64'))
   const store = new JsonlStore(path.join(home, 'projects'))
 
-  // The recorded simulation run, as the local event log keeps it.
-  const run = JSON.parse(readFileSync(path.join(import.meta.dirname, 'fixtures', 'sim-run.json'), 'utf8')) as { type: string; dir?: string }[]
+  // The recorded run with Drillmaster's reviews, as the local event log keeps it (docs/design/workflow.html shows it).
+  const run = JSON.parse(readFileSync(path.join(import.meta.dirname, 'fixtures', 'reviewed-run.json'), 'utf8')) as { type: string; dir?: string }[]
   const runDir = run.find((e) => e.type === 'project_initialized')!.dir!
   mkdirSync(path.join(home, 'projects', projectId(runDir)), { recursive: true })
   writeFileSync(path.join(home, 'projects', projectId(runDir), 'events.jsonl'), run.map((e) => JSON.stringify(e)).join('\n') + '\n')
