@@ -123,8 +123,12 @@ OK.
 - 🟩 **3d. Screenshot check**: a `@screens` Playwright spec at 1440x900, the fixed moment, fonts loaded,
   saving the overview and a full-page shot to the git-ignored `test-results/`; the blind agents'
   questions committed next to it as a prompt file.
-- **Then**: blind agents read the built page against `docs/design/workflow.html`; `impeccable
-  critique` on it; Owner reviews the built page.
+- 🟩 **Then** (d5c0f9f, 8bd9e8d): a blind agent read the built page and got every fact right;
+  `impeccable critique` scored it 22/40. Fixed: friction with no known stage drawn, a failed refresh
+  keeps the page, opens at the top, the key names reviews passed and sent back, the tab icon not
+  orange. Owner's answers built: overview rows jump to their stage, a past moment names itself,
+  conditions in plain words, keyboard and touch reach every explanation.
+- 🟧 **Owner reviews the built page.**
 
 ### 4. 🟧 "What happened to #N?" shaped and built, the same way
 ### 5. 🟧 "Did the change help?" shaped and built, the same way
