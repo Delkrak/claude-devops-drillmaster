@@ -286,6 +286,13 @@ export interface OwnerInputsJudged extends EventEnvelope {
   inputs: { event: string; friction: boolean; why: string }[]
 }
 
+/** Where Drillmaster places each input judged friction: the step that should have caught it, or none. */
+export interface FrictionPlaced extends EventEnvelope {
+  type: 'friction_placed'
+  work_item_id: string
+  inputs: { event: string; step_guid: string | null; why: string }[]
+}
+
 export interface PostMortemWritten extends EventEnvelope {
   type: 'post_mortem_written'
   work_item_id: string
@@ -314,6 +321,7 @@ export type DrillmasterEvent =
   | WorkItemDelivered
   | PostMortemWritten
   | OwnerInputsJudged
+  | FrictionPlaced
   | RetrospectiveRan
   | OwnerDecided
   | OwnerAsked

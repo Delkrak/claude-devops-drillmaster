@@ -19113,5 +19113,53 @@
     "stage": null,
     "step": null,
     "hook": "Stop"
+  },
+  {
+    "id": "ev_dc3ab5ed",
+    "at": "2026-11-20T20:47:21.585Z",
+    "workflow_version": "3.0.0",
+    "drillmaster_version": "0.3.0",
+    "writer": "w_25cba89c",
+    "type": "friction_placed",
+    "work_item_id": "wi_11bd3cdd",
+    "inputs": [
+      {
+        "event": "ev_42a8f15b",
+        "step_guid": "c08f611b-53f9-5af9-8b0f-346a83c1ab41",
+        "why": "Step 3.3 exists to document the change for users, and a CHANGES.md entry saying what changed is that kind of documentation, so this feature's documentation step should have added it."
+      }
+    ]
+  },
+  {
+    "id": "ev_6a5c98dc",
+    "at": "2026-11-20T20:47:28.170Z",
+    "workflow_version": "3.0.0",
+    "drillmaster_version": "0.3.0",
+    "writer": "w_25cba89c",
+    "type": "friction_placed",
+    "work_item_id": "wi_ca314036",
+    "inputs": [
+      {
+        "event": "ev_60a3cb77",
+        "step_guid": "ad562b64-78a4-5410-bfb4-448b67c51526",
+        "why": "Step 3.1 exists to reproduce the bug with a failing test, so it should have recorded the test's actual failing output against the unfixed code. Owner had to ask for that evidence after delivery."
+      }
+    ]
+  },
+  {
+    "id": "ev_54f74953",
+    "at": "2026-11-20T20:47:33.558Z",
+    "workflow_version": "3.0.0",
+    "drillmaster_version": "0.3.0",
+    "writer": "w_25cba89c",
+    "type": "friction_placed",
+    "work_item_id": "wi_9b75c0b1",
+    "inputs": [
+      {
+        "event": "ev_2202e428",
+        "step_guid": null,
+        "why": "Owner's step-in was about the delivery report not mentioning the post mortem, and no step of this workflow covers writing a post mortem or reporting what was delivered."
+      }
+    ]
   }
 ]

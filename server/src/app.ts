@@ -11,6 +11,7 @@ import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resol
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { averageMeasure, BASELINE_WINDOW, currentMeasureName, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
 import { buildFrictionPrompt, FRICTION_REVIEW_KIND, readFrictionAnswer } from './core/friction.js'
+import { buildFrictionPlacementPrompt, FRICTION_PLACEMENT_REVIEW_KIND, readFrictionPlacementAnswer } from './core/frictionPlacement.js'
 import { frictionJudgementsOf, ownerInputsOf } from './core/ownerInputs.js'
 import {
   applyProposal,
@@ -961,6 +962,29 @@ export class Drillmaster {
     }
     if (judgements.length === 0) return
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'owner_inputs_judged', work_item_id: workItemId, inputs: judgements }))
+    const frictions = judgements.flatMap((judgement) => (judgement.friction ? [{ judgement, input: unjudged.find((input) => input.event_id === judgement.event)! }] : []))
+    if (frictions.length > 0) await this.placeFriction(projectDir, workItemId, frictions)
+  }
+
+  /** Drillmaster places each input judged friction at the step that should have caught it. */
+  private async placeFriction(projectDir: string, workItemId: string, frictions: Parameters<typeof buildFrictionPlacementPrompt>[2]) {
+    const state = foldState(await this.events(projectDir))
+    const item = state.workItems[workItemId]!
+    const workflow = work.workflowOfWorkItem(state, item)
+    let placements
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_PLACEMENT_REVIEW_KIND, prompt: buildFrictionPlacementPrompt(workflow, item, frictions) })
+      placements = readFrictionPlacementAnswer(
+        workflow,
+        frictions.map(({ input }) => input.event_id),
+        answer,
+      )
+    } catch {
+      // An unplaced step-in still counts; it shows where it happened.
+      return
+    }
+    if (placements.length === 0) return
+    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'friction_placed', work_item_id: workItemId, inputs: placements }))
   }
 
   private async writeDrillmasterPostMortem(projectDir: string, workItemId: string) {

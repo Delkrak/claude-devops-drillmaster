@@ -56,3 +56,25 @@ describe('the friction judge', () => {
     expect(retroPrompt).toContain('"you forgot the CHANGES.md line" (friction: Owner had to remind Agent.)')
   })
 })
+
+describe("Drillmaster's placement of friction", () => {
+  it('places each input judged friction at the step that should have caught it, with the workflow the judge never saw', async () => {
+    const { app, ports, token } = await deliveredWithInputs()
+    const events = await app.events(DIR)
+    const [startInput, separatorInput] = events.filter((event) => event.type === 'work_trace' && event.hook === 'UserPromptSubmit').map((event) => event.id)
+    ports.reviewer.enqueue('friction', {
+      inputs: [
+        { event: startInput, friction: false, why: 'Owner handed Agent the work.' },
+        { event: separatorInput, friction: true, why: 'Owner had to say what the issue left open.' },
+      ],
+    })
+    ports.reviewer.enqueue('friction_placement', { inputs: [{ event: separatorInput, step: '1.1', why: 'Capturing the work should have asked for the separator.' }] })
+    await app.callTool(DIR, 'work_deliver', { token, pr: 'local', summary: 'CSV export' })
+    await app.idle()
+    const request = ports.reviewer.requests.find((candidate) => candidate.kind === 'friction_placement')!
+    expect(request.prompt).toContain('"use ; as the separator" (why friction: Owner had to say what the issue left open.)')
+    expect(request.prompt).not.toContain(startInput)
+    const placed = (await app.events(DIR)).find((event) => event.type === 'friction_placed')
+    expect(placed).toMatchObject({ inputs: [{ event: separatorInput, why: 'Capturing the work should have asked for the separator.' }] })
+  })
+})
