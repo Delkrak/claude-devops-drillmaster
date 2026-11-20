@@ -92,6 +92,90 @@ test('says conditions in plain words: a split by its value, other steps in a sen
   await expect(walkStep(page, 'document it for users').getByTestId('step-note')).toHaveText('only when kind is feature or user visible is yes')
 })
 
+const workItemId = async (page: Page, issue: string) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  const items = (await (await page.request.get(`${RUN_VIEWER}/api/projects/${project}/work-items`)).json()) as { issue: string; work_item_id: string }[]
+  return { project, id: items.find((item) => item.issue === issue)!.work_item_id }
+}
+const routeStep = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
+const DELIVERED_2 = 'delivered 20 Nov, 18:56'
+
+test('opens a work item on its route: lit where it went, faded where it skipped, the step-in at the step that should have caught it', async ({ page }) => {
+  const { project, id } = await workItemId(page, '#2')
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${id}`)
+  await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
+  await expect(routeStep(page, '2.2 write the spec').getByTestId('stop')).toHaveAttribute('data-reached', 'skipped')
+  await expect(routeStep(page, '2.2 write the spec').getByTestId('step-note')).toHaveText('skipped: only when kind is feature')
+  await expect(routeStep(page, '4.4 have the change reviewed').getByTestId('reviews-passed')).toHaveText('✓')
+  await expect(routeStep(page, '3.1 reproduce the bug with a failing test').getByTestId('friction-ring')).toHaveText('1')
+  await expect(page.getByTestId('key')).not.toContainText('sent back')
+})
+
+test('drills into a step one level at a time: what happened, then the evidence, then every tool call', async ({ page }) => {
+  const { project, id } = await workItemId(page, '#2')
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${id}`)
+  await routeStep(page, '3.1 reproduce the bug with a failing test').click()
+  const detail = page.getByTestId('step-detail')
+  await expect(detail).toContainText('you stepped in after delivery')
+  await expect(detail).toContainText('why this step should have caught it')
+  await expect(detail).toContainText("passed · Agent's own check")
+  await expect(detail).not.toContainText('Agent checked rule')
+  await detail.getByRole('button', { name: 'the evidence ›' }).click()
+  await expect(detail).toContainText('Agent checked rule test 1.2')
+  await expect(detail).toContainText('test totals, as the tool printed them')
+  await detail.getByRole('button', { name: 'every tool call · 3 ›' }).click()
+  await expect(detail.getByTestId('call')).toHaveCount(3)
+  await routeStep(page, '3.1 reproduce the bug with a failing test').click()
+  await expect(page.getByTestId('step-detail')).toHaveCount(0)
+})
+
+test('shows a work item in flight at a past moment: where it is, and what it does there', async ({ page }) => {
+  const { project, id } = await workItemId(page, '#5')
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${id}?at=${MOCK_MOMENT}`)
+  await expect(page.getByTestId('item-state')).toHaveText('in progress at have the change reviewed')
+  await expect(page.getByTestId('moment')).toHaveText('20 Nov, 19:10 UTC · workflow 2.1.0')
+  await expect(page.getByTestId('here')).toHaveAttribute('data-tip', '#5 is here now')
+  await expect(routeStep(page, '4.3 show the bug is fixed').getByTestId('step-note')).toHaveText('skipped: only when kind is bug')
+  await routeStep(page, '4.4 have the change reviewed').click()
+  await expect(page.getByTestId('step-detail')).toContainText('Agent is working on this step')
+})
+
+test('finds a work item by its number from the header, and says when there is none', async ({ page }) => {
+  await page.goto(`${RUN_VIEWER}/`)
+  const find = page.getByLabel('find a work item by its number')
+  await find.fill('2')
+  await find.press('Enter')
+  await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
+  await find.fill('99')
+  await find.press('Enter')
+  await expect(page.getByText('no #99')).toBeVisible()
+})
+
+test('opens work items from the Workflow page: one goes straight to it, several give a short list', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  await page.getByTestId('workflow-overview').getByTestId('item-box').click()
+  await expect(page.getByTestId('item-state')).toHaveText('in progress at have the change reviewed')
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  await page.getByTestId('workflow-overview').getByTestId('friction-ring').click()
+  const picker = page.getByTestId('picker')
+  await expect(picker.getByRole('menuitem')).toHaveText(['#1', '#2'])
+  await picker.getByRole('menuitem', { name: '#2' }).click()
+  await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
+})
+
+test('lists the work items latest first, with where each is and how often Owner stepped in', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items`)
+  const rows = page.getByTestId('item-row')
+  await expect(rows).toHaveCount(8)
+  await expect(rows.first()).toContainText('#8')
+  const second = rows.filter({ hasText: '#2' })
+  await expect(second).toContainText('1')
+  await second.click()
+  await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
+})
+
 test('explains a mark reached with the keyboard', async ({ page }) => {
   const project = await servedProject(page, RUN_VIEWER)
   await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)

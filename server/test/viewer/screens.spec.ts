@@ -28,3 +28,31 @@ test('the Workflow page at the mock moment @screens', async ({ page }) => {
     await page.screenshot({ path: path.join(SCREENS, `workflow-${index + 1}-scrolled.png`) })
   }
 })
+
+// The work item page as docs/design/work-item.html shows it: #2 delivered, drilled one level at a
+// time, #5 in flight at the Workflow mock's moment, and the work items list.
+test('the work item page @screens', async ({ page }) => {
+  mkdirSync(SCREENS, { recursive: true })
+  const { project } = (await (await page.request.get(`${RUN_VIEWER}/api/served`)).json()) as { project: string }
+  const items = (await (await page.request.get(`${RUN_VIEWER}/api/projects/${project}/work-items`)).json()) as { issue: string; work_item_id: string }[]
+  const idOf = (issue: string) => items.find((item) => item.issue === issue)!.work_item_id
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${idOf('#2')}`)
+  await page.getByTestId('item-state').waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(SCREENS, 'item-0-landing.png') })
+  const failingTest = page.getByRole('button', { name: '3.1 reproduce the bug with a failing test', exact: true })
+  await failingTest.click()
+  await page.mouse.move(0, 0)
+  await failingTest.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 140))
+  await page.screenshot({ path: path.join(SCREENS, 'item-1-what-happened.png') })
+  await page.getByRole('button', { name: 'the evidence ›' }).click()
+  await page.screenshot({ path: path.join(SCREENS, 'item-2-evidence.png') })
+  await page.getByRole('button', { name: /every tool call/ }).click()
+  await page.screenshot({ path: path.join(SCREENS, 'item-3-tool-calls.png') })
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${idOf('#5')}?at=${MOCK_MOMENT}`)
+  await page.getByTestId('item-state').waitFor()
+  await page.screenshot({ path: path.join(SCREENS, 'item-4-in-flight.png') })
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items`)
+  await page.getByTestId('item-row').first().waitFor()
+  await page.screenshot({ path: path.join(SCREENS, 'item-5-list.png') })
+})

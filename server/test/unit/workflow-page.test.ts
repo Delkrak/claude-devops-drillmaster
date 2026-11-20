@@ -94,7 +94,9 @@ describe('the Workflow page', () => {
     events.push(afterDelivery, judged('wi_1', afterDelivery))
     const page = workflowPageView(events)!
     expect(page.stages.map((stage) => stage.friction)).toEqual([0, 1, 1, 0])
-    expect(page.friction).toEqual({ after_delivery: 1, unplaced: 1 })
+    const item = { work_item_id: 'wi_1', issue: '#wi_1' }
+    expect(page.friction).toEqual({ after_delivery: 1, unplaced: 1, after_delivery_items: [item], unplaced_items: [item] })
+    expect(page.stages.map((stage) => stage.stepped_in)).toEqual([[], [item], [item], []])
     expect(page.delivered).toBe(1)
   })
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { WorkflowPage } from './types'
+import type { WorkflowPage, WorkItemPage, WorkItemsEntry } from './types'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -8,9 +8,13 @@ async function getJson<T>(path: string): Promise<T> {
   return body
 }
 
+const moment = (at: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
+
 export const api = {
   served: () => getJson<{ project: string | null }>('/api/served'),
-  workflow: (id: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(id)}/workflow${at ? `?at=${encodeURIComponent(at)}` : ''}`),
+  workflow: (id: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(id)}/workflow${moment(at)}`),
+  workItems: (id: string, at: string | null) => getJson<WorkItemsEntry[]>(`/api/projects/${encodeURIComponent(id)}/work-items${moment(at)}`),
+  workItem: (id: string, workItemId: string, at: string | null) => getJson<WorkItemPage>(`/api/projects/${encodeURIComponent(id)}/work-items/${encodeURIComponent(workItemId)}${moment(at)}`),
 }
 
 export const REFRESH_MS = 4000

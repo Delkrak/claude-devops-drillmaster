@@ -34,6 +34,8 @@ export interface WorkflowPageStage {
   here_now: WorkItemRef[]
   /** Times Owner had to step in during this stage. */
   friction: number
+  /** The work items Owner stepped in on in this stage, each once. */
+  stepped_in: WorkItemRef[]
   steps: WorkflowPageStep[]
 }
 
@@ -45,7 +47,7 @@ export interface WorkflowPage {
   delivered: number
   /** Past the last step, not yet delivered. */
   waiting_to_deliver: WorkItemRef[]
-  friction: { after_delivery: number; unplaced: number }
+  friction: { after_delivery: number; unplaced: number; after_delivery_items: WorkItemRef[]; unplaced_items: WorkItemRef[] }
 }
 
 export function alternativeOf(condition: string | undefined): WorkflowPageStep['alternative'] {
@@ -71,6 +73,7 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     when: inWords(stage.if),
     here_now: [],
     friction: 0,
+    stepped_in: [],
     steps: stage.steps.map((step) => ({
       n: step.n,
       guid: step.guid,
@@ -110,19 +113,31 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     ;(placed?.stage ?? stageOf(null, position.stage))?.here_now.push(ref)
   }
 
-  const friction = { after_delivery: 0, unplaced: 0 }
-  const addFriction = (stage: WorkflowPageStage | undefined) => (stage ? stage.friction++ : friction.unplaced++)
+  const friction: WorkflowPage['friction'] = { after_delivery: 0, unplaced: 0, after_delivery_items: [], unplaced_items: [] }
+  const refOf = (workItemId: string): WorkItemRef => ({ work_item_id: workItemId, issue: state.workItems[workItemId]?.issue ?? workItemId })
+  const addOnce = (refs: WorkItemRef[], workItemId: string) => refs.some((ref) => ref.work_item_id === workItemId) || refs.push(refOf(workItemId))
+  const addFriction = (stage: WorkflowPageStage | undefined, workItemId: string) => {
+    if (stage) {
+      stage.friction++
+      addOnce(stage.stepped_in, workItemId)
+    } else {
+      friction.unplaced++
+      addOnce(friction.unplaced_items, workItemId)
+    }
+  }
   for (const event of seen) {
     if (event.type !== 'gate_verdict') continue
     const placed = event.step_guid ? stepByGuid.get(event.step_guid) : undefined
     if (event.by === 'drillmaster' && placed) placed.step.reviews[event.accepted ? 'passed' : 'sent_back']++
-    if (event.by === 'owner' && !event.accepted) addFriction(stageOf(event.step_guid, event.stage))
+    if (event.by === 'owner' && !event.accepted) addFriction(stageOf(event.step_guid, event.stage), event.work_item_id)
   }
   const judgements = frictionJudgementsOf(seen)
   for (const input of ownerInputsOf(seen)) {
     if (!input.work_item_id || !isFriction(input, judgements)) continue
-    if (input.after_delivery) friction.after_delivery++
-    else addFriction(stageOf(input.step_guid, input.stage))
+    if (input.after_delivery) {
+      friction.after_delivery++
+      addOnce(friction.after_delivery_items, input.work_item_id)
+    } else addFriction(stageOf(input.step_guid, input.stage), input.work_item_id)
   }
 
   return {

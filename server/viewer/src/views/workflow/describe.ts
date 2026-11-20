@@ -4,6 +4,9 @@ import type { WorkItemRef } from '../../types'
 export const describeItems = (items: readonly WorkItemRef[], where: string) =>
   `${items.length} work item${items.length === 1 ? '' : 's'} ${where}: ${items.map((item) => item.issue).join(', ')}`
 
+/** Opens the work items behind a mark: `title` says what they have in common. */
+export type OpenItems = (title: string, items: readonly WorkItemRef[], at: { x: number; y: number }) => void
+
 /** Where a stage is drawn in full, for the overview's rows to jump to. */
 export const stageAnchor = (n: number) => `stage-${n}`
 

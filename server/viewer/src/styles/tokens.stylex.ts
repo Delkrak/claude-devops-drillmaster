@@ -8,6 +8,9 @@ export const colors = stylex.defineVars({
   rule: '#232a25',
   line: '#d9ded6',
   dim: '#8e998f',
+  /** The line where a work item has not been yet. */
+  ahead: '#3a443c',
+  panelRule: '#2c342e',
   sand: '#e3c97e',
   /** Friction, and nothing else. */
   orange: '#ff7a1a',

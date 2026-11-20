@@ -19,8 +19,12 @@ export function branch(y0: number, y1: number, x: number) {
   return `M${AXIS} ${y0} C${AXIS} ${y0 + r / 2} ${x} ${y0 + r / 2} ${x} ${y0 + r} V${y1 - r} C${x} ${y1 - r / 2} ${AXIS} ${y1 - r / 2} ${AXIS} ${y1}`
 }
 
-/** The width of a rounded box that holds a count and a dot. */
-export const itemBoxWidth = (count: number) => 36 + String(count).length * 8
+/** The width of a rounded box that holds a count, or a work item's number, and a dot. */
+export const itemBoxWidth = (count: number | string) => 36 + String(count).length * 8
+
+/** One work item's route: a row per step, a little tighter than the walkthrough. */
+export const ROUTE_ROW = 46
+export const ROUTE_SPLIT = 34
 
 interface Alternative {
   alternative: { input: string; value: string } | null

@@ -1,18 +1,32 @@
 import { useEffect, useState } from 'react'
 
-export type Route = { page: 'home' } | { page: 'workflow'; id: string; at: string | null }
+export type Route =
+  | { page: 'home' }
+  | { page: 'workflow'; id: string; at: string | null }
+  | { page: 'workItems'; id: string; at: string | null }
+  | { page: 'workItem'; id: string; workItemId: string; at: string | null }
 
-/** `#/p/<project>/workflow?at=<ISO time>`; any other project link opens the Workflow page too. */
+/**
+ * `#/p/<project>/workflow`, `#/p/<project>/items` and `#/p/<project>/items/<work item>`, each with
+ * `?at=<ISO time>`; any other project link opens the Workflow page.
+ */
 export function parseRoute(hash: string): Route {
   const [routePath = '', query = ''] = hash.replace(/^#\/?/, '').split('?')
-  const [section, projectId] = routePath.split('/').filter(Boolean).map(decodeURIComponent)
-  if (section === 'p' && projectId) return { page: 'workflow', id: projectId, at: new URLSearchParams(query).get('at') }
-  return { page: 'home' }
+  const [section, id, page, workItemId] = routePath.split('/').filter(Boolean).map(decodeURIComponent)
+  const at = new URLSearchParams(query).get('at')
+  if (section !== 'p' || !id) return { page: 'home' }
+  if (page === 'items' && workItemId) return { page: 'workItem', id, workItemId, at }
+  if (page === 'items') return { page: 'workItems', id, at }
+  return { page: 'workflow', id, at }
 }
+
+const moment = (at?: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
 
 export const href = {
   home: () => '#/',
-  workflow: (id: string, at?: string) => `#/p/${encodeURIComponent(id)}/workflow${at ? `?at=${encodeURIComponent(at)}` : ''}`,
+  workflow: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/workflow${moment(at)}`,
+  workItems: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items${moment(at)}`,
+  workItem: (id: string, workItemId: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items/${encodeURIComponent(workItemId)}${moment(at)}`,
 }
 
 export function useRoute(): Route {
