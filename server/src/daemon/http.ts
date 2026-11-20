@@ -8,6 +8,7 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024
 const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
 const VIEWER_API_ROUTE = /^GET \/api\/projects\/([\w-]+)(?:\/items\/([\w-]+))?$/
 const HISTORY_ROUTE = /^GET \/api\/projects\/([\w-]+)\/history\/([\w-]+)$/
+const WORKFLOW_PAGE_ROUTE = /^GET \/api\/projects\/([\w-]+)\/workflow$/
 const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -39,7 +40,15 @@ function requireProjectDir(value: unknown) {
   return value
 }
 
-const isViewerPath = (pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
+/** An `at` query parameter as the ISO time events carry; none when it isn't given. */
+function momentOf(at: string | null) {
+  if (at === null) return undefined
+  const time = Date.parse(at)
+  if (Number.isNaN(time)) throw new UserError(`\`at\` must be a date and time, like 2026-11-20T19:10:16.785Z; "${at}" isn't one.`)
+  return new Date(time).toISOString()
+}
+
+const isViewerPath =(pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
 
 /** `servedProject`: the key of the one project this server serves, whose viewer it shows; any, in tests. */
 export function createRequestHandler(app: Drillmaster, servedProject?: string) {
@@ -73,6 +82,11 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
       if (historyMatch) {
         refuseOtherProject(historyMatch[1]!)
         return sendJson(response, 200, await app.componentHistory(historyMatch[1]!, historyMatch[2]!))
+      }
+      const workflowPageMatch = WORKFLOW_PAGE_ROUTE.exec(route)
+      if (workflowPageMatch) {
+        refuseOtherProject(workflowPageMatch[1]!)
+        return sendJson(response, 200, await app.workflowPage(workflowPageMatch[1]!, momentOf(url.searchParams.get('at'))))
       }
       const viewerApiMatch = VIEWER_API_ROUTE.exec(route)
       if (viewerApiMatch) {

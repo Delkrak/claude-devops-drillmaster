@@ -5,6 +5,7 @@ import { folderKey as projectId } from '../../src/adapters/projects.js'
 import { seedWorkflow, testPorts, WORKFLOW_3, workToolCall } from '../helpers.js'
 
 let server: RunningServer
+let app: Drillmaster
 const DIR = '/projects/viewer'
 const ID = projectId(DIR)
 
@@ -16,7 +17,7 @@ const get = async (route: string) => {
 beforeAll(async () => {
   const ports = testPorts()
   await seedWorkflow(ports, DIR, WORKFLOW_3)
-  const app = new Drillmaster(ports)
+  app = new Drillmaster(ports)
   server = await listen(app, 0, ID)
   const call = (args: Record<string, unknown>) => {
     const { name, arguments: toolArgs } = workToolCall('work_report', args)
@@ -47,6 +48,19 @@ describe('viewer API', () => {
     expect(body.versions.map((version: any) => [version.version, version.change])).toEqual([['3.0.0', 'added']])
     expect(body.activity.map((entry: any) => entry.text)).toEqual(['impediment: no fixtures', 'accepted by agent: Self check passed.'])
     expect((await get(`/api/projects/${ID}/history/nothing`)).status).toBe(404)
+  })
+
+  it('gives the Workflow page now, or at a moment, and refuses a moment that is no time', async () => {
+    const now = (await get(`/api/projects/${ID}/workflow`)).body
+    expect(now.workflow_version).toBe('3.0.0')
+    expect(now.stages[0].steps.map((step: any) => step.here_now.map((item: any) => item.issue))).toEqual([[], ['#9']])
+    const gate = (await app.events(DIR)).find((event) => event.type === 'gate_verdict')!
+    const beforeGate = new Date(Date.parse(gate.at) - 1).toISOString()
+    const then = (await get(`/api/projects/${ID}/workflow?at=${beforeGate}`)).body
+    expect(then.at).toBe(beforeGate)
+    expect(then.stages[0].steps.map((step: any) => step.here_now.map((item: any) => item.issue))).toEqual([['#9'], []])
+    expect(await get(`/api/projects/${ID}/workflow?at=yesterday`)).toMatchObject({ status: 400, body: { error: expect.stringMatching(/date and time/) } })
+    expect((await get(`/api/projects/${projectId('/projects/other')}/workflow`)).status).toBe(404)
   })
 
   it("gives a project's full status", async () => {
