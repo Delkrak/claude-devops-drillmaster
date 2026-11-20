@@ -130,7 +130,7 @@ OK.
   conditions in plain words, keyboard and touch reach every explanation.
 - 🟩 **Owner reviewed the built page**: "looks good".
 
-### 4. 🟧 "What happened to #N?" shaped and built, the same way (built; review open)
+### 4. 🟩 "What happened to #N?" shaped and built
 Owner's answers: Owner opens #N when something went wrong, to check one in flight, and to study a
 finished one at a retrospective. The first screen is its route. Owner reaches it from the Workflow
 page, by typing #N, and from a list. Every detail is there, revealed one level at a time.
@@ -160,9 +160,13 @@ page, by typing #N, and from a list. Every detail is there, revealed one level a
   - the work item page, the work items list, the header's find box, and the Workflow page's boxes
     and rings as doors;
   - 183 unit, 76 API and 18 browser tests green; `@screens` saves the item page's screens.
-- 🟧 **Blind read of the built page**, then Owner reviews it.
+- 🟩 **Blind read of the built page**: every fact right.
+- 🟩 **Owner reviewed it**: no one-line summary under the header (the route shows it); the list
+  says what each work item is about.
 
-### 5. 🟧 "Did the change help?" shaped and built, the same way
+### 5. 🟧 "Did the change help?" shaped and built
+Owner's pace from here: ask Owner first, then build, with one blind read of the built page; a
+separate mock round only when the layout is new.
 ### 6. 🟧 "What's wrong in Drillmaster?" shaped and built, the same way
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
 
