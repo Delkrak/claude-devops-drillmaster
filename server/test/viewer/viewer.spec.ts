@@ -177,6 +177,21 @@ test('lists the work items latest first, with where each is and how often Owner 
   await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
 })
 
+test('lists the changes to the workflow, numbers first, and opens one to why it was made and what it changed', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow`)
+  await page.getByRole('link', { name: 'changes' }).click()
+  const changes = page.getByTestId('change')
+  await expect(changes).toHaveCount(3)
+  await expect(changes.getByTestId('measure')).toHaveText(['0.4→0', '0.67→0.33', '0.67→0.33'])
+  await expect(changes.first().getByTestId('measure')).toHaveAttribute('data-tip', /^too early: 2 of 3 work items\. your step-ins per work item: 0\.4 before, 0 over 2 work items since$/)
+  await expect(changes.nth(1).getByTestId('measure')).toHaveAttribute('data-tip', /^not proven/)
+  await changes.nth(1).getByRole('button').click()
+  const detail = page.getByTestId('change-detail')
+  await expect(detail).toContainText('Removes the friction from #2')
+  await expect(detail).toContainText('changedstep 3.1reproduce the bug with a failing test')
+})
+
 test('explains a mark reached with the keyboard', async ({ page }) => {
   const project = await servedProject(page, RUN_VIEWER)
   await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)

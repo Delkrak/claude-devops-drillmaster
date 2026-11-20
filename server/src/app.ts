@@ -55,6 +55,7 @@ import {
 } from './core/state.js'
 import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
+import { changesView } from './core/changesPage.js'
 import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
@@ -568,6 +569,11 @@ export class Drillmaster {
     const page = workItemPageView(await this.ports.store.read(projectId), workItemId, at)
     if (!page) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
     return page
+  }
+
+  /** Every change to the workflow, and whether it did what it was for. */
+  async changes(projectId: string, at?: string) {
+    return changesView(await this.ports.store.read(projectId), at)
   }
 
   async workItemsList(projectId: string, at?: string) {

@@ -32,6 +32,11 @@ beforeAll(async () => {
 afterAll(() => server.close())
 
 describe('viewer API', () => {
+  it('serves the changes to the workflow, none yet for a seeded project', async () => {
+    expect(await get(`/api/projects/${ID}/changes`)).toMatchObject({ status: 200, body: [] })
+    expect((await get(`/api/projects/${ID}/changes?at=yesterday`)).status).toBe(400)
+  })
+
   it("serves the work items, latest first, and one work item's route at a moment", async () => {
     const [item] = (await get(`/api/projects/${ID}/work-items`)).body
     expect(item).toMatchObject({ issue: '#9', status: 'active', at_step: 'say what the pull request changes', friction: 0 })

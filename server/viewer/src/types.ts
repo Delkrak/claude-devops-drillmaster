@@ -98,3 +98,29 @@ export interface WorkItemsEntry {
   at_step: string | null
   friction: number
 }
+
+/** One thing a change did to the workflow. */
+export interface WorkflowEdit {
+  what: 'new' | 'changed' | 'moved' | 'removed'
+  kind: 'step' | 'rule'
+  ref: string
+  name: string
+  was: string | null
+}
+
+/** A change to the workflow, and whether it did what it was for. */
+export interface ChangeRow {
+  at: string
+  from_version: string | null
+  version: string
+  change: string
+  purpose: string | null
+  hypothesis: string | null
+  measure: string | null
+  before: number | null
+  after: number | null
+  counted: number
+  judge_after: number | null
+  verdict: 'keep' | 'rethink' | 'running' | null
+  edits: WorkflowEdit[]
+}

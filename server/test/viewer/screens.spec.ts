@@ -56,3 +56,15 @@ test('the work item page @screens', async ({ page }) => {
   await page.getByTestId('item-row').first().waitFor()
   await page.screenshot({ path: path.join(SCREENS, 'item-5-list.png') })
 })
+
+// The changes page: each change's measure before and after, one opened.
+test('the changes page @screens', async ({ page }) => {
+  mkdirSync(SCREENS, { recursive: true })
+  const { project } = (await (await page.request.get(`${RUN_VIEWER}/api/served`)).json()) as { project: string }
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/changes`)
+  await page.getByTestId('change').first().waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(SCREENS, 'changes-0-list.png') })
+  await page.getByTestId('change').nth(1).getByRole('button').click()
+  await page.screenshot({ path: path.join(SCREENS, 'changes-1-opened.png') })
+})
