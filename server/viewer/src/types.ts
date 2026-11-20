@@ -11,6 +11,8 @@ export interface WorkflowPageStep {
   name: string
   gate: 'self' | 'drillmaster' | 'owner'
   if: string | null
+  /** The condition in plain words. */
+  when: string | null
   alternative: { input: string; value: string } | null
   here_now: WorkItemRef[]
   reviews: { passed: number; sent_back: number }
@@ -21,6 +23,7 @@ export interface WorkflowPageStage {
   guid: string
   name: string
   if: string | null
+  when: string | null
   here_now: WorkItemRef[]
   friction: number
   steps: WorkflowPageStep[]

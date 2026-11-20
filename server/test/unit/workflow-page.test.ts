@@ -42,6 +42,13 @@ describe('the Workflow page', () => {
     expect(stepOf(page, 1, 1).alternative).toBeNull()
   })
 
+  it('says each condition in plain words', () => {
+    const page = workflowPageView(project(seedWorkflow()))!
+    expect(stepOf(page, 2, 1).when).toBe('kind is bug')
+    expect(stepOf(page, 3, 3).when).toBe('kind is feature or user visible is yes')
+    expect(stepOf(page, 1, 1).when).toBeNull()
+  })
+
   it("shows an item at the next step it takes, before the skip of a step it doesn't meet is recorded", () => {
     const workflow = seedWorkflow()
     const page = workflowPageView([...project(workflow), ...start(workflow, 'wi_1', 'feature'), verdict(workflow, 'wi_1', 1, 1, 'agent', true, { stage: 2, step: 1 })])!

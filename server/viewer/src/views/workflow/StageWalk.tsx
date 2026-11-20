@@ -3,7 +3,7 @@ import type { WorkflowPageStage, WorkflowPageStep } from '../../types'
 import { AFTER_SPLIT, AXIS, ITEM_COLUMN, itemBoxWidth, PROBLEM_COLUMN, SPLIT, SPLIT_HEIGHT, splitAlternatives, STAGE_HEADER, STEP_ROW } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
 import { Branch, FrictionRing, ItemBox, Line, ReviewMarks, StageLabel, StageRule, Stop, StepLabel, type StopKind } from '../../ui/workflow/marks'
-import { describeItems, labelWidth } from './describe'
+import { describeItems, labelWidth, stageAnchor } from './describe'
 
 const STEP_NAME_SIZE = 17
 
@@ -20,7 +20,7 @@ function DrawnStep({ step, x, y, side, onBranch }: { step: WorkflowPageStep; x: 
   return (
     <g data-testid="walk-step">
       <Stop x={x} y={y} kind={kindOf(step)} condition={step.if} />
-      <StepLabel x={x} y={y} side={side} name={step.name} condition={step.if} />
+      <StepLabel x={x} y={y} side={side} name={step.name} note={onBranch && step.alternative ? step.alternative.value : step.when && `only when ${step.when}`} />
       {items > 0 && <ItemBox dotX={itemsDotX} y={y} count={items} tip={describeItems(step.here_now, 'here now')} />}
       <ReviewMarks
         passedX={items > 0 ? itemsDotX + 12 - itemBoxWidth(items) - 14 : itemsDotX + 12}
@@ -57,7 +57,7 @@ export function StageWalk({ stage }: { stage: WorkflowPageStage }) {
   }
   const height = y
   return (
-    <Drawing height={height} testId="walk-stage">
+    <Drawing height={height} testId="walk-stage" id={stageAnchor(stage.n)} label={`stage ${stage.n}, ${stage.name}${stage.when ? `, only when ${stage.when}` : ''}`}>
       <StageRule y={0} />
       <StageLabel x={44} y={30} n={stage.n} name={stage.name} />
       <Line from={straightFrom} to={height} />

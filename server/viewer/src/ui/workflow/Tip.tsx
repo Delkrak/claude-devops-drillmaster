@@ -6,6 +6,7 @@ const styles = stylex.create({
   tip: {
     position: 'fixed',
     zIndex: 9,
+    maxWidth: '40ch',
     pointerEvents: 'none',
     paddingBlock: space.xs,
     paddingInline: space.md,
@@ -18,20 +19,45 @@ const styles = stylex.create({
   },
 })
 
-/** Shows the `data-tip` of whatever the pointer rests on, next to the pointer. */
+const TIP_WIDTH = 320
+const EXPLAINED = '[data-tip]'
+
+/** Keeps a tip beside its point and inside the window. */
+const placed = (x: number, y: number) => ({ left: Math.max(8, Math.min(x + 14, window.innerWidth - TIP_WIDTH)), top: Math.min(y + 14, window.innerHeight - 40) })
+
+/**
+ * Shows the `data-tip` of the mark the pointer rests on, or of the mark the keyboard or a tap has
+ * focused, beside it. Scrolling hides it, so it never points at the wrong mark.
+ */
 export function Tip() {
-  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null)
+  const [tip, setTip] = useState<{ text: string; left: number; top: number } | null>(null)
   useEffect(() => {
-    const follow = (event: MouseEvent) => {
-      const explained = (event.target as Element | null)?.closest?.('[data-tip]')
-      setTip(explained ? { text: explained.getAttribute('data-tip')!, x: event.clientX + 14, y: event.clientY + 14 } : null)
+    const explainedAt = (target: EventTarget | null) => (target instanceof Element ? target.closest(EXPLAINED) : null)
+    const onPointer = (event: MouseEvent) => {
+      const mark = explainedAt(event.target)
+      setTip(mark ? { text: mark.getAttribute('data-tip')!, ...placed(event.clientX, event.clientY) } : null)
     }
-    document.addEventListener('mousemove', follow)
-    return () => document.removeEventListener('mousemove', follow)
+    const onFocus = (event: FocusEvent) => {
+      const mark = explainedAt(event.target)
+      if (!mark) return
+      const box = mark.getBoundingClientRect()
+      setTip({ text: mark.getAttribute('data-tip')!, ...placed(box.right, box.bottom) })
+    }
+    const hide = () => setTip(null)
+    document.addEventListener('mousemove', onPointer)
+    document.addEventListener('focusin', onFocus)
+    document.addEventListener('focusout', hide)
+    window.addEventListener('scroll', hide, { passive: true })
+    return () => {
+      document.removeEventListener('mousemove', onPointer)
+      document.removeEventListener('focusin', onFocus)
+      document.removeEventListener('focusout', hide)
+      window.removeEventListener('scroll', hide)
+    }
   }, [])
   if (!tip) return null
   return (
-    <div role="tooltip" data-testid="tip" style={{ left: tip.x, top: tip.y }} {...stylex.props(styles.tip)}>
+    <div role="tooltip" data-testid="tip" style={{ left: tip.left, top: tip.top }} {...stylex.props(styles.tip)}>
       {tip.text}
     </div>
   )

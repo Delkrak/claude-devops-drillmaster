@@ -65,3 +65,37 @@ test('follows a live session: a new work item appears without reloading', async 
   await request.post(`http://127.0.0.1:${VIEWER_PORT}/tools/call`, { data: { project: DEMO_DIR, name: 'work_start', arguments: { issue: '#3 live', description: 'started while the viewer is open' } } })
   await expect(firstStage.getByTestId('item-box')).toHaveAttribute('data-tip', '1 work item here now: #3 live', { timeout: 10_000 })
 })
+
+test('jumps from a stage in the overview to where that stage is drawn in full', async ({ page }) => {
+  await page.goto(`${RUN_VIEWER}/`)
+  await expect(page.locator('#stage-3')).not.toBeInViewport()
+  await page.getByRole('link', { name: 'go to stage 3, build' }).click()
+  await expect(page.locator('#stage-3')).toBeInViewport()
+  await page.goto(`${RUN_VIEWER}/`)
+  await page.getByRole('link', { name: 'go to stage 4, test' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#stage-4')).toBeInViewport()
+})
+
+test('names a past moment and its workflow, with the way back to now; live names nothing', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  await expect(page.getByTestId('moment')).toHaveText('20 Nov, 19:10 UTC · workflow 2.1.0')
+  await page.getByRole('link', { name: 'now' }).click()
+  await expect(page.getByTestId('workflow-overview')).toBeVisible()
+  await expect(page.getByTestId('moment')).toHaveCount(0)
+})
+
+test('says conditions in plain words: a split by its value, other steps in a sentence', async ({ page }) => {
+  await page.goto(`${RUN_VIEWER}/`)
+  await expect(walkStep(page, 'find the cause').getByTestId('step-note')).toHaveText('bug')
+  await expect(walkStep(page, 'document it for users').getByTestId('step-note')).toHaveText('only when kind is feature or user visible is yes')
+})
+
+test('explains a mark reached with the keyboard', async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)
+  await page.getByTestId('workflow-overview').getByTestId('item-box').focus()
+  await expect(page.getByTestId('tip')).toHaveText('1 work item here now: #5')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Workflow')
+})

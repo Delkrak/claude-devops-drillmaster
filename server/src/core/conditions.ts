@@ -139,6 +139,22 @@ export function evaluateCondition(condition: Condition, inputs: InputValues): bo
   }
 }
 
+/** A condition in plain words, for people: `kind == 'feature' || user_visible == 'yes'` is "kind is feature or user visible is yes". */
+export function conditionInWords(condition: Condition): string {
+  switch (condition.kind) {
+    case 'compare': {
+      const input = condition.input.replace(/[_-]+/g, ' ')
+      const values = condition.values.join(' or ')
+      return condition.op === '!=' ? `${input} is not ${values}` : `${input} is ${values}`
+    }
+    case 'not':
+      return `not (${conditionInWords(condition.operand)})`
+    case 'and':
+    case 'or':
+      return `${conditionInWords(condition.left)} ${condition.kind} ${conditionInWords(condition.right)}`
+  }
+}
+
 /** Why a condition isn't met, from the inputs it reads: "kind is feature". */
 export const describeInputsOf = (condition: Condition, inputs: InputValues) =>
   [...new Set(comparisonsOf(condition).map((comparison) => comparison.input))].map((input) => `${input} is ${inputs[input] ?? 'not set'}`).join(', ')

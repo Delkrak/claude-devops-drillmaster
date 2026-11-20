@@ -1,4 +1,4 @@
-import { parseCondition } from './conditions.js'
+import { conditionInWords, parseCondition } from './conditions.js'
 import type { DrillmasterEvent } from './events.js'
 import { frictionJudgementsOf, isFriction, ownerInputsOf } from './ownerInputs.js'
 import { stepGuidAt } from './refs.js'
@@ -17,6 +17,8 @@ export interface WorkflowPageStep {
   name: string
   gate: WorkStep['gate']
   if: string | null
+  /** The condition in plain words, for people. */
+  when: string | null
   /** For a step that runs on one value of one input: steps next to each other on other values of it are alternatives. */
   alternative: { input: string; value: string } | null
   here_now: WorkItemRef[]
@@ -28,6 +30,7 @@ export interface WorkflowPageStage {
   guid: string
   name: string
   if: string | null
+  when: string | null
   here_now: WorkItemRef[]
   /** Times Owner had to step in during this stage. */
   friction: number
@@ -51,6 +54,8 @@ function alternativeOf(condition: string | undefined): WorkflowPageStep['alterna
   return parsed.kind === 'compare' && parsed.op === '==' && parsed.values.length === 1 ? { input: parsed.input, value: parsed.values[0]! } : null
 }
 
+const inWords = (condition: string | undefined) => (condition ? conditionInWords(parseCondition(condition)) : null)
+
 /** The page at `at` (every event, when not given), folded from the events up to then. */
 export function workflowPageView(events: readonly DrillmasterEvent[], at?: string): WorkflowPage | undefined {
   const seen = at ? events.filter((event) => event.at <= at) : events
@@ -63,6 +68,7 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     guid: stage.guid,
     name: stage.name,
     if: stage.if ?? null,
+    when: inWords(stage.if),
     here_now: [],
     friction: 0,
     steps: stage.steps.map((step) => ({
@@ -71,6 +77,7 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
       name: step.name,
       gate: step.gate,
       if: step.if ?? null,
+      when: inWords(step.if),
       alternative: alternativeOf(step.if),
       here_now: [],
       reviews: { passed: 0, sent_back: 0 },

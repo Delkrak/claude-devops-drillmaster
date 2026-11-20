@@ -1,6 +1,7 @@
 import { api, usePolled } from '../api'
 import { Loading } from '../ui/Loading'
-import { Shell } from '../ui/Shell'
+import { href } from '../router'
+import { MomentLabel, Shell } from '../ui/Shell'
 import { Key } from '../ui/workflow/Key'
 import { FirstScreen, PipelineColumn } from '../ui/workflow/layout'
 import { Tip } from '../ui/workflow/Tip'
@@ -15,7 +16,7 @@ import { StageWalk } from './workflow/StageWalk'
 export function WorkflowPage({ id, at }: { id: string; at: string | null }) {
   const loaded = usePolled(() => api.workflow(id, at), `${id}@${at ?? 'now'}`, at ? null : undefined)
   return (
-    <Shell>
+    <Shell title="Workflow" aside={at && loaded.status === 'ready' ? <MomentLabel at={loaded.data.at} version={loaded.data.workflow_version} nowHref={href.workflow(id)} /> : undefined}>
       <Loading loaded={loaded}>
         {(page) => (
           <PipelineColumn>

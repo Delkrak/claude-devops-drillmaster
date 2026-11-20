@@ -13,7 +13,7 @@ export function HomePage() {
     if (served) window.location.replace(href.workflow(served))
   }, [served])
   return (
-    <Shell>
+    <Shell title="Drillmaster">
       <Loading loaded={loaded}>{({ project }) => (project ? null : <Empty>This Drillmaster server serves no project.</Empty>)}</Loading>
     </Shell>
   )
