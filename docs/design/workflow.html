@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drillmaster - Workflow (overview first)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700&family=Big+Shoulders+Stencil+Display:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root{--ground:#0F1311;--rule:#232A25;--line:#D9DED6;--bar:#3A443C;--barHi:#5C685E;--dim:#8E998F;--sand:#E3C97E;--orange:#FF7A1A}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--ground);color:var(--line);font-family:'Barlow',sans-serif}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:28px;height:52px;padding:0 28px;background:var(--ground);border-bottom:1px solid var(--rule)}
+  .b{font-family:'Big Shoulders Stencil Display';font-weight:800;font-size:20px;letter-spacing:.1em;color:var(--dim)}
+  .t{width:64px;height:10px;border-radius:5px;background:var(--bar)} .t.on{background:var(--barHi);box-shadow:0 12px 0 -4px var(--line)}
+  main{width:900px;margin:0 auto;padding-bottom:calc(50vh - 120px)}
+  main svg{display:block}
+  .gap{height:48px}
+  .ov{min-height:calc(100vh - 52px);display:flex;align-items:center;justify-content:center}
+  .src{margin:22px 0 90px;font-size:12px;color:var(--dim);text-align:center}
+  .key{position:fixed;right:24px;bottom:18px;z-index:4;display:flex;flex-direction:column;gap:7px;padding:12px 16px;border-radius:12px;background:rgba(20,26,22,.92);border:1px solid var(--rule);font-size:12.5px;font-weight:600;color:var(--dim)}
+  .key span{display:inline-flex;align-items:center;gap:8px}
+  .key svg{flex:none}
+  .tip{position:fixed;z-index:9;pointer-events:none;padding:5px 10px;border-radius:6px;background:#E9EDE6;color:#111;font-size:13px;font-weight:600;opacity:0;transition:opacity .15s}
+  [data-tip]{cursor:help}
+</style></head><body>
+<header><span class="b">DRILLMASTER</span><i class="t on"></i><i class="t"></i><i class="t"></i><i class="t"></i></header>
+<main id="main"></main>
+<div class="key" id="key"></div>
+<div class="tip" id="tip"></div>
+<script>
+// The moment: the reviewed-run fixture replayed to 2026-11-20T19:10:16.785Z.
+window.MOMENT = {
+  "run": "2026-11-20T18-50-43-pipeline-reviewed-llm-1",
+  "at": "2026-11-20T19:10:16.785Z",
+  "workflow_version": "2.1.0",
+  "delivered": 4,
+  "started": 5,
+  "in_progress": [
+    {
+      "issue": "#5",
+      "kind": "feature",
+      "stage": 4,
+      "step": 4
+    }
+  ],
+  "friction_after_delivery": 2,
+  "stages": [
+    {
+      "n": 1,
+      "name": "capture",
+      "friction": 0,
+      "here_now": [],
+      "steps": [
+        {
+          "n": 1,
+          "name": "write down what is wrong or wanted",
+          "gate": "self",
+          "if": null,
+          "passed": 5,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "name": "refine",
+      "friction": 0,
+      "here_now": [],
+      "steps": [
+        {
+          "n": 1,
+          "name": "find the cause",
+          "gate": "self",
+          "if": "kind == 'bug'",
+          "passed": 2,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 2,
+          "name": "write the spec",
+          "gate": "owner",
+          "if": "kind == 'feature'",
+          "passed": 3,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 3,
+          "here_now": []
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "name": "build",
+      "friction": 0,
+      "here_now": [],
+      "steps": [
+        {
+          "n": 1,
+          "name": "reproduce the bug with a failing test",
+          "gate": "self",
+          "if": "kind == 'bug'",
+          "passed": 2,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 2,
+          "name": "write the code and its tests",
+          "gate": "self",
+          "if": null,
+          "passed": 5,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 3,
+          "name": "document it for users",
+          "gate": "self",
+          "if": "kind == 'feature' || user_visible == 'yes'",
+          "passed": 4,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 4,
+          "name": "add the CHANGES.md line",
+          "gate": "self",
+          "if": null,
+          "passed": 2,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "name": "test",
+      "friction": 0,
+      "here_now": [
+        "#5"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "name": "run the full suite",
+          "gate": "self",
+          "if": null,
+          "passed": 5,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 2,
+          "name": "check the spec's examples by hand",
+          "gate": "self",
+          "if": "kind == 'feature'",
+          "passed": 3,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 3,
+          "name": "show the bug is fixed",
+          "gate": "self",
+          "if": "kind == 'bug'",
+          "passed": 2,
+          "reviews_passed": 0,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": []
+        },
+        {
+          "n": 4,
+          "name": "have the change reviewed",
+          "gate": "drillmaster",
+          "if": null,
+          "passed": 4,
+          "reviews_passed": 4,
+          "reviews_sent_back": 0,
+          "approvals": 0,
+          "here_now": [
+            "#5"
+          ]
+        }
+      ]
+    }
+  ]
+};
+</script>
+<script>
+const VARIANT='A';
+const M=window.MOMENT;
+const C={ground:'#0F1311',line:'#D9DED6',bar:'#3A443C',barHi:'#5C685E',dim:'#8E998F',sand:'#E3C97E',orange:'#FF7A1A',rule:'#232A25'};
+const W=900,AXIS=450,SPLIT=64;
+const LINE='fill="none" stroke="'+C.line+'" stroke-width="3" stroke-linecap="round"';
+const DOTTED='fill="none" stroke="'+C.dim+'" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"';
+
+// what kind of stop a step is: your approval, a Drillmaster review, or a step that always / only if runs
+const kindOf=s=>s.gate==='owner'?'approve':s.gate==='drillmaster'?'review':s.if?'if':'always';
+const TIP={always:'always runs',if:'runs only if its condition holds',approve:'you approve this step',review:'Drillmaster reviews this step'};
+function stop(x,y,k,size){
+  const r=size||9;
+  if(k==='approve')return '<path data-tip="'+TIP[k]+'" d="M'+x+' '+(y-r-5)+' L'+(x+r+5)+' '+y+' L'+x+' '+(y+r+5)+' L'+(x-r-5)+' '+y+' Z" fill="'+C.ground+'" stroke="'+C.sand+'" stroke-width="2.5" stroke-linejoin="round"/>';
+  if(k==='review')return '<g data-tip="'+TIP[k]+'"><circle cx="'+x+'" cy="'+y+'" r="'+(r+6)+'" fill="'+C.ground+'" stroke="'+C.line+'" stroke-width="2"/><rect x="'+(x-r+3)+'" y="'+(y-r+3)+'" width="'+(2*r-6)+'" height="'+(2*r-6)+'" rx="2" fill="'+C.line+'"/></g>';
+  return '<rect data-tip="'+TIP[k]+'" x="'+(x-r)+'" y="'+(y-r)+'" width="'+2*r+'" height="'+2*r+'" rx="4" fill="'+(k==='if'?C.ground:C.line)+'" stroke="'+C.line+'" stroke-width="2.5"/>';
+}
+const bars=(x,y,side,len,cond)=>{const bx=side==='l'?x-30-len:x+30;let s='<rect x="'+bx+'" y="'+(y-6)+'" width="'+len+'" height="12" rx="6" fill="'+C.barHi+'"/>';if(cond)s+='<rect x="'+(side==='l'?x-30-cond:x+30)+'" y="'+(y+13)+'" width="'+cond+'" height="7" rx="3.5" fill="'+C.bar+'"/>';return s};
+const titleLen=s=>60+Math.min(140,s.name.length*4), condLen=s=>s.if?40+Math.min(150,s.if.length*3):0;
+// a work item where it is now, and what Drillmaster's reviews and your approvals did at a step
+const boxW=n=>36+String(n).length*8;
+const box=(dotX,y,n,tip)=>'<g data-tip="'+tip+'"><rect x="'+(dotX+12-boxW(n))+'" y="'+(y-11)+'" width="'+boxW(n)+'" height="22" rx="11" fill="none" stroke="'+C.line+'" stroke-width="1.5"/><circle cx="'+dotX+'" cy="'+y+'" r="5" fill="'+C.line+'"/><text x="'+(dotX-10)+'" y="'+(y+5)+'" text-anchor="end" font-size="13" font-weight="700" fill="'+C.line+'">'+n+'</text></g>';
+const here=(x,y,side,issues)=>issues.length?box(x+(side==='l'?-70:70),y,issues.length,issues.length+' work item'+(issues.length>1?'s':'')+' here now: '+issues.join(', ')):'';
+function reviewMarks(x,y,side,s){
+  if(kindOf(s)!=='review'||!(s.reviews_passed+s.reviews_sent_back))return '';
+  const leftX=side==='l'?x-30-titleLen(s)-12:(s.here_now.length?x-70+12-boxW(s.here_now.length)-14:x-40);
+  const rightX=side==='r'?x+30+titleLen(s)+14:x+40;
+  let out='';
+  if(s.reviews_passed)out+='<g data-tip="Drillmaster passed '+s.reviews_passed+' work items here"><text x="'+leftX+'" y="'+(y+5)+'" text-anchor="end" font-size="13" font-weight="700" fill="'+C.line+'">&#10003; '+s.reviews_passed+'</text></g>';
+  if(s.reviews_sent_back)out+='<g data-tip="Drillmaster sent work back '+s.reviews_sent_back+' times here"><text x="'+rightX+'" y="'+(y+5)+'" font-size="13" font-weight="700" fill="'+C.sand+'">&#8617; '+s.reviews_sent_back+'</text></g>';
+  return out;
+}
+
+// steps that run on alternative values of the same input form a split; the rest stay on the line
+const altOf=s=>{const m=/^\s*(\w+)\s*==\s*'([^']+)'\s*$/.exec(s.if||'');return m?{name:m[1],value:m[2]}:null};
+function groups(steps){
+  const out=[];
+  for(let i=0;i<steps.length;i++){
+    const a=altOf(steps[i]),b=steps[i+1]&&altOf(steps[i+1]);
+    if(a&&b&&a.name===b.name&&a.value!==b.value){out.push([steps[i],steps[i+1]]);i++}else out.push(steps[i]);
+  }
+  return out;
+}
+const fork=(y0,y1,x)=>{const r=34;return 'M'+AXIS+' '+y0+' C'+AXIS+' '+(y0+r/2)+' '+x+' '+(y0+r/2)+' '+x+' '+(y0+r)+' V'+(y1-r)+' C'+x+' '+(y1-r/2)+' '+AXIS+' '+(y1-r/2)+' '+AXIS+' '+y1};
+
+// the walkthrough: one svg per stage, the full drawing
+function stageSvg(st){
+  let y=70,s='';
+  s+='<path d="M40 1 H'+(W-40)+'" stroke="'+C.rule+'"/>';
+  s+='<text x="44" y="30" font-size="13" font-weight="600" fill="'+C.dim+'" letter-spacing="2">'+String(st.n).padStart(2,'0')+'</text><rect x="72" y="21" width="64" height="10" rx="5" fill="'+C.bar+'"/>';
+  if(st.friction)s+='<g data-tip="you stepped in '+st.friction+' times in this stage"><circle cx="'+(AXIS+44)+'" cy="26" r="12" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+(AXIS+44)+'" y="31" text-anchor="middle" font-size="12" font-weight="700" fill="'+C.orange+'">'+st.friction+'</text></g>';
+  let line='';const marks=[];let from=0;const seg=(a,b)=>{if(b>a)line+='<path d="M'+AXIS+' '+a+' V'+b+'" '+LINE+'/>'};
+  for(const g of groups(st.steps)){
+    if(Array.isArray(g)){
+      const y0=y,y1=y+2*SPLIT+40,ym=(y0+y1)/2,L=AXIS-SPLIT,R=AXIS+SPLIT;
+      seg(from,y0);from=y1;
+      line+='<path d="'+fork(y0,y1,L)+'" '+LINE+'/><path d="'+fork(y0,y1,R)+'" '+LINE+'/>';
+      [[g[0],L,'l'],[g[1],R,'r']].forEach(([sp,x,side])=>{marks.push(stop(x,ym,kindOf(sp))+bars(x,ym,side,titleLen(sp),condLen(sp))+here(x,ym,side,sp.here_now)+reviewMarks(x,ym,side,sp))});
+      y=y1+30;
+    }else{
+      marks.push(stop(AXIS,y+20,kindOf(g))+bars(AXIS,y+20,'r',titleLen(g),condLen(g))+here(AXIS,y+20,'l',g.here_now)+reviewMarks(AXIS,y+20,'r',g));
+      y+=80;
+    }
+  }
+  const h=y;seg(from,h);
+  return '<svg width="'+W+'" height="'+h+'" font-family="Barlow">'+s+line+marks.join('')+'</svg>';
+}
+const cw=40+String(M.delivered).length*9;
+function endSvg(){
+  const waiting=M.in_progress.filter(i=>i.stage==null).map(i=>i.issue);
+  return '<svg width="'+W+'" height="120" font-family="Barlow"><path d="M'+AXIS+' 0 V40" '+LINE+'/><rect data-tip="delivered" x="'+(AXIS-14)+'" y="38" width="28" height="4" rx="2" fill="'+C.dim+'"/>'
+    +box(AXIS-70,40,M.delivered,M.delivered+' work items delivered')+(waiting.length?box(AXIS-70-boxW(M.delivered)-16,40,waiting.length,waiting.length+' waiting to be delivered: '+waiting.join(', ')):'')
+    +'<path d="M40 70 H'+(W-40)+'" stroke="'+C.rule+'" stroke-dasharray="2 6" stroke-linecap="round"/><path data-tip="after delivery" d="M'+AXIS+' 46 V120" '+DOTTED+'/>'
+    +(M.friction_after_delivery?'<g data-tip="you stepped in '+M.friction_after_delivery+' times after delivery"><circle cx="'+(AXIS+44)+'" cy="95" r="14" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+(AXIS+44)+'" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="'+C.orange+'">'+M.friction_after_delivery+'</text></g>':'')
+    +'</svg>';
+}
+
+// the compact overview: one row per stage, its stops in miniature, alternatives stacked, status only where there is some
+function glyph(k,x,y){
+  if(k==='approve')return '<path data-tip="'+TIP[k]+'" d="M'+(x+5)+' '+(y-6)+' L'+(x+11)+' '+y+' L'+(x+5)+' '+(y+6)+' L'+(x-1)+' '+y+' Z" fill="none" stroke="'+C.sand+'" stroke-width="1.8" stroke-linejoin="round"/>';
+  if(k==='review')return '<g data-tip="'+TIP[k]+'"><circle cx="'+(x+5)+'" cy="'+y+'" r="7" fill="none" stroke="'+C.line+'" stroke-width="1.5"/><rect x="'+(x+2)+'" y="'+(y-3)+'" width="6" height="6" rx="1" fill="'+C.line+'"/></g>';
+  return '<rect data-tip="'+TIP[k]+'" x="'+x+'" y="'+(y-5)+'" width="10" height="10" rx="2.5" fill="'+(k==='if'?'none':C.line)+'" stroke="'+C.line+'" stroke-width="1.6"/>';
+}
+function overviewSvg(){
+  const ROW=58;let s='',y=0;
+  for(const st of M.stages){
+    s+='<path d="M40 '+(y+0.5)+' H'+(W-40)+'" stroke="'+C.rule+'"/><text x="44" y="'+(y+34)+'" font-size="13" font-weight="600" fill="'+C.dim+'" letter-spacing="2">'+String(st.n).padStart(2,'0')+'</text><rect x="72" y="'+(y+24)+'" width="64" height="10" rx="5" fill="'+C.bar+'"/>';
+    s+='<path d="M'+AXIS+' '+y+' V'+(y+ROW)+'" '+LINE+'/><path d="M'+(AXIS-8)+' '+(y+29)+' H'+(AXIS+8)+'" stroke="'+C.line+'" stroke-width="3" stroke-linecap="round"/>';
+    if(st.here_now.length)s+=here(AXIS,y+29,'l',st.here_now);
+    if(st.friction)s+='<g data-tip="you stepped in '+st.friction+' times in this stage"><circle cx="'+(AXIS+44)+'" cy="'+(y+29)+'" r="11" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+(AXIS+44)+'" y="'+(y+34)+'" text-anchor="middle" font-size="12" font-weight="700" fill="'+C.orange+'">'+st.friction+'</text></g>';
+    y+=ROW;
+  }
+  const waiting=M.in_progress.filter(i=>i.stage==null).map(i=>i.issue);
+  s+='<path d="M40 '+(y+0.5)+' H'+(W-40)+'" stroke="'+C.rule+'"/><path d="M'+AXIS+' '+y+' V'+(y+29)+'" '+LINE+'/><rect x="'+(AXIS-12)+'" y="'+(y+27)+'" width="24" height="4" rx="2" fill="'+C.dim+'"/>'
+    +box(AXIS-70,y+29,M.delivered,M.delivered+' work items delivered')+(waiting.length?box(AXIS-70-boxW(M.delivered)-16,y+29,waiting.length,waiting.length+' waiting to be delivered: '+waiting.join(', ')):'');
+  y+=ROW;
+  s+='<path d="M40 '+(y+0.5)+' H'+(W-40)+'" stroke="'+C.rule+'" stroke-dasharray="2 6"/><path d="M'+AXIS+' '+(y-25)+' V'+(y+ROW)+'" '+DOTTED+'/>';
+  if(M.friction_after_delivery)s+='<g data-tip="you stepped in '+M.friction_after_delivery+' times after delivery"><circle cx="'+(AXIS+44)+'" cy="'+(y+29)+'" r="14" fill="'+C.ground+'" stroke="'+C.orange+'" stroke-width="2.5"/><text x="'+(AXIS+44)+'" y="'+(y+34)+'" text-anchor="middle" font-size="14" font-weight="700" fill="'+C.orange+'">'+M.friction_after_delivery+'</text></g>';
+  y+=ROW;
+  return '<svg width="'+W+'" height="'+y+'" font-family="Barlow">'+s+'</svg>';
+}
+
+const main=document.getElementById('main');
+const walk=M.stages.map(stageSvg).join('')+endSvg();
+const ov='<section class="ov">'+overviewSvg()+'</section>';
+main.innerHTML=(VARIANT==='A'?ov:'')+walk;
+
+// the key: one word per symbol
+const k=(svg,word,color)=>'<span'+(color?' style="color:'+color+'"':'')+'><svg width="18" height="18" viewBox="0 0 18 18">'+svg+'</svg>'+word+'</span>';
+document.getElementById('key').innerHTML=
+  k('<rect x="4" y="4" width="10" height="10" rx="2.5" fill="'+C.line+'"/>','always')
+  +k('<rect x="4" y="4" width="10" height="10" rx="2.5" fill="none" stroke="'+C.line+'" stroke-width="1.6"/>','if')
+  +k('<path d="M9 2 L16 9 L9 16 L2 9 Z" fill="none" stroke="'+C.sand+'" stroke-width="1.8"/>','you approve',C.sand)
+  +k('<circle cx="9" cy="9" r="7" fill="none" stroke="'+C.line+'" stroke-width="1.5"/><rect x="6" y="6" width="6" height="6" rx="1" fill="'+C.line+'"/>','Drillmaster reviews')
+  +k('<circle cx="9" cy="9" r="4.5" fill="'+C.line+'"/>','work item')
+  +k('<circle cx="9" cy="9" r="6.5" fill="none" stroke="'+C.orange+'" stroke-width="2"/>','you stepped in',C.orange)
+  +k('<rect x="3" y="8" width="12" height="3" rx="1.5" fill="'+C.dim+'"/>','delivered')
+  +k('<path d="M9 1 V17" stroke="'+C.dim+'" stroke-width="2" stroke-dasharray="2 4"/>','after delivery');
+
+if('scrollRestoration' in history)history.scrollRestoration='manual';
+window.scrollTo(0,0);
+const tip=document.getElementById('tip');
+document.addEventListener('mouseover',e=>{const t=e.target.closest('[data-tip]');if(!t){tip.style.opacity=0;return}tip.textContent=t.dataset.tip;tip.style.opacity=1});
+document.addEventListener('mousemove',e=>{tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY+14)+'px'});
+</script>
+</body></html>
