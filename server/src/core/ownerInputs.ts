@@ -11,6 +11,9 @@ export interface OwnerInput {
   role: OwnerInputRole
   /** The work item it belongs to; none for a retrospective, or outside a work item. */
   work_item_id: string | null
+  /** The work step the session was on when Owner wrote it; none outside a step. */
+  stage: number | null
+  step_guid: string | null
   after_delivery: boolean
   /** Whether Agent changed the work after it, before Owner's next input in the session. */
   changed_work_after: boolean
@@ -66,6 +69,8 @@ export function ownerInputsOf(events: readonly DrillmasterEvent[]): OwnerInput[]
         prompt: event.prompt ?? '',
         role: 'input',
         work_item_id: event.work_item_id,
+        stage: event.stage,
+        step_guid: event.step_guid ?? null,
         after_delivery: event.work_item_id !== null && deliveredItems.has(event.work_item_id),
         changed_work_after: false,
       }

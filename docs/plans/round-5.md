@@ -53,13 +53,13 @@ at a time.
 Each step ends in one local commit with typecheck and tests green. Nothing is pushed without Owner's
 OK.
 
-### 0. 🟥 The plan in the repository
+### 0. 🟩 The plan in the repository (d057677)
 `docs/plans/round-5.md` (this plan, without the done-so-far detail) and its row in
 `docs/plans/README.md`.
 
 ### 1. 🟩 Impeccable `init` (PRODUCT.md)
 
-### 2. 🟧 Record what is settled (one commit)
+### 2. 🟩 Record what is settled (80de8cf)
 - **The run as a fixture**: `server/test/viewer/fixtures/reviewed-run.json`, copied from the run's
   `events.json` and scrubbed: the project path under `C:\Users\...` replaced by a neutral path (as
   `sim-run.json` does), trace `raw` fields removed. Check: no user name or home path left in it.
