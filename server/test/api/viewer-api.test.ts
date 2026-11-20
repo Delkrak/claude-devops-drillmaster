@@ -32,6 +32,18 @@ beforeAll(async () => {
 afterAll(() => server.close())
 
 describe('viewer API', () => {
+  it("serves the work items, latest first, and one work item's route at a moment", async () => {
+    const [item] = (await get(`/api/projects/${ID}/work-items`)).body
+    expect(item).toMatchObject({ issue: '#9', status: 'active', at_step: 'say what the pull request changes', friction: 0 })
+    const page = (await get(`/api/projects/${ID}/work-items/${item.work_item_id}`)).body
+    expect(page.stages[0].steps.map((step: { status: string }) => step.status)).toEqual(['passed', 'here'])
+    expect(page.stages[0].steps[0].happened.reports).toEqual([{ kind: 'impediment', text: 'no fixtures' }])
+    const before = (await get(`/api/projects/${ID}/work-items/${item.work_item_id}?at=${item.started_at}`)).body
+    expect(before.stages[0].steps[0].status).toBe('here')
+    expect((await get(`/api/projects/${ID}/work-items/wi_unknown`)).status).toBe(404)
+    expect((await get(`/api/projects/${ID}/work-items?at=yesterday`)).status).toBe(400)
+  })
+
   it('serves its one project, with its summary, and no other', async () => {
     expect((await get('/api/served')).body).toEqual({ project: ID })
     expect((await get(`/api/projects/${ID}`)).body.summary).toMatchObject({ id: ID, dir: DIR, workflow_version: '3.0.0', work_items: 1, active: 1 })

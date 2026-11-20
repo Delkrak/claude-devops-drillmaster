@@ -55,6 +55,7 @@ import {
 } from './core/state.js'
 import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
+import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
 import { AT_START, Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
@@ -560,6 +561,17 @@ export class Drillmaster {
     const page = workflowPageView(await this.ports.store.read(projectId), at)
     if (!page) throw new UserError(`No project ${projectId}`, 404)
     return page
+  }
+
+  /** One work item's route at `at`, or now. */
+  async workItemPage(projectId: string, workItemId: string, at?: string) {
+    const page = workItemPageView(await this.ports.store.read(projectId), workItemId, at)
+    if (!page) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
+    return page
+  }
+
+  async workItemsList(projectId: string, at?: string) {
+    return workItemsListView(await this.ports.store.read(projectId), at)
   }
 
   async componentHistory(projectId: string, guid: string) {

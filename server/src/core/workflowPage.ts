@@ -48,7 +48,7 @@ export interface WorkflowPage {
   friction: { after_delivery: number; unplaced: number }
 }
 
-function alternativeOf(condition: string | undefined): WorkflowPageStep['alternative'] {
+export function alternativeOf(condition: string | undefined): WorkflowPageStep['alternative'] {
   if (!condition) return null
   const parsed = parseCondition(condition)
   return parsed.kind === 'compare' && parsed.op === '==' && parsed.values.length === 1 ? { input: parsed.input, value: parsed.values[0]! } : null
