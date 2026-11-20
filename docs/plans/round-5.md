@@ -130,7 +130,7 @@ OK.
   conditions in plain words, keyboard and touch reach every explanation.
 - 🟩 **Owner reviewed the built page**: "looks good".
 
-### 4. 🟧 "What happened to #N?" shaped and built, the same way
+### 4. 🟧 "What happened to #N?" shaped and built, the same way (built; review open)
 Owner's answers: Owner opens #N when something went wrong, to check one in flight, and to study a
 finished one at a retrospective. The first screen is its route. Owner reaches it from the Workflow
 page, by typing #N, and from a list. Every detail is there, revealed one level at a time.
@@ -152,10 +152,16 @@ page, by typing #N, and from a list. Every detail is there, revealed one level a
 - 🟩 **Step-ins placed** (ecd4ed7): the friction judge stays blind to the workflow; Drillmaster places
   each input judged friction in a call of its own (`friction_placed`). The fixture's three step-ins
   placed with the Claude reviewer by `test/viewer/fixtures/place-friction.ts`.
-- 🟧 **The mock pins step-ins** at their step; a step-in with no step stays where it happened.
-- 🟧 **Then** the mock is recorded in `docs/design/`, its brief written, and the page
-  built like step 3: a core function from the events (`workItemView` extended), its endpoint, the
-  page, tests, and the same checks.
+- 🟩 **The mock pins step-ins** at their step; a step-in with no step stays where it happened.
+- 🟩 **Recorded** (acb8d93): `docs/design/work-item.html` and its surface brief.
+- 🟩 **Built** (ef520d4, 38c3c05):
+  - core `workItemPageView` and `workItemsListView`, served at
+    `GET /api/projects/:id/work-items[/:workItemId][?at=]`;
+  - the work item page, the work items list, the header's find box, and the Workflow page's boxes
+    and rings as doors;
+  - 183 unit, 76 API and 18 browser tests green; `@screens` saves the item page's screens.
+- 🟧 **Blind read of the built page**, then Owner reviews it.
+
 ### 5. 🟧 "Did the change help?" shaped and built, the same way
 ### 6. 🟧 "What's wrong in Drillmaster?" shaped and built, the same way
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
