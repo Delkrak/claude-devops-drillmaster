@@ -23,6 +23,8 @@ const styles = stylex.create({
     textAlign: 'start',
     cursor: 'pointer',
   },
+  head: { display: 'grid', gridTemplateColumns: '56px 1fr 150px 90px', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.sm, borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule, color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
+  headMeasure: { gridColumn: '3 / span 2', textAlign: 'end' },
   version: { color: colors.dim, fontSize: font.sizeSm, fontWeight: font.weightHeavy, letterSpacing: '1px' },
   change: { fontSize: '15px', fontWeight: font.weightBold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   numbers: { display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: space.sm, fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums', cursor: 'help' },
@@ -40,8 +42,15 @@ const styles = stylex.create({
   editRef: { color: colors.dim },
 })
 
-export const ChangeList = ({ children }: { children: ReactNode }) => (
+/** The list, under a header that names what its numbers measure. */
+export const ChangeList = ({ measure, children }: { measure: string; children: ReactNode }) => (
   <ul aria-label="changes to the workflow" {...stylex.props(styles.list)}>
+    <li aria-hidden data-testid="changes-header" {...stylex.props(styles.head)}>
+      <span />
+      <span>change</span>
+      <span {...stylex.props(styles.headMeasure)}>{measure}</span>
+      <span />
+    </li>
     {children}
   </ul>
 )

@@ -29,6 +29,13 @@ function verdictWords(change: ChangeRow) {
   return 'not measured'
 }
 
+/** What the numbers measure, and which way is better; every measure is lower-is-better. */
+function measureHeader(changes: readonly ChangeRow[]) {
+  const measures = [...new Set(changes.flatMap((change) => (change.measure ? [change.measure] : [])))]
+  const words = measures.length === 1 ? (MEASURE_WORDS[measures[0]!] ?? measures[0]!) : 'the measure'
+  return `${words}, before → after · lower is better`
+}
+
 /** Every change to the workflow, latest first: its measure before → after; open, why it was made and what it changed. */
 export function ChangesPage({ id, at }: { id: string; at: string | null }) {
   const loaded = usePolled(() => api.changes(id, at), `${id}@${at ?? 'now'}`, at ? null : undefined)
@@ -46,7 +53,7 @@ export function ChangesPage({ id, at }: { id: string; at: string | null }) {
           changes.length === 0 ? (
             <Empty>No changes to the workflow yet.</Empty>
           ) : (
-            <ChangeList>
+            <ChangeList measure={measureHeader(changes)}>
               {changes.map((change) => (
                 <ChangeItem
                   key={change.version}

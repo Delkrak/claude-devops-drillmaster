@@ -183,6 +183,7 @@ test('lists the changes to the workflow, numbers first, and opens one to why it 
   await page.getByRole('link', { name: 'changes' }).click()
   const changes = page.getByTestId('change')
   await expect(changes).toHaveCount(3)
+  await expect(page.getByTestId('changes-header')).toContainText('your step-ins per work item, before → after · lower is better')
   await expect(changes.getByTestId('measure')).toHaveText(['0.4→0', '0.67→0.33', '0.67→0.33'])
   await expect(changes.first().getByTestId('measure')).toHaveAttribute('data-tip', /^too early: 2 of 3 work items\. your step-ins per work item: 0\.4 before, 0 over 2 work items since$/)
   await expect(changes.nth(1).getByTestId('measure')).toHaveAttribute('data-tip', /^not proven/)
