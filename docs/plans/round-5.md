@@ -134,7 +134,7 @@ OK.
 Owner's answers: Owner opens #N when something went wrong, to check one in flight, and to study a
 finished one at a retrospective. The first screen is its route. Owner reaches it from the Workflow
 page, by typing #N, and from a list. Every detail is there, revealed one level at a time.
-- 🟧 **Mock** `.impeccable/mocks/work-item.html`, drawn from the fixture, two moments: #2 (a bug,
+- 🟩 **Mock** `.impeccable/mocks/work-item.html`, drawn from the fixture, two moments: #2 (a bug,
   delivered, Owner stepped in after delivery) and #5 in flight at the Workflow mock's moment.
   - First screen: the same line as the Workflow page with only #N's path lit: steps it passed
     bright, steps it skipped faded with why, steps still ahead dim, where it is now, and where Owner
@@ -144,9 +144,16 @@ page, by typing #N, and from a list. Every detail is there, revealed one level a
     captures kept), then every tool call at that step.
   - Ways in: on the Workflow page a box or ring opens the item, or a short list when it holds
     several; `#` search in the header; a "Work items" list, latest first.
-- 🟧 **Blind agents** before Owner sees it: can they tell the route, the steps skipped and why, where
-  Owner stepped in, and drill one level at a time.
-- 🟧 **Owner decides**, then the mock is recorded in `docs/design/`, its brief written, and the page
+- 🟩 **Blind agent** before Owner saw it: every fact right. Fixed from it: who checked a rule, test
+  output in plain words and once, "in progress at" in the header, the check beside its stop, a key
+  with only the marks on the page.
+- 🟩 **Owner decided**: the stop shapes stay as on the Workflow page (one language); a step-in is
+  pinned to the step that should have caught it.
+- 🟩 **Step-ins placed** (ecd4ed7): the friction judge stays blind to the workflow; Drillmaster places
+  each input judged friction in a call of its own (`friction_placed`). The fixture's three step-ins
+  placed with the Claude reviewer by `test/viewer/fixtures/place-friction.ts`.
+- 🟧 **The mock pins step-ins** at their step; a step-in with no step stays where it happened.
+- 🟧 **Then** the mock is recorded in `docs/design/`, its brief written, and the page
   built like step 3: a core function from the events (`workItemView` extended), its endpoint, the
   page, tests, and the same checks.
 ### 5. 🟧 "Did the change help?" shaped and built, the same way
