@@ -83,7 +83,7 @@ OK.
 - **PRODUCT.md** committed.
 
 ### 3. 🟧 Build the Workflow view (four commits)
-- **3a. Core**: `server/src/core/workflowPage.ts`, `workflowPageView(events, at?)`, pure:
+- 🟩 **3a. Core** (d355990): `server/src/core/workflowPage.ts`, `workflowPageView(events, at?)`, pure:
   - fold the events with `at <= T` using `foldState` (`core/state.ts`); the workflow at T;
   - stages and steps with `n`, `guid`, `name`, `gate`, `if`, and `alternative {input, value}` when
     the condition is one `==` comparison (the viewer pairs alternatives into splits);
@@ -100,10 +100,10 @@ OK.
   - Unit tests `server/test/unit/workflow-page.test.ts`: inline events for each rule above, and the
     fixture at the moment: version 2.1.0, #5 at 4.4, 4 delivered, 2 after delivery, 4.4 reviews
     passed 4 and sent back 0; with no `at`: 3.0.0, 5 stages, 8 delivered.
-- **3b. API**: `GET /api/projects/:id/workflow?at=ISO` in `server/src/daemon/http.ts` (400 on a bad
+- 🟩 **3b. API** (6973795): `GET /api/projects/:id/workflow?at=ISO` in `server/src/daemon/http.ts` (400 on a bad
   `at`, 404 for another project), `app.workflowPage(projectId, at?)` in `server/src/app.ts`; tests in
   `server/test/api/viewer-api.test.ts`.
-- **3c. The page, and the old viewer removed** (one commit, since removing views breaks old specs):
+- 🟩 **3c. The page, and the old viewer removed** (e1c8dc2):
   - route `#/p/:id/workflow[?at=]` in `viewer/src/router.ts`, the project link pointing to it,
     polling every 4 s only without `at`; `api.workflow` and the `WorkflowPage` type;
   - drawing parts in `viewer/src/ui/workflow/` (Stop, ItemBox, Ring, ReviewMarks, Key, Tip, Shell,
@@ -120,7 +120,7 @@ OK.
   - Defaults where the old code and the design disagree (say if not): dark only (the light theme and
     its test go); no refresh bar and no tabs; the drawing scales to the window instead of a fixed
     900 px.
-- **3d. Screenshot check**: a `@screens` Playwright spec at 1440x900, the fixed moment, fonts loaded,
+- 🟩 **3d. Screenshot check**: a `@screens` Playwright spec at 1440x900, the fixed moment, fonts loaded,
   saving the overview and a full-page shot to the git-ignored `test-results/`; the blind agents'
   questions committed next to it as a prompt file.
 - **Then**: blind agents read the built page against `docs/design/workflow.html`; `impeccable
