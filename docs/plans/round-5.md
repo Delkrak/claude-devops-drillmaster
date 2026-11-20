@@ -131,6 +131,24 @@ OK.
 - 🟩 **Owner reviewed the built page**: "looks good".
 
 ### 4. 🟧 "What happened to #N?" shaped and built, the same way
+Owner's answers: Owner opens #N when something went wrong, to check one in flight, and to study a
+finished one at a retrospective. The first screen is its route. Owner reaches it from the Workflow
+page, by typing #N, and from a list. Every detail is there, revealed one level at a time.
+- 🟧 **Mock** `.impeccable/mocks/work-item.html`, drawn from the fixture, two moments: #2 (a bug,
+  delivered, Owner stepped in after delivery) and #5 in flight at the Workflow mock's moment.
+  - First screen: the same line as the Workflow page with only #N's path lit: steps it passed
+    bright, steps it skipped faded with why, steps still ahead dim, where it is now, and where Owner
+    stepped in. Its issue, kind and status above the line.
+  - Drilling in, one level per click on a step: what happened (Agent's reports, the gate's
+    verdict and who gave it, a skip and why, Owner's input), then the evidence (what the tool
+    captures kept), then every tool call at that step.
+  - Ways in: on the Workflow page a box or ring opens the item, or a short list when it holds
+    several; `#` search in the header; a "Work items" list, latest first.
+- 🟧 **Blind agents** before Owner sees it: can they tell the route, the steps skipped and why, where
+  Owner stepped in, and drill one level at a time.
+- 🟧 **Owner decides**, then the mock is recorded in `docs/design/`, its brief written, and the page
+  built like step 3: a core function from the events (`workItemView` extended), its endpoint, the
+  page, tests, and the same checks.
 ### 5. 🟧 "Did the change help?" shaped and built, the same way
 ### 6. 🟧 "What's wrong in Drillmaster?" shaped and built, the same way
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
