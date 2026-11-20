@@ -82,7 +82,7 @@ OK.
   back to check all six blocks. The seed key under `.impeccable/questions/` stays uncommitted.
 - **PRODUCT.md** committed.
 
-### 3. 🟧 Build the Workflow view (four commits)
+### 3. 🟩 Build the Workflow view (d355990..17d7a3c)
 - 🟩 **3a. Core** (d355990): `server/src/core/workflowPage.ts`, `workflowPageView(events, at?)`, pure:
   - fold the events with `at <= T` using `foldState` (`core/state.ts`); the workflow at T;
   - stages and steps with `n`, `guid`, `name`, `gate`, `if`, and `alternative {input, value}` when
@@ -128,7 +128,7 @@ OK.
   keeps the page, opens at the top, the key names reviews passed and sent back, the tab icon not
   orange. Owner's answers built: overview rows jump to their stage, a past moment names itself,
   conditions in plain words, keyboard and touch reach every explanation.
-- 🟧 **Owner reviews the built page.**
+- 🟩 **Owner reviewed the built page**: "looks good".
 
 ### 4. 🟧 "What happened to #N?" shaped and built, the same way
 ### 5. 🟧 "Did the change help?" shaped and built, the same way
