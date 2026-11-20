@@ -25,6 +25,7 @@ export function WorkItemsPage({ id, at }: { id: string; at: string | null }) {
                   to={href.workItem(id, item.work_item_id, at)}
                   issue={item.issue}
                   kind={item.kind}
+                  summary={item.summary}
                   where={item.status === 'delivered' ? 'delivered' : item.at_step ? `at ${item.at_step}` : `started ${dayAndTime(item.started_at)}`}
                   delivered={item.status === 'delivered'}
                   friction={item.friction}

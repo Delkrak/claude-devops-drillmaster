@@ -170,6 +170,7 @@ test('lists the work items latest first, with where each is and how often Owner 
   const rows = page.getByTestId('item-row')
   await expect(rows).toHaveCount(8)
   await expect(rows.first()).toContainText('#8')
+  await expect(rows.filter({ hasText: '#2' })).toContainText('totalUnits(rows) in src/summary.js')
   const second = rows.filter({ hasText: '#2' })
   await expect(second).toContainText('1')
   await second.click()

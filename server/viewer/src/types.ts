@@ -91,6 +91,8 @@ export interface WorkItemsEntry {
   work_item_id: string
   issue: string
   kind: string | null
+  /** What it is about, in one line. */
+  summary: string
   status: 'active' | 'delivered'
   started_at: string
   at_step: string | null

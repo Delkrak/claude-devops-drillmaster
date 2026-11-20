@@ -75,7 +75,7 @@ describe('the work items list', () => {
   it('lists every work item latest first, with where it is and how often Owner stepped in', () => {
     const list = workItemsListView(fixture)
     expect(list.map((item) => item.issue)).toEqual(['#8', '#7', '#6', '#5', '#4', '#3', '#2', '#1'])
-    expect(list.find((item) => item.issue === '#2')).toMatchObject({ status: 'delivered', at_step: null, friction: 1 })
+    expect(list.find((item) => item.issue === '#2')).toMatchObject({ status: 'delivered', at_step: null, friction: 1, summary: 'totalUnits(rows) in src/summary.js sums row.price instead of row.units, so it returns the…' })
     expect(workItemsListView(fixture, MOMENT).find((item) => item.issue === '#5')).toMatchObject({ status: 'active', at_step: 'have the change reviewed' })
   })
 })

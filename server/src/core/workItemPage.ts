@@ -181,6 +181,17 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
   }
 }
 
+const SUMMARY_LENGTH = 90
+/** What a work item is about, in one line: its description up to the first sentence's end, without a leading "Bug:" or "Feature:". */
+const firstLineOf = (description: string) =>
+  shortened(
+    description
+      .split(/(?<=\.)\s|\n/)[0]!
+      .replace(/^\w+:\s*/, '')
+      .replace(/\.$/, ''),
+    SUMMARY_LENGTH,
+  )
+
 /** Every work item, latest first, with where it is: for the work items list and the find box. */
 export function workItemsListView(events: readonly DrillmasterEvent[], at?: string) {
   const seen = at ? events.filter((event) => event.at <= at) : events
@@ -197,6 +208,7 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
         work_item_id: item.work_item_id,
         issue: item.issue,
         kind: item.inputs.kind?.value ?? null,
+        summary: firstLineOf(item.description),
         status: item.status,
         started_at: item.started_at,
         at_step: step ? step.name : null,

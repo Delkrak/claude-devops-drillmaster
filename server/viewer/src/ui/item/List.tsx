@@ -3,10 +3,10 @@ import type { ReactNode } from 'react'
 import { colors, font, shape, space } from '../../styles/tokens.stylex'
 
 const styles = stylex.create({
-  list: { width: '100%', maxWidth: '640px', marginInline: 'auto', marginBlock: space.xxl, padding: 0, listStyle: 'none', fontFamily: font.sans },
+  list: { width: '100%', maxWidth: '900px', marginInline: 'auto', marginBlock: space.xxl, padding: 0, listStyle: 'none', fontFamily: font.sans },
   row: {
     display: 'grid',
-    gridTemplateColumns: '18px 72px 80px 1fr 32px',
+    gridTemplateColumns: '18px 56px 72px 1fr 200px 32px',
     alignItems: 'center',
     minHeight: '46px',
     columnGap: space.md,
@@ -24,6 +24,7 @@ const styles = stylex.create({
   dotDelivered: { backgroundColor: colors.dim },
   issue: { fontSize: '17px', fontWeight: font.weightHeavy },
   kind: { color: colors.dim, fontSize: font.sizeMd, fontWeight: font.weightBold },
+  summary: { color: colors.line, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   where: { color: colors.dim, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   ring: {
     boxSizing: 'border-box',
@@ -47,14 +48,17 @@ export const ItemList = ({ label, children }: { label: string; children: ReactNo
   </ul>
 )
 
-/** One work item in the list: its dot (dim once delivered), number, kind, where it is, and how often Owner stepped in. */
-export function ItemRow({ to, issue, kind, where, delivered, friction }: { to: string; issue: string; kind: string | null; where: ReactNode; delivered: boolean; friction: number }) {
+/** One work item in the list: its dot (dim once delivered), number, kind, what it is about, where it is, and how often Owner stepped in. */
+export function ItemRow({ to, issue, kind, summary, where, delivered, friction }: { to: string; issue: string; kind: string | null; summary: string; where: ReactNode; delivered: boolean; friction: number }) {
   return (
     <li>
       <a href={to} data-testid="item-row" {...stylex.props(styles.row)}>
         <span aria-hidden {...stylex.props(styles.dot, delivered && styles.dotDelivered)} />
         <span {...stylex.props(styles.issue)}>{issue}</span>
         <span {...stylex.props(styles.kind)}>{kind}</span>
+        <span title={summary} {...stylex.props(styles.summary)}>
+          {summary}
+        </span>
         <span {...stylex.props(styles.where)}>{where}</span>
         {friction > 0 ? (
           <span data-tip={`you stepped in ${friction === 1 ? 'once' : `${friction} times`}`} aria-label={`you stepped in ${friction} times`} {...stylex.props(styles.ring)}>
