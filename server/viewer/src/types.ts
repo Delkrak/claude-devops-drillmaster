@@ -80,7 +80,7 @@ export interface WorkItemPage {
   status: 'active' | 'delivered'
   workflow_version: string
   stages: { n: number; guid: string; name: string; steps: WorkItemPageStep[] }[]
-  delivered: { at: string; summary: string | null; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
+  delivered: { at: string; summary: string | null; added_steps: { at: string; text: string; why: string }[]; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
   step_ins_unplaced: StepIn[]
 }
 

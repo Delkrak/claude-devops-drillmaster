@@ -49,7 +49,7 @@ export interface WorkItemPage {
   status: 'active' | 'delivered'
   workflow_version: string
   stages: { n: number; guid: string; name: string; steps: WorkItemPageStep[] }[]
-  delivered: { at: string; summary: string | null; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
+  delivered: { at: string; summary: string | null; added_steps: { at: string; text: string; why: string }[]; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
   step_ins_unplaced: StepIn[]
 }
 
@@ -181,6 +181,7 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
       ? {
           at: delivery.at,
           summary: delivery.summary ?? null,
+          added_steps: itemEvents.flatMap((event) => (event.type === 'work_reported' && event.kind === 'added_step' ? [{ at: event.at, text: event.text, why: event.why ?? '' }] : [])),
           post_mortems: itemEvents.flatMap((event) => (event.type === 'post_mortem_written' ? [{ author: event.author, keep: event.keep.map((feedback) => feedback.text), change: event.change.map((feedback) => feedback.text) }] : [])),
         }
       : null,

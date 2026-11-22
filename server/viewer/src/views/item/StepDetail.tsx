@@ -126,6 +126,13 @@ export function DeliveryDetail({ delivered }: { delivered: NonNullable<WorkItemP
       <Level>
         <Label>delivered · {timeOfDay(delivered.at)}</Label>
         {delivered.summary && <Para>{delivered.summary}</Para>}
+        {delivered.added_steps.map((addedStep) => (
+          <Fragment key={addedStep.at}>
+            <Label tone="sand">added after delivery · {timeOfDay(addedStep.at)}</Label>
+            <Para>{addedStep.text}</Para>
+            {addedStep.why && <Para quiet>{addedStep.why}</Para>}
+          </Fragment>
+        ))}
         {delivered.post_mortems.map((postMortem) => (
           <Fragment key={postMortem.author}>
             <Label>{postMortem.author === 'drillmaster' ? 'Drillmaster' : 'Agent'}: keep</Label>

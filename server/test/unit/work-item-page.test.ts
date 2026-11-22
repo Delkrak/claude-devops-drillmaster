@@ -93,6 +93,12 @@ describe('the work item page', () => {
     ])
   })
 
+  it('shows the work Agent added after delivery, with the correction that asked for it', () => {
+    const id = idOf('#2')
+    const addedStep = { id: 'ev_added', at: '2026-11-20T18:58:00.000Z', type: 'work_reported', work_item_id: id, stage: null, step: null, kind: 'added_step', text: 'Showed the failing test output.', why: 'Owner asked to see it.' } as DrillmasterEvent
+    expect(workItemPageView([...fixture, addedStep], id)!.delivered!.added_steps).toEqual([{ at: '2026-11-20T18:58:00.000Z', text: 'Showed the failing test output.', why: 'Owner asked to see it.' }])
+  })
+
   it('has no page for a work item it does not know', () => {
     expect(workItemPageView(fixture, 'wi_unknown')).toBeUndefined()
   })
