@@ -9,4 +9,4 @@ phase's commit when the phase is done, and the status below follows.
 | 2 | [round-2.md](round-2.md): what the simulations taught us | built, local | 5f0ccb1..50bc9ba |
 | 3 | [round-3.md](round-3.md): what reviewing round 2 decided | built, local | d733b35..42d2693 |
 | 4 | [round-4.md](round-4.md): what the round-3 feedback decided | built, local; the viewer for people is left for a later round | e393637..957a20b |
-| 5 | [round-5.md](round-5.md): a viewer built from stories, checked by blind agents | in progress, local | |
+| 5 | [round-5.md](round-5.md): a viewer built from stories, checked by blind agents | built, local | |

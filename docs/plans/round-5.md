@@ -196,15 +196,19 @@ conditions keep their brackets; this table follows the work.
 ### 8. 🟩 Owner's review
 Owner walked the stories in the new viewer: ok. The round-4 review goes on through it.
 
-### 9. 🟥 Finish
-DESIGN.md rewritten from the built viewer (`impeccable document`, with tokens and
-`.impeccable/design.json`); a clean-code pass; local CI on Windows and on Linux in Docker; docs; the
-plans marked built.
+### 9. 🟩 Finish
+- 🟩 DESIGN.md rewritten from the built viewer, with its tokens, and `.impeccable/design.json` (c749c16).
+- 🟩 A clean-code pass on the round's code (333ad9f).
+- 🟩 Docs: the README's viewer section and Drillmaster's new judgements (ff44bc0); work added after
+  delivery shows under the delivery, as the README says (9ecfa3b).
+- 🟩 Local CI on 9ecfa3b: Windows, and Linux in Docker on Node 22 and 24, 305 tests each; the
+  browser tests on Linux, 22.
+- 🟩 The plans marked built.
 
 ## Verification
 
-- 🟧 Each story's mock passes its blind tests before Owner sees it, and Owner accepts it.
-- 🟧 Each built view: unit, API and Playwright tests green; its blind tests on the built page match
-  the mock's; Owner accepts it.
-- 🟧 The fixture holds no user name or home path.
-- 🟥 Local CI on Windows and on Linux in Docker.
+- 🟩 Each story's mock (or, from story 5 on, its built page) passed a blind read, and Owner accepted it.
+- 🟩 Each built view: unit, API and Playwright tests green; a blind read of the built page; Owner
+  accepted it.
+- 🟩 The fixture holds no user name or home path.
+- 🟩 Local CI on Windows and on Linux in Docker.
