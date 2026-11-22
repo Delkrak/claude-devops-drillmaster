@@ -1,0 +1,30 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "f4529894-f7fa-4613-b649-0ffdabddde8a",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\f4529894-f7fa-4613-b649-0ffdabddde8a.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "184e665d-15de-4874-ab5a-ffa7f7b0b5fd",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_status",
+    "tool_input": {
+      "token": "[redacted]"
+    },
+    "tool_response": [
+      {
+        "type": "text",
+        "text": "{\n  \"work_item_id\": \"wi_b8a7cd1d\",\n  \"issue\": \"#1\",\n  \"workflow_version\": \"0.0.0\",\n  \"status\": \"active\",\n  \"stage\": null,\n  \"step\": null,\n  \"pending_gate\": null,\n  \"gates_done\": true,\n  \"pr\": null,\n  \"sessions\": [\n    \"f4529894-f7fa-4613-b649-0ffdabddde8a\"\n  ],\n  \"traces\": 2,\n  \"reports\": 0,\n  \"rejections\": 0,\n  \"post_mortems\": [],\n  \"description\": \"Add a CONTRIBUTING.md. The project has no contributor guide yet. Expected result: a CONTRIBUTING.md at the repository root that tells contributors how to set up, make changes, and submit them.\",\n  \"inputs\": {},\n  \"passed_steps\": [],\n  \"skipped_steps\": [],\n  \"pending_skip\": null,\n  \"last_update\": null,\n  \"session_stages\": \"every stage\",\n  \"last_verdict\": null\n}"
+      }
+    ],
+    "tool_use_id": "toolu_018gGtqbvapQj9BVAcWGMaYU",
+    "duration_ms": 14,
+    "mcp_server": {
+      "name": "plugin:devops-drillmaster:drillmaster",
+      "source": "plugin"
+    }
+  }
+}

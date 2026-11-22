@@ -1,0 +1,307 @@
+{
+  "name": "pipeline-bugs-and-features",
+  "project": "node-report",
+  "objective": "fix bugs and ship features without Owner stepping in",
+  "measures": [
+    "owner_friction_per_item",
+    "gate_rejections_per_item"
+  ],
+  "expects": {
+    "input": "kind",
+    "condition_skip": true,
+    "capture": "tests",
+    "friction": true
+  },
+  "files": {
+    "src/summary.js": "import { revenue } from './report.js'\n\n// Summaries of the report rows.\n\nexport const totalUnits = (rows) => rows.reduce((sum, row) => sum + row.price, 0)\n\nexport const topProduct = (rows) => [...rows].sort((a, b) => revenue(a) - revenue(b))[0].product\n\nexport const averagePrice = (rows) => rows.reduce((sum, row) => sum + row.price, 0) / (rows.length + 1)\n\nexport const formatMoney = (amount) => `$${amount}`\n"
+  },
+  "seed_workflow": {
+    "version": "1.0.0",
+    "stages": [
+      {
+        "n": 1,
+        "name": "capture",
+        "purpose": "everyone knows what is wrong or wanted",
+        "steps": [
+          {
+            "n": 1,
+            "name": "write down what is wrong or wanted",
+            "instruction": "Read the issue and the code it is about. Report what is wrong (for a bug) or wanted (for a feature), and report each point the issue leaves open as an assumption. Set user_visible: does someone reading the report see the change?",
+            "gate": "self",
+            "rules": [],
+            "report": [
+              "what is wrong or wanted"
+            ]
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "name": "refine",
+        "purpose": "the work is understood before it is built",
+        "steps": [
+          {
+            "n": 1,
+            "name": "find the cause",
+            "instruction": "Find the line that causes the bug, and say why it is wrong and what it should do.",
+            "gate": "self",
+            "rules": [],
+            "report": [
+              "the line, why it is wrong, and what it should do"
+            ],
+            "if": "kind == 'bug'"
+          },
+          {
+            "n": 2,
+            "name": "write the spec",
+            "instruction": "Write docs/spec-<issue number>.md: what changes, an example of input and output, and each choice the issue leaves open with what you chose. Hand in the gate with the spec's main points: Owner approves it.",
+            "gate": "owner",
+            "rules": [
+              "spec 1.1"
+            ],
+            "report": [
+              "the spec's main points, and the choices it makes"
+            ],
+            "if": "kind == 'feature'"
+          }
+        ]
+      },
+      {
+        "n": 3,
+        "name": "build",
+        "purpose": "the change is made, with tests",
+        "steps": [
+          {
+            "n": 1,
+            "name": "reproduce the bug with a failing test",
+            "instruction": "Write a test under test/ that fails because of the bug, and run npm test to show it failing.",
+            "gate": "self",
+            "rules": [
+              "test 1.2"
+            ],
+            "report": [
+              "the failing test, and the npm test run that shows it"
+            ],
+            "if": "kind == 'bug'"
+          },
+          {
+            "n": 2,
+            "name": "write the code and its tests",
+            "instruction": "Make the change, with tests under test/. Run npm test until it is green.",
+            "gate": "self",
+            "rules": [
+              "test 1.1"
+            ],
+            "report": [
+              "what changed"
+            ]
+          },
+          {
+            "n": 3,
+            "name": "document it for users",
+            "instruction": "Say in README.md what users can now do, or what changed for them.",
+            "gate": "self",
+            "rules": [],
+            "report": [
+              "what README.md now says"
+            ],
+            "if": "kind == 'feature' || user_visible == 'yes'"
+          }
+        ]
+      },
+      {
+        "n": 4,
+        "name": "test",
+        "purpose": "the change is shown to work",
+        "steps": [
+          {
+            "n": 1,
+            "name": "run the full suite",
+            "instruction": "Run npm test once more. The workflow's tool capture keeps its totals and any failing test: name the run in your self check.",
+            "gate": "self",
+            "rules": [
+              "test 1.1"
+            ],
+            "report": [
+              "the totals"
+            ]
+          },
+          {
+            "n": 2,
+            "name": "check the spec's examples by hand",
+            "instruction": "Run each example in the spec with node -e, and compare what it prints with the spec.",
+            "gate": "self",
+            "rules": [],
+            "report": [
+              "each example and what it printed"
+            ],
+            "if": "kind == 'feature'"
+          },
+          {
+            "n": 3,
+            "name": "show the bug is fixed",
+            "instruction": "Run the test from step 3.1 again, and show that it passes now.",
+            "gate": "self",
+            "rules": [],
+            "report": [
+              "the test, passing"
+            ],
+            "if": "kind == 'bug'"
+          }
+        ]
+      }
+    ],
+    "policies": [
+      {
+        "name": "test",
+        "rules": [
+          {
+            "id": "1.1",
+            "rule": "every change has a test, and npm test is green",
+            "verified_by": "the npm test totals the tool capture kept"
+          },
+          {
+            "id": "1.2",
+            "rule": "a bug fix starts with a test that fails because of the bug",
+            "verified_by": "the failing npm test run, before the fix"
+          }
+        ]
+      },
+      {
+        "name": "spec",
+        "rules": [
+          {
+            "id": "1.1",
+            "rule": "the spec says what changes, gives an example, and lists the choices the issue leaves open",
+            "verified_by": "reading the spec"
+          }
+        ]
+      }
+    ],
+    "inputs": [
+      {
+        "name": "kind",
+        "options": [
+          {
+            "value": "bug",
+            "description": "existing behaviour is wrong"
+          },
+          {
+            "value": "feature",
+            "description": "new behaviour"
+          }
+        ],
+        "set_at": "start",
+        "by": "agent",
+        "instruction": "Is this work item a bug fix or a feature?"
+      },
+      {
+        "name": "user_visible",
+        "options": [
+          {
+            "value": "yes",
+            "description": "someone reading the report sees the change"
+          },
+          {
+            "value": "no",
+            "description": "nothing a reader of the report sees changes"
+          }
+        ],
+        "set_at": "1.1",
+        "by": "agent",
+        "instruction": "Does someone reading the report see the change?"
+      }
+    ],
+    "tool_captures": [
+      {
+        "name": "tests",
+        "command": "npm (run )?test|node --test",
+        "keep": "|~ `^(# |ℹ )(tests|pass|fail) ` | pattern `<_> <what> <count>`"
+      },
+      {
+        "name": "failures",
+        "command": "npm (run )?test|node --test",
+        "keep": "|~ `^\\s*(not ok|✖)`"
+      }
+    ],
+    "experiments": []
+  },
+  "issues": [
+    {
+      "id": "#1",
+      "text": "Feature: add a toCsv(rows) function in src/csv.js that turns the report rows into CSV with a header line."
+    },
+    {
+      "id": "#2",
+      "text": "Bug: totalUnits(rows) in src/summary.js returns the sum of the prices, not of the units."
+    },
+    {
+      "id": "#3",
+      "text": "Feature: add a byRegion(rows) function in src/regions.js that returns the revenue of each region."
+    },
+    {
+      "id": "#4",
+      "text": "Bug: topProduct(rows) in src/summary.js returns the product with the least revenue instead of the most."
+    },
+    {
+      "id": "#5",
+      "text": "Feature: add a toJson(rows) function in src/json.js that returns the rows as pretty-printed JSON, with revenue added to each row."
+    },
+    {
+      "id": "#6",
+      "text": "Bug: averagePrice(rows) in src/summary.js is too low: it divides by one more than the number of rows."
+    },
+    {
+      "id": "#7",
+      "text": "Feature: add a byProduct(rows) function in src/products.js that returns the units sold of each product."
+    },
+    {
+      "id": "#8",
+      "text": "Bug: formatMoney(amount) in src/summary.js shows 2.5 as $2.5 instead of $2.50."
+    }
+  ],
+  "hidden_rules": [
+    "Every change adds one line to CHANGES.md saying what changed.",
+    "A bug fix comes with a test that failed before the fix, and Agent shows that it failed."
+  ],
+  "retro_after": [
+    3,
+    6,
+    8
+  ],
+  "max_turns_per_issue": 8,
+  "scripted": {
+    "issues": [
+      [
+        "Please do issue #1 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).",
+        "Add a line to CHANGES.md saying what changed."
+      ],
+      [
+        "Please do issue #2 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR).",
+        "Add a line to CHANGES.md, like last time."
+      ],
+      [
+        "Please do issue #3 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ],
+      [
+        "Please do issue #4 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ],
+      [
+        "Please do issue #5 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ],
+      [
+        "Please do issue #6 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ],
+      [
+        "Please do issue #7 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ],
+      [
+        "Please do issue #8 with the drillmaster work skill: {text} Deliver it as pr \"local\" (no real PR)."
+      ]
+    ],
+    "retro": [
+      "Let's do a workflow retrospective with the drillmaster retrospective skill.",
+      "Please ask me about each proposal in the form."
+    ]
+  }
+}

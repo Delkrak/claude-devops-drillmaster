@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+
+import { spawn } from 'node:child_process'
+import { parseArgs } from 'node:util'
+import { defaultFolderOf } from './adapters/projects.js'
+import { requestJson } from './client.js'
+import { runDaemon } from './daemon/main.js'
+import { runShim } from './mcp/shim.js'
+import { projectToServe } from './projectLocator.js'
+import { findOrStartProjectServer, upgradeProject } from './projectServer.js'
+import { VERSION } from './version.js'
+
+const USAGE = `drillmaster ${VERSION}
+
+Usage:
+  drillmaster daemon --key <project>    Run the server of one project (the plugin starts it).
+  drillmaster mcp                       Run the stdio MCP server for Claude Code.
+  drillmaster init --objective <text> --measure <name> [--measure <name>] --repository <git url> [--folder <name>] [--project <dir>]
+                                        Set the project up: workflow 0.0.0 from Owner's objective, kept in
+                                        the folder of the Drillmaster repository, named in .drillmaster.
+  drillmaster inspect [--project <dir>] [--json]
+                                        Show the project's events and folded state.
+  drillmaster open [--project <dir>]    Open the project's read-only viewer in the browser.
+  drillmaster upgrade [--to <version>] [--project <dir>]
+                                        Pin the project to a Drillmaster version (default: this one's,
+                                        ${VERSION}): pushed to the Drillmaster repository's main first,
+                                        then the running server stops, so the next session starts it.
+
+Environment:
+  DRILLMASTER_HOME      Where the server keeps its port file, events and repository clones (default ~/.drillmaster).
+  DRILLMASTER_REVIEWER  claude (default) | scripted:<file> | none
+  DRILLMASTER_CLAUDE    the claude executable for the reviewer (default: claude)
+  DRILLMASTER_REVIEW_MODEL, DRILLMASTER_REVIEW_TIMEOUT (seconds per attempt, default 90),
+  DRILLMASTER_REVIEW_ATTEMPTS (default 2)
+  DRILLMASTER_CLOCK     system | fixed:<iso time>
+  DRILLMASTER_RECORD    1 keeps raw hook payloads in the work traces, for test fixtures.
+`
+
+async function runCommand(argv: string[]) {
+  const [command, ...commandArgs] = argv
+  switch (command) {
+    case 'daemon': {
+      const { values } = parseArgs({ args: commandArgs, options: { key: { type: 'string' } } })
+      if (!values.key) throw new Error(`daemon needs --key: the project it serves.\n\n${USAGE}`)
+      return runDaemon(values.key)
+    }
+    case 'mcp':
+      return runShim()
+    case 'init': {
+      const { values } = parseArgs({
+        args: commandArgs,
+        options: {
+          objective: { type: 'string' },
+          measure: { type: 'string', multiple: true },
+          repository: { type: 'string' },
+          folder: { type: 'string' },
+          project: { type: 'string' },
+        },
+      })
+      if (!values.objective || !values.measure?.length || !values.repository) throw new Error(`init needs --objective, at least one --measure, and --repository.\n\n${USAGE}`)
+      const projectDir = values.project ?? process.cwd()
+      const project = projectToServe(projectDir, { url: values.repository, folder: values.folder ?? defaultFolderOf(projectDir) })!
+      const url = await findOrStartProjectServer(project)
+      const { workflow } = await requestJson<{ workflow: unknown }>(url, 'POST', '/projects/init', {
+        project: projectDir,
+        objective: { text: values.objective, measures: values.measure },
+        drillmaster_repository: values.repository,
+        ...(values.folder ? { folder: values.folder } : {}),
+      })
+      console.log(JSON.stringify(workflow, null, 2))
+      return
+    }
+    case 'inspect': {
+      const { values } = parseArgs({ args: commandArgs, options: { project: { type: 'string' }, json: { type: 'boolean' } } })
+      const projectDir = values.project ?? process.cwd()
+      const url = await findOrStartProjectServer(requireProject(projectDir))
+      const inspection = await requestJson<{ events: unknown[]; state: unknown }>(url, 'GET', `/state?idle=1&project=${encodeURIComponent(projectDir)}`)
+      if (values.json) console.log(JSON.stringify(inspection, null, 2))
+      else console.log(`${inspection.events.length} events\n\n${JSON.stringify(inspection.state, null, 2)}`)
+      return
+    }
+    case 'open': {
+      const { values } = parseArgs({ args: commandArgs, options: { project: { type: 'string' } } })
+      const url = await findOrStartProjectServer(requireProject(values.project ?? process.cwd()))
+      console.log(`Drillmaster viewer: ${url}/`)
+      openInBrowser(`${url}/`)
+      return
+    }
+    case 'upgrade': {
+      const { values } = parseArgs({ args: commandArgs, options: { to: { type: 'string' }, project: { type: 'string' } } })
+      const { project, version, stopped } = await upgradeProject(values.project ?? process.cwd(), values.to ?? VERSION)
+      console.log(`Pinned Drillmaster ${version} in ${project.place.url} (${project.place.folder}/drillmaster.json).${stopped ? ' The running server stopped;' : ''} The next session starts ${version}.`)
+      return
+    }
+    case undefined:
+    case '--help':
+    case 'help':
+      console.log(USAGE)
+      return
+    case '--version':
+      console.log(VERSION)
+      return
+    default:
+      throw new Error(`Unknown command: ${command}\n\n${USAGE}`)
+  }
+}
+
+function requireProject(projectDir: string) {
+  const project = projectToServe(projectDir)
+  if (!project) throw new Error(`${projectDir} is not a Drillmaster project: it has no .drillmaster file. Set it up with /devops-drillmaster:setup, or drillmaster init.`)
+  return project
+}
+
+function openInBrowser(url: string) {
+  const [opener, openerArgs] =
+    process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]]
+  spawn(opener, openerArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+}
+
+runCommand(process.argv.slice(2)).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error)
+  // Not process.exit(): on Windows it can abort while fetch's sockets are still closing.
+  process.exitCode = 1
+})

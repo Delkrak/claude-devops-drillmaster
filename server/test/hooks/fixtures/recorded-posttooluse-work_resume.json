@@ -1,0 +1,30 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "8e04e001-cf17-4b9a-a92a-2379f790bf38",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\8e04e001-cf17-4b9a-a92a-2379f790bf38.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "e289983a-505c-4f91-b4ee-b211506ac849",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_resume",
+    "tool_input": {
+      "issue": "#1"
+    },
+    "tool_response": [
+      {
+        "type": "text",
+        "text": "# Work item wi_b8a7cd1d resumed: #1\n\nwork_item_id: wi_b8a7cd1d\nagent_token: [redacted]\n\nThis token replaces the earlier one, which no longer works. Keep it to yourself, and pass it to every work tool.\nWorkflow version 0.0.0. This session works on every stage, and stops when the last of them is done.\n\n**This session's work stages** (each step's instruction comes when you reach it):\n\nEvery work gate has passed. Deliver with `work_deliver` (pr, summary, and any artifacts such as screenshots)."
+      }
+    ],
+    "tool_use_id": "toolu_01M1UKhdwSxvmTF5zEBeTyDt",
+    "duration_ms": 18,
+    "mcp_server": {
+      "name": "plugin:devops-drillmaster:drillmaster",
+      "source": "plugin"
+    }
+  }
+}

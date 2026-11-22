@@ -1,0 +1,31 @@
+{
+  "event": "PostToolUse",
+  "payload": {
+    "session_id": "f4529894-f7fa-4613-b649-0ffdabddde8a",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\f4529894-f7fa-4613-b649-0ffdabddde8a.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "184e665d-15de-4874-ab5a-ffa7f7b0b5fd",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "mcp__plugin_devops-drillmaster_drillmaster__work_start",
+    "tool_input": {
+      "issue": "#1",
+      "description": "Add a CONTRIBUTING.md. The project has no contributor guide yet. Expected result: a CONTRIBUTING.md at the repository root that tells contributors how to set up, make changes, and submit them."
+    },
+    "tool_response": [
+      {
+        "type": "text",
+        "text": "# Work item wi_b8a7cd1d started: #1\n\nwork_item_id: wi_b8a7cd1d\nagent_token: [redacted]\n\nKeep the token to yourself, and pass it to every work tool. Report as you go with `work_report`.\nWorkflow version 0.0.0.\n\nThe workflow has no work stages yet: do your best, and Owner will step in where needed. Deliver with `work_deliver` when the work is done."
+      }
+    ],
+    "tool_use_id": "toolu_01Wj5hx2WKp6G72EmWbW3dyM",
+    "duration_ms": 12,
+    "mcp_server": {
+      "name": "plugin:devops-drillmaster:drillmaster",
+      "source": "plugin"
+    }
+  }
+}

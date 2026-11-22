@@ -1,0 +1,50 @@
+{
+  "name": "claude-devops-drillmaster",
+  "version": "0.3.0",
+  "description": "The Drillmaster server: stores work traces, work reports and the workflow, and runs the work gates, for the devops-drillmaster Claude Code plugin.",
+  "license": "MIT",
+  "author": "delkrak",
+  "type": "module",
+  "bin": {
+    "drillmaster": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build --config viewer/vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p viewer/tsconfig.json",
+    "viewer:dev": "vite --config viewer/vite.config.ts",
+    "test:viewer": "playwright test",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:api": "vitest run test/api",
+    "test:mcp": "vitest run test/mcp",
+    "test:plugin": "vitest run test/plugin",
+    "sim": "npm run build && tsx test/sim/run.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@fontsource/barlow": "5.3.0",
+    "@fontsource/big-shoulders-stencil-display": "5.3.0",
+    "@playwright/test": "1.65.0",
+    "@stylexjs/stylex": "0.19.1",
+    "@stylexjs/unplugin": "0.19.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}

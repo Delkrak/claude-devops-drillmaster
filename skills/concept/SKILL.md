@@ -62,7 +62,7 @@ The workflow defines how work gets done. It contains:
 
 It is a self-improving process: every work item it delivers can make it better. The first workflow
 holds only Owner's objective, with no work stages, work policies or workflow experiments yet. Agent
-does its best, Owner corrects its mistakes, and the workflow grows from those corrections.
+does its best, Owner steps in where it falls short, and the workflow grows from that.
 
     (work, workflow_next) = f(work item | workflow, Owner input)
 
@@ -72,11 +72,12 @@ does its best, Owner corrects its mistakes, and the workflow grows from those co
 >     workflow_0 = {Owner's objective}
 >     (work_1, workflow_1) = f(work item_1 | workflow_0, "you never ran the tests")
 >     (work_2, workflow_2) = f(work item_2 | workflow_1, "the PR doesn't say what it changes")
->     (work_3, workflow_3) = f(work item_3 | workflow_2, no corrections)
+>     (work_3, workflow_3) = f(work item_3 | workflow_2, Owner never steps in)
 >
-> Each correction becomes a workflow change at the next workflow retrospective. `workflow_1` adds
-> work stage **1** with work step **1.1**, *run the tests*. `workflow_2` adds work step **1.2**,
-> *say what the pull request changes*. `workflow_3` is `workflow_2`: nothing needed correcting.
+> Each time Owner steps in, that becomes a workflow change at the next workflow retrospective.
+> `workflow_1` adds work stage **1** with work step **1.1**, *run the tests*. `workflow_2` adds work
+> step **1.2**, *say what the pull request changes*. `workflow_3` is `workflow_2`: Owner didn't need
+> to step in.
 
 ### 1. Owner's objective
 
@@ -84,7 +85,8 @@ Owner's objective is what Owner wants Drillmaster to achieve with the workflow. 
 as one or more measures.
 
 > *Example:* the objective "ship features without Owner stepping in" might be measured by how
-> many work items reach review without a correction.
+> many work items reach review without Owner stepping in: the Owner inputs a separate judge calls
+> friction.
 
 ### 2. Work execution
 
@@ -145,8 +147,8 @@ impediment, and the work gate decides which work step or work stage the work goe
 
 #### Work trace
 
-The work traces are the ledger of the work: every action Agent takes, every instruction and
-correction Owner gives, and every work gate's verdict. They are recorded automatically, independent
+The work traces are the ledger of the work: every action Agent takes, every input Owner gives, and
+every work gate's verdict. They are recorded automatically, independent
 of Agent, and Agent can't change them. Drillmaster uses them for evaluation, and the objective's
 measures are computed from them.
 
@@ -185,7 +187,7 @@ work traces for further investigation. Its outcome is workflow changes.
 > work policy (*the spec names the parts it reuses*). Owner approves it, so the workflow now holds
 > Owner's objective, the work stages and their work steps, the work policies with the new rule, and
 > this workflow experiment. Drillmaster watches the next work items. At the next workflow
-> retrospective, the impediment is gone and corrections dropped without slowing delivery: keep the
+> retrospective, the impediment is gone and Owner steps in less, without slowing delivery: keep the
 > rule. Otherwise: rethink it.
 
 #### Workflow experiment

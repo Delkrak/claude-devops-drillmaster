@@ -1,0 +1,20 @@
+{
+  "event": "PreToolUse",
+  "payload": {
+    "session_id": "8e04e001-cf17-4b9a-a92a-2379f790bf38",
+    "transcript_path": "/home/user\\.claude\\projects\\C--Users-user--claude-jobs-7f73c306-tmp-rec4-project\\8e04e001-cf17-4b9a-a92a-2379f790bf38.jsonl",
+    "cwd": "/home/user\\.claude\\jobs\\7f73c306\\tmp\\rec4\\project",
+    "prompt_id": "e289983a-505c-4f91-b4ee-b211506ac849",
+    "permission_mode": "auto",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "ToolSearch",
+    "tool_input": {
+      "query": "select:mcp__plugin_devops-drillmaster_drillmaster__work_resume,mcp__plugin_devops-drillmaster_drillmaster__work_status",
+      "max_results": 2
+    },
+    "tool_use_id": "toolu_01LN2wNJwV8EcWDNi8EHFWdJ"
+  }
+}

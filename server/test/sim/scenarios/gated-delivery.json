@@ -1,0 +1,113 @@
+{
+  "name": "gated-delivery",
+  "project": "node-report",
+  "objective": "ship features Owner has reviewed, without Owner having to correct them",
+  "measures": ["owner_friction_per_item", "gate_rejections_per_item"],
+  "origin": true,
+  "extra_tools": ["Bash(git:*)", "Bash(npm:*)"],
+  "prepared_branch": {
+    "name": "issue-5",
+    "message": "Add median(rows), with its test",
+    "files": {
+      "src/median.js": "/** Returns the median revenue (units times price) of the rows. */\nexport function median(rows) {\n  const revenues = rows.map((row) => row.units * row.price).sort((a, b) => a - b)\n  const middle = Math.floor(revenues.length / 2)\n  return revenues.length % 2 ? revenues[middle] : (revenues[middle - 1] + revenues[middle]) / 2\n}\n",
+      "test/median.test.js": "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { median } from '../src/median.js'\n\ntest('median of an odd number of rows', () => {\n  assert.equal(median([{ units: 1, price: 1 }, { units: 2, price: 1 }, { units: 3, price: 1 }]), 2)\n})\n"
+    }
+  },
+  "seed_workflow": {
+    "version": "1.0.0",
+    "stages": [
+      {
+        "n": 1,
+        "name": "build",
+        "purpose": "the change works and is tested",
+        "steps": [
+          {
+            "n": 1,
+            "name": "write the code and its test",
+            "instruction": "Write the function, and a test for it under test/. Run npm test until it is green.",
+            "gate": "self",
+            "rules": ["test 1.1"],
+            "report": ["the test output"]
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "name": "deliver",
+        "purpose": "Owner reviews the change, and it lands on main",
+        "steps": [
+          {
+            "n": 1,
+            "name": "push a branch",
+            "instruction": "Commit the change on a branch named issue-<number>, and push the branch to origin.",
+            "gate": "self",
+            "rules": ["git 1.1"],
+            "report": ["the branch name"]
+          },
+          {
+            "n": 2,
+            "name": "Owner review",
+            "instruction": "Show Owner the branch: what changed, and how it was tested. Then ask Owner to approve it.",
+            "gate": "owner",
+            "rules": ["test 1.1", "git 1.1"],
+            "report": ["what Owner should look at"]
+          },
+          {
+            "n": 3,
+            "name": "merge",
+            "instruction": "Merge the branch into main, and push main to origin.",
+            "gate": "self",
+            "rules": ["git 1.2"],
+            "report": ["the merge commit"]
+          }
+        ]
+      }
+    ],
+    "policies": [
+      { "name": "test", "rules": [{ "id": "1.1", "rule": "every new function has a test under test/, and npm test passes", "verified_by": "the npm test output" }] },
+      {
+        "name": "git",
+        "rules": [
+          { "id": "1.1", "rule": "the change is on its own branch, pushed to origin", "verified_by": "git log origin/<branch>" },
+          { "id": "1.2", "rule": "main on origin holds the change", "verified_by": "git log origin/main" }
+        ]
+      }
+    ],
+    "inputs": [
+      {
+        "name": "size",
+        "options": [
+          { "value": "small", "description": "one function and its test" },
+          { "value": "large", "description": "more than one function, or changes to existing ones" }
+        ],
+        "set_at": "1.1",
+        "by": "agent",
+        "instruction": "How big is the change?"
+      }
+    ],
+    "experiments": []
+  },
+  "issues": [
+    { "id": "#1", "text": "Add a byRegion(rows) function in src/regions.js that groups the rows by region." },
+    { "id": "#2", "text": "Add a topProduct(rows) function in src/top.js that returns the product with the most revenue." },
+    { "id": "#3", "text": "Add an avgPrice(rows) function in src/avg.js." },
+    { "id": "#4", "text": "Add a totals(rows) function in src/totals.js that returns total units and total revenue." },
+    { "id": "#5", "text": "Add a median(rows) function in src/median.js that returns the median revenue." }
+  ],
+  "hidden_rules": [
+    "Every exported function has a JSDoc comment saying what it returns.",
+    "Every change adds one line to CHANGES.md saying what changed."
+  ],
+  "retro_after": [2, 4],
+  "max_turns_per_issue": 8,
+  "scripted": {
+    "issues": [
+      ["Please do issue {id} with the drillmaster work skill: {text}", "It needs a JSDoc comment saying what it returns, and a line in CHANGES.md.", "Looks good."],
+      ["Please do issue {id} with the drillmaster work skill: {text}", "Add the CHANGES.md line, like last time.", "Looks good."],
+      ["Please do issue {id} with the drillmaster work skill: {text}", "Looks good."],
+      ["Please do issue {id} with the drillmaster work skill: {text}", "Looks good."],
+      ["Please do issue {id} with the drillmaster work skill: {text} I already did the code in an earlier session: branch issue-5 is pushed to origin, with its test. Check it, then start the work item late, at the Owner review step, with that evidence.", "Looks good."]
+    ],
+    "retro": ["Let's do a workflow retrospective with the drillmaster retrospective skill.", "Please ask me about each proposal in the form."]
+  }
+}
