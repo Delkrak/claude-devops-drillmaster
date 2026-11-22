@@ -5,11 +5,12 @@ export type Route =
   | { page: 'workflow'; id: string; at: string | null }
   | { page: 'workItems'; id: string; at: string | null }
   | { page: 'changes'; id: string; at: string | null }
+  | { page: 'complaints'; id: string; at: string | null }
   | { page: 'workItem'; id: string; workItemId: string; at: string | null }
 
 /**
  * `#/p/<project>/workflow`, `#/p/<project>/items`, `#/p/<project>/items/<work item>` and
- * `#/p/<project>/changes`, each with
+ * `#/p/<project>/changes` and `#/p/<project>/complaints`, each with
  * `?at=<ISO time>`; any other project link opens the Workflow page.
  */
 export function parseRoute(hash: string): Route {
@@ -20,6 +21,7 @@ export function parseRoute(hash: string): Route {
   if (page === 'items' && workItemId) return { page: 'workItem', id, workItemId, at }
   if (page === 'items') return { page: 'workItems', id, at }
   if (page === 'changes') return { page: 'changes', id, at }
+  if (page === 'complaints') return { page: 'complaints', id, at }
   return { page: 'workflow', id, at }
 }
 
@@ -29,6 +31,7 @@ export const href = {
   home: () => '#/',
   workflow: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/workflow${moment(at)}`,
   changes: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/changes${moment(at)}`,
+  complaints: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/complaints${moment(at)}`,
   workItems: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items${moment(at)}`,
   workItem: (id: string, workItemId: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items/${encodeURIComponent(workItemId)}${moment(at)}`,
 }

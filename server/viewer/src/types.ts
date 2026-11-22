@@ -125,3 +125,17 @@ export interface ChangeRow {
   outcome: 'significant' | 'below target' | 'not significant' | 'insufficient data' | null
   edits: WorkflowEdit[]
 }
+
+/** One complaint about Drillmaster: who made it, on which work item, and what it says. */
+export interface Complaint {
+  at: string
+  source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in'
+  work_item_id: string
+  issue: string
+  text: string
+}
+
+export interface DrillmasterPage {
+  tools: { tool: string; complaints: Complaint[] }[]
+  uncovered: Complaint[]
+}

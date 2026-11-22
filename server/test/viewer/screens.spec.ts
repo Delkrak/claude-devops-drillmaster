@@ -68,3 +68,15 @@ test('the changes page @screens', async ({ page }) => {
   await page.getByTestId('change').nth(1).getByRole('button').click()
   await page.screenshot({ path: path.join(SCREENS, 'changes-1-opened.png') })
 })
+
+// What's wrong in Drillmaster: its tools by complaints, the first opened.
+test('the complaints page @screens', async ({ page }) => {
+  mkdirSync(SCREENS, { recursive: true })
+  const { project } = (await (await page.request.get(`${RUN_VIEWER}/api/served`)).json()) as { project: string }
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/complaints`)
+  await page.getByTestId('complaint-group').first().waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(SCREENS, 'complaints-0-list.png') })
+  await page.getByTestId('complaint-group').first().getByRole('button').click()
+  await page.screenshot({ path: path.join(SCREENS, 'complaints-1-opened.png') })
+})

@@ -196,6 +196,20 @@ test('lists the changes to the workflow, numbers first, and opens one to why it 
   await expect(detail).toContainText('changedstep 3.1reproduce the bug with a failing test')
 })
 
+test("ranks Drillmaster's tools by complaints, and opens one to every complaint with its work item", async ({ page }) => {
+  const project = await servedProject(page, RUN_VIEWER)
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow`)
+  await page.getByRole('link', { name: 'complaints' }).click()
+  const groups = page.getByTestId('complaint-group')
+  await expect(groups.getByTestId('heard')).toHaveText(['7', '3', '2', '1', '1'])
+  await expect(groups.last()).toContainText('no step covers it')
+  await groups.first().getByRole('button').click()
+  const complaints = page.getByTestId('complaints')
+  await expect(complaints.getByRole('listitem')).toHaveCount(7)
+  await complaints.getByRole('link', { name: '#2' }).first().click()
+  await expect(page.getByTestId('item-state')).toHaveText(DELIVERED_2)
+})
+
 test('explains a mark reached with the keyboard', async ({ page }) => {
   const project = await servedProject(page, RUN_VIEWER)
   await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow?at=${MOCK_MOMENT}`)

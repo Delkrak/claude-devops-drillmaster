@@ -1,6 +1,7 @@
 import { useRoute } from './router'
 import { HomePage } from './views/HomePage'
 import { ChangesPage } from './views/ChangesPage'
+import { ComplaintsPage } from './views/ComplaintsPage'
 import { WorkflowPage } from './views/WorkflowPage'
 import { WorkItemPage } from './views/WorkItemPage'
 import { WorkItemsPage } from './views/WorkItemsPage'
@@ -14,6 +15,8 @@ export function App() {
       return <WorkflowPage id={route.id} at={route.at} />
     case 'changes':
       return <ChangesPage id={route.id} at={route.at} />
+    case 'complaints':
+      return <ComplaintsPage id={route.id} at={route.at} />
     case 'workItems':
       return <WorkItemsPage id={route.id} at={route.at} />
     case 'workItem':

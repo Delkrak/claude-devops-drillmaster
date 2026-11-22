@@ -9,7 +9,8 @@ const HOOK_ROUTE = /^POST \/hooks\/([A-Za-z]+)$/
 const VIEWER_API_ROUTE = /^GET \/api\/projects\/([\w-]+)(?:\/items\/([\w-]+))?$/
 const HISTORY_ROUTE = /^GET \/api\/projects\/([\w-]+)\/history\/([\w-]+)$/
 const WORKFLOW_PAGE_ROUTE = /^GET \/api\/projects\/([\w-]+)\/workflow$/
-const CHANGES_ROUTE = /^GET \/api\/projects\/([\w-]+)\/changes$/
+const DRILLMASTER_PAGE_ROUTE = /^GET \/api\/projects\/([\w-]+)\/drillmaster$/
+const CHANGES_ROUTE =/^GET \/api\/projects\/([\w-]+)\/changes$/
 const WORK_ITEMS_ROUTE =/^GET \/api\/projects\/([\w-]+)\/work-items(?:\/([\w-]+))?$/
 const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
@@ -89,6 +90,11 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
       if (workflowPageMatch) {
         refuseOtherProject(workflowPageMatch[1]!)
         return sendJson(response, 200, await app.workflowPage(workflowPageMatch[1]!, momentOf(url.searchParams.get('at'))))
+      }
+      const drillmasterMatch = DRILLMASTER_PAGE_ROUTE.exec(route)
+      if (drillmasterMatch) {
+        refuseOtherProject(drillmasterMatch[1]!)
+        return sendJson(response, 200, await app.drillmasterPage(drillmasterMatch[1]!, momentOf(url.searchParams.get('at'))))
       }
       const changesMatch = CHANGES_ROUTE.exec(route)
       if (changesMatch) {

@@ -56,6 +56,7 @@ import {
 import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
 import { changesView } from './core/changesPage.js'
+import { drillmasterPageView } from './core/drillmasterPage.js'
 import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
@@ -569,6 +570,11 @@ export class Drillmaster {
     const page = workItemPageView(await this.ports.store.read(projectId), workItemId, at)
     if (!page) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
     return page
+  }
+
+  /** What to fix next in Drillmaster: complaints about its tools, and step-ins no workflow step covers. */
+  async drillmasterPage(projectId: string, at?: string) {
+    return drillmasterPageView(await this.ports.store.read(projectId), TOOL_NAMES, at)
   }
 
   /** Every change to the workflow, and whether it did what it was for. */

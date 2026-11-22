@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ChangeRow, WorkflowPage, WorkItemPage, WorkItemsEntry } from './types'
+import type { ChangeRow, DrillmasterPage, WorkflowPage, WorkItemPage, WorkItemsEntry } from './types'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -13,6 +13,7 @@ const moment = (at: string | null) => (at ? `?at=${encodeURIComponent(at)}` : ''
 export const api = {
   served: () => getJson<{ project: string | null }>('/api/served'),
   workflow: (id: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(id)}/workflow${moment(at)}`),
+  drillmaster: (id: string, at: string | null) => getJson<DrillmasterPage>(`/api/projects/${encodeURIComponent(id)}/drillmaster${moment(at)}`),
   changes: (id: string, at: string | null) => getJson<ChangeRow[]>(`/api/projects/${encodeURIComponent(id)}/changes${moment(at)}`),
   workItems: (id: string, at: string | null) => getJson<WorkItemsEntry[]>(`/api/projects/${encodeURIComponent(id)}/work-items${moment(at)}`),
   workItem: (id: string, workItemId: string, at: string | null) => getJson<WorkItemPage>(`/api/projects/${encodeURIComponent(id)}/work-items/${encodeURIComponent(workItemId)}${moment(at)}`),

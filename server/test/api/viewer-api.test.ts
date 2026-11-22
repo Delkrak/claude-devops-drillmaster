@@ -32,6 +32,10 @@ beforeAll(async () => {
 afterAll(() => server.close())
 
 describe('viewer API', () => {
+  it('serves what to fix next in Drillmaster, nothing yet for a project with no post mortems', async () => {
+    expect(await get(`/api/projects/${ID}/drillmaster`)).toMatchObject({ status: 200, body: { tools: [], uncovered: [] } })
+  })
+
   it('serves the changes to the workflow, none yet for a seeded project', async () => {
     expect(await get(`/api/projects/${ID}/changes`)).toMatchObject({ status: 200, body: [] })
     expect((await get(`/api/projects/${ID}/changes?at=yesterday`)).status).toBe(400)
