@@ -123,7 +123,6 @@ export function startPosition(workflow: WorkflowDocument, inputs: InputValues): 
   return { stage: null, step: null }
 }
 
-/** The first position from `from` whose step applies to these inputs, or waits for an input to tell. */
 export function firstApplyingPosition(workflow: WorkflowDocument, from: Position, inputs: InputValues): Position {
   let position = from
   while (position.stage !== null && position.step !== null && applicabilityOf(workflow, position.stage, position.step, inputs).applies === false) {

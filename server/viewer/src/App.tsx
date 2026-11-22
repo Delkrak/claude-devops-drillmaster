@@ -12,15 +12,15 @@ export function App() {
     case 'home':
       return <HomePage />
     case 'workflow':
-      return <WorkflowPage id={route.id} at={route.at} />
+      return <WorkflowPage projectId={route.projectId} at={route.at} />
     case 'changes':
-      return <ChangesPage id={route.id} at={route.at} />
+      return <ChangesPage projectId={route.projectId} at={route.at} />
     case 'complaints':
-      return <ComplaintsPage id={route.id} at={route.at} />
+      return <ComplaintsPage projectId={route.projectId} at={route.at} />
     case 'workItems':
-      return <WorkItemsPage id={route.id} at={route.at} />
+      return <WorkItemsPage projectId={route.projectId} at={route.at} />
     case 'workItem':
       // A new key per work item: what was opened on one route does not carry over to the next.
-      return <WorkItemPage key={route.workItemId} id={route.id} workItemId={route.workItemId} at={route.at} />
+      return <WorkItemPage key={route.workItemId} projectId={route.projectId} workItemId={route.workItemId} at={route.at} />
   }
 }

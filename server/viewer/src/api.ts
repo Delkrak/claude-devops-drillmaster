@@ -8,22 +8,21 @@ async function getJson<T>(path: string): Promise<T> {
   return body
 }
 
-const moment = (at: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
+const atQuery = (at: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
 
 export const api = {
   served: () => getJson<{ project: string | null }>('/api/served'),
-  workflow: (id: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(id)}/workflow${moment(at)}`),
-  drillmaster: (id: string, at: string | null) => getJson<DrillmasterPage>(`/api/projects/${encodeURIComponent(id)}/drillmaster${moment(at)}`),
-  changes: (id: string, at: string | null) => getJson<ChangeRow[]>(`/api/projects/${encodeURIComponent(id)}/changes${moment(at)}`),
-  workItems: (id: string, at: string | null) => getJson<WorkItemsEntry[]>(`/api/projects/${encodeURIComponent(id)}/work-items${moment(at)}`),
-  workItem: (id: string, workItemId: string, at: string | null) => getJson<WorkItemPage>(`/api/projects/${encodeURIComponent(id)}/work-items/${encodeURIComponent(workItemId)}${moment(at)}`),
+  workflowPage: (projectId: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(projectId)}/workflow${atQuery(at)}`),
+  drillmasterPage: (projectId: string, at: string | null) => getJson<DrillmasterPage>(`/api/projects/${encodeURIComponent(projectId)}/drillmaster${atQuery(at)}`),
+  changes: (projectId: string, at: string | null) => getJson<ChangeRow[]>(`/api/projects/${encodeURIComponent(projectId)}/changes${atQuery(at)}`),
+  workItems: (projectId: string, at: string | null) => getJson<WorkItemsEntry[]>(`/api/projects/${encodeURIComponent(projectId)}/work-items${atQuery(at)}`),
+  workItemPage: (projectId: string, workItemId: string, at: string | null) => getJson<WorkItemPage>(`/api/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(workItemId)}${atQuery(at)}`),
 }
 
 export const REFRESH_MS = 4000
 
 export type Loaded<T> = { status: 'loading' } | { status: 'error'; error: string } | { status: 'ready'; data: T }
 
-/** Loads, then loads again every `refreshMs` while the page is open; once only when it is null. */
 export function usePolled<T>(load: () => Promise<T>, reloadKey: string, refreshMs: number | null = REFRESH_MS): Loaded<T> {
   const [state, setState] = useState<Loaded<T>>({ status: 'loading' })
   useEffect(() => {
@@ -33,7 +32,7 @@ export function usePolled<T>(load: () => Promise<T>, reloadKey: string, refreshM
       load()
         .then((data) => mounted && setState({ status: 'ready', data }))
         // A failed refresh keeps what the page showed; only a first load that fails shows the error.
-        .catch((error: unknown) => mounted && setState((shown) => (shown.status === 'ready' ? shown : { status: 'error', error: error instanceof Error ? error.message : String(error) })))
+        .catch((error: unknown) => mounted && setState((shownState) => (shownState.status === 'ready' ? shownState : { status: 'error', error: error instanceof Error ? error.message : String(error) })))
     void refresh()
     const timer = refreshMs === null ? undefined : setInterval(refresh, refreshMs)
     return () => {

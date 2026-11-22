@@ -11,7 +11,6 @@ export interface OwnerInput {
   role: OwnerInputRole
   /** The work item it belongs to; none for a retrospective, or outside a work item. */
   work_item_id: string | null
-  /** The work step the session was on when Owner wrote it; none outside a step. */
   stage: number | null
   step_guid: string | null
   after_delivery: boolean

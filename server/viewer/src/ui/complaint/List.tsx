@@ -28,7 +28,7 @@ const styles = stylex.create({
     cursor: 'pointer',
   },
   tool: { fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '14px', fontWeight: font.weightHeavy },
-  gap: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy },
+  workflowGap: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy },
   count: { fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums', textAlign: 'end' },
   countFriction: { color: colors.orange },
   latest: { fontSize: '14px', color: colors.line, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -43,7 +43,6 @@ const styles = stylex.create({
   text: { margin: 0 },
 })
 
-/** The list, under a header that says what its columns are. */
 export const ComplaintList = ({ children }: { children: ReactNode }) => (
   <ul aria-label="complaints about Drillmaster" {...stylex.props(styles.list)}>
     <li aria-hidden {...stylex.props(styles.head)}>
@@ -55,21 +54,16 @@ export const ComplaintList = ({ children }: { children: ReactNode }) => (
   </ul>
 )
 
-/**
- * One tool, or `gap` for step-ins no workflow step covers: how often it was complained about, and
- * its biggest problem on one line (`quiet` when it is only the latest complaint, not yet grouped);
- * open, `children` under it.
- */
-export function ComplaintGroup({ name, gap = false, count, latest, quiet = false, open, onToggle, children }: { name: string; gap?: boolean; count: number; latest: string; quiet?: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function ComplaintGroup({ name, isWorkflowGap = false, heardCount, headline, headlineIsLatestComplaint = false, open, onToggle, children }: { name: string; isWorkflowGap?: boolean; heardCount: number; headline: string; headlineIsLatestComplaint?: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <li data-testid="complaint-group" {...stylex.props(styles.item)}>
       <button type="button" aria-expanded={open} onClick={onToggle} {...stylex.props(styles.row)}>
-        <span {...stylex.props(gap ? styles.gap : styles.tool)}>{name}</span>
-        <span data-testid="heard" {...stylex.props(styles.count, gap && styles.countFriction)}>
-          {count}
+        <span {...stylex.props(isWorkflowGap ? styles.workflowGap : styles.tool)}>{name}</span>
+        <span data-testid="heard" {...stylex.props(styles.count, isWorkflowGap && styles.countFriction)}>
+          {heardCount}
         </span>
-        <span title={latest} data-testid="biggest" {...stylex.props(styles.latest, quiet && styles.quiet)}>
-          {latest}
+        <span title={headline} data-testid="biggest" {...stylex.props(styles.latest, headlineIsLatestComplaint && styles.quiet)}>
+          {headline}
         </span>
       </button>
       {open && (
@@ -83,13 +77,12 @@ export function ComplaintGroup({ name, gap = false, count, latest, quiet = false
   )
 }
 
-/** One complaint in full: who made it, on which work item (a link), when, and what it says. */
-export function ComplaintLine({ who, issue, to, when, text }: { who: string; issue: string; to: string; when: string; text: string }) {
+export function ComplaintLine({ who, issue, workItemHref, when, text }: { who: string; issue: string; workItemHref: string; when: string; text: string }) {
   return (
     <li {...stylex.props(styles.complaint)}>
       <span {...stylex.props(styles.who)}>
         <span>{who}</span>
-        <a href={to} {...stylex.props(styles.link)}>
+        <a href={workItemHref} {...stylex.props(styles.link)}>
           {issue}
         </a>
         <span>{when}</span>
@@ -99,9 +92,8 @@ export function ComplaintLine({ who, issue, to, when, text }: { who: string; iss
   )
 }
 
-/** A problem's summary, with how many of the tool's complaints say it; its complaints follow it. */
-export const ProblemHeading = ({ summary, count, of }: { summary: string; count: number; of: number }) => (
+export const ProblemHeading = ({ summary, complaintCount, toolComplaintCount }: { summary: string; complaintCount: number; toolComplaintCount: number }) => (
   <li data-testid="problem" {...stylex.props(styles.problem)}>
-    {summary} <span {...stylex.props(styles.problemCount)}>· {count} of {of}</span>
+    {summary} <span {...stylex.props(styles.problemCount)}>· {complaintCount} of {toolComplaintCount}</span>
   </li>
 )

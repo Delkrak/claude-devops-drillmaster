@@ -1,4 +1,4 @@
-// What the server's viewer API returns (server/src/core/workflowPage.ts).
+// What the server's viewer API returns (server/src/core/workflowPage.ts, workItemPage.ts, changesPage.ts and drillmasterPage.ts).
 
 export interface WorkItemRef {
   work_item_id: string
@@ -11,7 +11,6 @@ export interface WorkflowPageStep {
   name: string
   gate: 'self' | 'drillmaster' | 'owner'
   if: string | null
-  /** The condition in plain words. */
   when: string | null
   alternative: { input: string; value: string } | null
   here_now: WorkItemRef[]
@@ -39,14 +38,12 @@ export interface WorkflowPage {
   friction: { after_delivery: number; unplaced: number; after_delivery_items: WorkItemRef[]; unplaced_items: WorkItemRef[] }
 }
 
-/** Where Owner had to step in on a work item. */
 export interface StepIn {
   event_id: string
   at: string
   prompt: string
   after_delivery: boolean
   why: string
-  /** Why the step it is pinned to should have caught it; null when no step should have. */
   placed_why: string | null
 }
 
@@ -91,7 +88,6 @@ export interface WorkItemsEntry {
   work_item_id: string
   issue: string
   kind: string | null
-  /** What it is about, in one line. */
   summary: string
   status: 'active' | 'delivered'
   started_at: string
@@ -99,7 +95,6 @@ export interface WorkItemsEntry {
   friction: number
 }
 
-/** One thing a change did to the workflow. */
 export interface WorkflowEdit {
   what: 'new' | 'changed' | 'moved' | 'removed'
   kind: 'step' | 'rule'
@@ -108,7 +103,6 @@ export interface WorkflowEdit {
   was: string | null
 }
 
-/** A change to the workflow, and whether it did what it was for. */
 export interface ChangeRow {
   at: string
   from_version: string | null
@@ -126,7 +120,6 @@ export interface ChangeRow {
   edits: WorkflowEdit[]
 }
 
-/** One complaint about Drillmaster: who made it, on which work item, and what it says. */
 export interface Complaint {
   id: string
   at: string
@@ -136,7 +129,6 @@ export interface Complaint {
   text: string
 }
 
-/** A problem heard more than once about a tool, in one line, with the complaints that say it. */
 export interface Problem {
   summary: string
   complaints: Complaint[]

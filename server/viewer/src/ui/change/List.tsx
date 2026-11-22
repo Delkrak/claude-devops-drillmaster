@@ -45,7 +45,6 @@ const styles = stylex.create({
   editRef: { color: colors.dim },
 })
 
-/** The list, under a header that names what its numbers measure. */
 export const ChangeList = ({ measure, children }: { measure: string; children: ReactNode }) => (
   <ul aria-label="changes to the workflow" {...stylex.props(styles.list)}>
     <li aria-hidden data-testid="changes-header" {...stylex.props(styles.head)}>
@@ -58,15 +57,10 @@ export const ChangeList = ({ measure, children }: { measure: string; children: R
   </ul>
 )
 
-/**
- * One change: the version it made, what it changed, its measure before → after, and the verdict in
- * a word with what it rests on in `tip`; open, it shows `children` under it.
- */
-/** helped: significant; notProven: below target or not significant; tooEarly: insufficient data. */
 export type VerdictTone = 'helped' | 'notProven' | 'tooEarly'
 
 export function ChangeItem({ version, change, before, after, verdict, tone, tip, open, onToggle, children }: { version: string; change: string; before: string; after: string; verdict: string; tone: VerdictTone; tip: string; open: boolean; onToggle: () => void; children: ReactNode }) {
-  const toned = styles[tone]
+  const toneStyle = styles[tone]
   return (
     <li data-testid="change" {...stylex.props(styles.item)}>
       <button type="button" aria-expanded={open} onClick={onToggle} {...stylex.props(styles.row)}>
@@ -77,9 +71,9 @@ export function ChangeItem({ version, change, before, after, verdict, tone, tip,
         <span data-testid="measure" {...stylex.props(styles.numbers)}>
           <span {...stylex.props(styles.before)}>{before}</span>
           <span {...stylex.props(styles.arrow)}>→</span>
-          <span {...stylex.props(toned)}>{after}</span>
+          <span {...stylex.props(toneStyle)}>{after}</span>
         </span>
-        <span data-tip={tip} data-testid="verdict" data-tone={tone} {...stylex.props(styles.verdict, toned)}>
+        <span data-tip={tip} data-testid="verdict" data-tone={tone} {...stylex.props(styles.verdict, toneStyle)}>
           {verdict}
         </span>
       </button>
@@ -96,7 +90,6 @@ export const DetailLabel = ({ children }: { children: ReactNode }) => <span {...
 export const DetailPara = ({ children }: { children: ReactNode }) => <p {...stylex.props(styles.para)}>{children}</p>
 export const Edits = ({ children }: { children: ReactNode }) => <ul {...stylex.props(styles.edits)}>{children}</ul>
 
-/** One thing the change did to the workflow: "new", "step 5.1", its name. */
 export const EditLine = ({ what, refName, name }: { what: string; refName: string; name: string }) => (
   <li {...stylex.props(styles.edit)}>
     <span {...stylex.props(styles.editWhat)}>{what}</span>

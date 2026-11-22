@@ -13,26 +13,21 @@ import { Overview } from './workflow/Overview'
 import { PipelineEnd } from './workflow/PipelineEnd'
 import { StageWalk } from './workflow/StageWalk'
 
-type Picking = { title: string; items: { label: string; to: string }[]; at: { x: number; y: number } }
+type PickerState = { title: string; items: { label: string; to: string }[]; point: { x: number; y: number } }
 
-/**
- * The pipeline, where the work items are, and where the friction is: the overview on a screen of its
- * own, then each stage's steps as Owner scrolls. Follows the project live, or shows one moment (`at`).
- * A work-item box or a ring opens its work item, or a short list of them when it holds several.
- */
-export function WorkflowPage({ id, at }: { id: string; at: string | null }) {
-  const loaded = usePolled(() => api.workflow(id, at), `${id}@${at ?? 'now'}`, at ? null : undefined)
-  const [picking, setPicking] = useState<Picking | null>(null)
-  const closePicker = useCallback(() => setPicking(null), [])
+export function WorkflowPage({ projectId, at }: { projectId: string; at: string | null }) {
+  const loaded = usePolled(() => api.workflowPage(projectId, at), `${projectId}@${at ?? 'now'}`, at ? null : undefined)
+  const [picker, setPicker] = useState<PickerState | null>(null)
+  const closePicker = useCallback(() => setPicker(null), [])
   const openItems: OpenItems = (title, items, point) => {
-    const distinct = [...new Map(items.map((item) => [item.work_item_id, item])).values()]
-    if (distinct.length === 1) window.location.hash = href.workItem(id, distinct[0]!.work_item_id, at)
-    else if (distinct.length > 1) setPicking({ title, at: point, items: distinct.map((item) => ({ label: item.issue, to: href.workItem(id, item.work_item_id, at) })) })
+    const distinctItems = [...new Map(items.map((item) => [item.work_item_id, item])).values()]
+    if (distinctItems.length === 1) window.location.hash = href.workItem(projectId, distinctItems[0]!.work_item_id, at)
+    else if (distinctItems.length > 1) setPicker({ title, point, items: distinctItems.map((item) => ({ label: item.issue, to: href.workItem(projectId, item.work_item_id, at) })) })
   }
-  const openDelivered = () => (window.location.hash = href.workItems(id, at))
+  const openDelivered = () => (window.location.hash = href.workItems(projectId, at))
   const version = loaded.status === 'ready' ? loaded.data.workflow_version : undefined
   return (
-    <Shell title="Workflow" aside={<ProjectNav id={id} at={at} version={version} nowHref={href.workflow(id)} here="workflow" />}>
+    <Shell title="Workflow" aside={<ProjectNav projectId={projectId} at={at} version={version} nowHref={href.workflow(projectId)} currentPage="workflow" />}>
       <Loading loaded={loaded}>
         {(page) => (
           <PipelineColumn>
@@ -48,7 +43,7 @@ export function WorkflowPage({ id, at }: { id: string; at: string | null }) {
       </Loading>
       <Key />
       <Tip />
-      {picking && <Picker title={picking.title} items={picking.items} at={picking.at} onClose={closePicker} />}
+      {picker && <Picker title={picker.title} items={picker.items} point={picker.point} onClose={closePicker} />}
     </Shell>
   )
 }

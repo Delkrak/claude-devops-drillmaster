@@ -558,27 +558,23 @@ export class Drillmaster {
     return view
   }
 
-  /** The Workflow page at `at`, an ISO time; at the latest event when not given. */
   async workflowPage(projectId: string, at?: string) {
     const page = workflowPageView(await this.ports.store.read(projectId), at)
     if (!page) throw new UserError(`No project ${projectId}`, 404)
     return page
   }
 
-  /** One work item's route at `at`, or now. */
   async workItemPage(projectId: string, workItemId: string, at?: string) {
     const page = workItemPageView(await this.ports.store.read(projectId), workItemId, at)
     if (!page) throw new UserError(`No work item ${workItemId} in project ${projectId}`, 404)
     return page
   }
 
-  /** What to fix next in Drillmaster: complaints about its tools, and step-ins no workflow step covers. */
   async drillmasterPage(projectId: string, at?: string) {
     return drillmasterPageView(await this.ports.store.read(projectId), TOOL_NAMES, at)
   }
 
-  /** Every change to the workflow, and whether it did what it was for. */
-  async changes(projectId: string, at?: string) {
+  async changesPage(projectId: string, at?: string) {
     return changesView(await this.ports.store.read(projectId), at)
   }
 
@@ -990,21 +986,19 @@ export class Drillmaster {
     if (frictions.length > 0) await this.placeFriction(projectDir, workItemId, frictions)
   }
 
-  /** Places the step-ins judged friction whose placement failed before, so none stays unplaced for good. */
   private async placeUnplacedFriction(projectDir: string) {
     const events = await this.events(projectDir)
-    const judgements = frictionJudgementsOf(events)
-    const placements = frictionPlacementsOf(events)
-    const byItem = new Map<string, Parameters<typeof buildFrictionPlacementPrompt>[2][number][]>()
+    const frictionJudgements = frictionJudgementsOf(events)
+    const frictionPlacements = frictionPlacementsOf(events)
+    const unplacedFrictionsByItemId = new Map<string, Parameters<typeof buildFrictionPlacementPrompt>[2][number][]>()
     for (const input of ownerInputsOf(events)) {
-      const judgement = judgements.get(input.event_id)
-      if (!input.work_item_id || !judgement?.friction || placements.has(input.event_id)) continue
-      byItem.set(input.work_item_id, [...(byItem.get(input.work_item_id) ?? []), { input, judgement }])
+      const judgement = frictionJudgements.get(input.event_id)
+      if (!input.work_item_id || !judgement?.friction || frictionPlacements.has(input.event_id)) continue
+      unplacedFrictionsByItemId.set(input.work_item_id, [...(unplacedFrictionsByItemId.get(input.work_item_id) ?? []), { input, judgement }])
     }
-    for (const [workItemId, frictions] of byItem) await this.placeFriction(projectDir, workItemId, frictions)
+    for (const [workItemId, frictions] of unplacedFrictionsByItemId) await this.placeFriction(projectDir, workItemId, frictions)
   }
 
-  /** Drillmaster places each input judged friction at the step that should have caught it. */
   private async placeFriction(projectDir: string, workItemId: string, frictions: Parameters<typeof buildFrictionPlacementPrompt>[2]) {
     const state = foldState(await this.events(projectDir))
     const item = state.workItems[workItemId]!
@@ -1025,17 +1019,16 @@ export class Drillmaster {
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'friction_placed', work_item_id: workItemId, inputs: placements }))
   }
 
-  /** Drillmaster groups the complaints about its tools into recurring problems, when some are new since its last grouping. */
   private async groupComplaints(projectDir: string) {
     const events = await this.events(projectDir)
-    const byTool = complaintsByTool(events, TOOL_NAMES)
+    const complaintsOfTool = complaintsByTool(events, TOOL_NAMES)
     const lastGrouping = events.filter((event) => event.type === 'complaints_grouped').at(-1)
-    const grouped = new Set(lastGrouping?.type === 'complaints_grouped' ? lastGrouping.groups.flatMap((group) => group.complaints) : [])
-    if (![...byTool.values()].flat().some((complaint) => !grouped.has(complaint.id))) return
+    const groupedComplaintIds = new Set(lastGrouping?.type === 'complaints_grouped' ? lastGrouping.groups.flatMap((group) => group.complaints) : [])
+    if (![...complaintsOfTool.values()].flat().some((complaint) => !groupedComplaintIds.has(complaint.id))) return
     let groups
     try {
-      const { answer } = await this.ports.reviewer.review({ kind: COMPLAINT_GROUPING_REVIEW_KIND, prompt: buildComplaintGroupingPrompt(byTool) })
-      groups = readComplaintGroupingAnswer(byTool, answer)
+      const { answer } = await this.ports.reviewer.review({ kind: COMPLAINT_GROUPING_REVIEW_KIND, prompt: buildComplaintGroupingPrompt(complaintsOfTool) })
+      groups = readComplaintGroupingAnswer(complaintsOfTool, answer)
     } catch {
       // Ungrouped complaints still show, each on its own.
       return

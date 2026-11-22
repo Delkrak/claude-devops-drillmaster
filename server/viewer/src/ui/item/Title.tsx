@@ -25,7 +25,6 @@ const styles = stylex.create({
   gap: { height: space.xs },
 })
 
-/** A work item's number, kind and state above its route, its description on one line under them. */
 export function ItemTitle({ issue, kind, state, description }: { issue: string; kind: string | null; state: ReactNode; description: string }) {
   return (
     <header>
@@ -43,5 +42,4 @@ export function ItemTitle({ issue, kind, state, description }: { issue: string; 
   )
 }
 
-/** The part of a state that matters most, such as the time or the step. */
 export const Strong = ({ children }: { children: ReactNode }) => <b {...stylex.props(styles.strong)}>{children}</b>

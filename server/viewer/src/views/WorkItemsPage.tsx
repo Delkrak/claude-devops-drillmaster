@@ -8,11 +8,10 @@ import { Shell } from '../ui/Shell'
 import { Tip } from '../ui/workflow/Tip'
 import { ProjectNav } from './ProjectNav'
 
-/** Every work item, latest first: where each is, and how often Owner stepped in. */
-export function WorkItemsPage({ id, at }: { id: string; at: string | null }) {
-  const loaded = usePolled(() => api.workItems(id, at), `${id}@${at ?? 'now'}`, at ? null : undefined)
+export function WorkItemsPage({ projectId, at }: { projectId: string; at: string | null }) {
+  const loaded = usePolled(() => api.workItems(projectId, at), `${projectId}@${at ?? 'now'}`, at ? null : undefined)
   return (
-    <Shell title="Work items" aside={<ProjectNav id={id} at={at} nowHref={href.workItems(id)} here="workItems" />}>
+    <Shell title="Work items" aside={<ProjectNav projectId={projectId} at={at} nowHref={href.workItems(projectId)} currentPage="workItems" />}>
       <Loading loaded={loaded}>
         {(items) =>
           items.length === 0 ? (
@@ -22,13 +21,13 @@ export function WorkItemsPage({ id, at }: { id: string; at: string | null }) {
               {items.map((item) => (
                 <ItemRow
                   key={item.work_item_id}
-                  to={href.workItem(id, item.work_item_id, at)}
+                  itemHref={href.workItem(projectId, item.work_item_id, at)}
                   issue={item.issue}
                   kind={item.kind}
                   summary={item.summary}
                   where={item.status === 'delivered' ? 'delivered' : item.at_step ? `at ${item.at_step}` : `started ${dayAndTime(item.started_at)}`}
                   delivered={item.status === 'delivered'}
-                  friction={item.friction}
+                  frictionCount={item.friction}
                 />
               ))}
             </ItemList>

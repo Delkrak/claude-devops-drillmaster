@@ -1,11 +1,10 @@
 import { Fragment } from 'react'
 import { timeOfDay } from '../../time'
 import type { StepIn, WorkItemPage, WorkItemPageStep } from '../../types'
-import { CallLine, Deeper, Kept, Label, Level, Para, Quote, UnderStep } from '../../ui/item/route'
-import { hasEvidence, keptName, sentence, stepInLabel, whoDecided } from './words'
+import { CallLine, DeeperButton, KeptOutput, Label, Level, Para, Quote, UnderStep } from '../../ui/item/route'
+import { asSentence, hasEvidence, keptOutputName, stepInLabel, whoDecided } from './words'
 
-/** How deep Owner has opened a step: what happened, then the evidence, then every tool call. */
-export type Depth = 1 | 2 | 3
+export type DetailDepth = 1 | 2 | 3
 
 function StepInText({ stepIn }: { stepIn: StepIn }) {
   return (
@@ -28,7 +27,7 @@ function StepInText({ stepIn }: { stepIn: StepIn }) {
 
 function WhatHappened({ step }: { step: WorkItemPageStep }) {
   const { happened } = step
-  const nothing = !happened.skip && happened.verdicts.length === 0 && !happened.submitted && happened.reports.length === 0 && step.step_ins.length === 0
+  const nothingHappened = !happened.skip && happened.verdicts.length === 0 && !happened.submitted && happened.reports.length === 0 && step.step_ins.length === 0
   return (
     <>
       {step.step_ins.map((stepIn) => (
@@ -37,7 +36,7 @@ function WhatHappened({ step }: { step: WorkItemPageStep }) {
       {happened.skip && (
         <>
           <Label>skipped</Label>
-          <Para>{sentence(happened.skip.why)}</Para>
+          <Para>{asSentence(happened.skip.why)}</Para>
         </>
       )}
       {happened.verdicts.map((verdict) => (
@@ -63,7 +62,7 @@ function WhatHappened({ step }: { step: WorkItemPageStep }) {
           <Para>{report.text}</Para>
         </Fragment>
       ))}
-      {nothing && <Para quiet>{step.status === 'here' ? 'Nothing reported here yet.' : 'Not reached yet.'}</Para>}
+      {nothingHappened && <Para quiet>{step.status === 'here' ? 'Nothing reported here yet.' : 'Not reached yet.'}</Para>}
     </>
   )
 }
@@ -81,23 +80,21 @@ function Evidence({ step }: { step: WorkItemPageStep }) {
       ))}
       {step.evidence.kept_output.map((output, index) => (
         <Fragment key={index}>
-          <Label>{keptName(output.name)}, as the tool printed them</Label>
-          <Kept lines={output.lines} />
+          <Label>{keptOutputName(output.name)}, as the tool printed them</Label>
+          <KeptOutput lines={output.lines} />
         </Fragment>
       ))}
     </>
   )
 }
 
-/** What Owner opened under a step, one level at a time. */
-export function StepDetail({ step, depth, onDeeper }: { step: WorkItemPageStep; depth: Depth; onDeeper: (depth: Depth) => void }) {
-  const reached = step.status === 'passed' || step.status === 'here'
-  const evidence = reached && hasEvidence(step)
-  // Without evidence, the tool calls are the next level down.
-  const callsDepth: Depth = evidence ? 3 : 2
+export function StepDetail({ step, depth, onOpenDeeper }: { step: WorkItemPageStep; depth: DetailDepth; onOpenDeeper: (depth: DetailDepth) => void }) {
+  const isReached = step.status === 'passed' || step.status === 'here'
+  const showsEvidence = isReached && hasEvidence(step)
+  const callsDepth: DetailDepth = showsEvidence ? 3 : 2
   const deeperButton = () => {
-    if (evidence && depth === 1) return <Deeper onOpen={() => onDeeper(2)}>the evidence ›</Deeper>
-    if (reached && step.calls.length > 0 && depth === callsDepth - 1) return <Deeper onOpen={() => onDeeper(callsDepth)}>every tool call · {step.calls.length} ›</Deeper>
+    if (showsEvidence && depth === 1) return <DeeperButton onOpen={() => onOpenDeeper(2)}>the evidence ›</DeeperButton>
+    if (isReached && step.calls.length > 0 && depth === callsDepth - 1) return <DeeperButton onOpen={() => onOpenDeeper(callsDepth)}>every tool call · {step.calls.length} ›</DeeperButton>
     return null
   }
   return (
@@ -106,7 +103,7 @@ export function StepDetail({ step, depth, onDeeper }: { step: WorkItemPageStep; 
         <WhatHappened step={step} />
         {depth === 1 && deeperButton()}
       </Level>
-      {evidence && depth >= 2 && (
+      {showsEvidence && depth >= 2 && (
         <Level deeper>
           <Evidence step={step} />
           {depth === 2 && deeperButton()}
@@ -123,7 +120,6 @@ export function StepDetail({ step, depth, onDeeper }: { step: WorkItemPageStep; 
   )
 }
 
-/** What Owner opened at the delivery: what was delivered, and what the post mortems keep and change. */
 export function DeliveryDetail({ delivered }: { delivered: NonNullable<WorkItemPage['delivered']> }) {
   return (
     <UnderStep testId="delivery-detail">
@@ -149,8 +145,7 @@ export function DeliveryDetail({ delivered }: { delivered: NonNullable<WorkItemP
   )
 }
 
-/** What Owner opened at a step-in no step should have caught. */
-export const StepInsDetail = ({ stepIns }: { stepIns: readonly StepIn[] }) => (
+export const UnplacedStepInsDetail = ({ stepIns }: { stepIns: readonly StepIn[] }) => (
   <UnderStep testId="step-ins-detail">
     <Level>
       {stepIns.map((stepIn) => (

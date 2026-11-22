@@ -10,8 +10,8 @@ const VIEWER_API_ROUTE = /^GET \/api\/projects\/([\w-]+)(?:\/items\/([\w-]+))?$/
 const HISTORY_ROUTE = /^GET \/api\/projects\/([\w-]+)\/history\/([\w-]+)$/
 const WORKFLOW_PAGE_ROUTE = /^GET \/api\/projects\/([\w-]+)\/workflow$/
 const DRILLMASTER_PAGE_ROUTE = /^GET \/api\/projects\/([\w-]+)\/drillmaster$/
-const CHANGES_ROUTE =/^GET \/api\/projects\/([\w-]+)\/changes$/
-const WORK_ITEMS_ROUTE =/^GET \/api\/projects\/([\w-]+)\/work-items(?:\/([\w-]+))?$/
+const CHANGES_ROUTE = /^GET \/api\/projects\/([\w-]+)\/changes$/
+const WORK_ITEMS_ROUTE = /^GET \/api\/projects\/([\w-]+)\/work-items(?:\/([\w-]+))?$/
 const ARTIFACT_ROUTE = /^GET \/api\/projects\/([\w-]+)\/items\/([\w-]+)\/artifacts\/([\w.-]+)$/
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -43,15 +43,14 @@ function requireProjectDir(value: unknown) {
   return value
 }
 
-/** An `at` query parameter as the ISO time events carry; none when it isn't given. */
-function momentOf(at: string | null) {
+function isoTimeOfAtParameter(at: string | null) {
   if (at === null) return undefined
   const time = Date.parse(at)
   if (Number.isNaN(time)) throw new UserError(`\`at\` must be a date and time, like 2026-11-20T19:10:16.785Z; "${at}" isn't one.`)
   return new Date(time).toISOString()
 }
 
-const isViewerPath =(pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
+const isViewerPath = (pathname: string) => pathname === '/' || pathname.startsWith('/assets/') || pathname.startsWith('/ui')
 
 /** `servedProject`: the key of the one project this server serves, whose viewer it shows; any, in tests. */
 export function createRequestHandler(app: Drillmaster, servedProject?: string) {
@@ -89,23 +88,23 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
       const workflowPageMatch = WORKFLOW_PAGE_ROUTE.exec(route)
       if (workflowPageMatch) {
         refuseOtherProject(workflowPageMatch[1]!)
-        return sendJson(response, 200, await app.workflowPage(workflowPageMatch[1]!, momentOf(url.searchParams.get('at'))))
+        return sendJson(response, 200, await app.workflowPage(workflowPageMatch[1]!, isoTimeOfAtParameter(url.searchParams.get('at'))))
       }
-      const drillmasterMatch = DRILLMASTER_PAGE_ROUTE.exec(route)
-      if (drillmasterMatch) {
-        refuseOtherProject(drillmasterMatch[1]!)
-        return sendJson(response, 200, await app.drillmasterPage(drillmasterMatch[1]!, momentOf(url.searchParams.get('at'))))
+      const drillmasterPageMatch = DRILLMASTER_PAGE_ROUTE.exec(route)
+      if (drillmasterPageMatch) {
+        refuseOtherProject(drillmasterPageMatch[1]!)
+        return sendJson(response, 200, await app.drillmasterPage(drillmasterPageMatch[1]!, isoTimeOfAtParameter(url.searchParams.get('at'))))
       }
       const changesMatch = CHANGES_ROUTE.exec(route)
       if (changesMatch) {
         refuseOtherProject(changesMatch[1]!)
-        return sendJson(response, 200, await app.changes(changesMatch[1]!, momentOf(url.searchParams.get('at'))))
+        return sendJson(response, 200, await app.changesPage(changesMatch[1]!, isoTimeOfAtParameter(url.searchParams.get('at'))))
       }
       const workItemsMatch = WORK_ITEMS_ROUTE.exec(route)
       if (workItemsMatch) {
         const [, projectId, workItemId] = workItemsMatch
         refuseOtherProject(projectId!)
-        const at = momentOf(url.searchParams.get('at'))
+        const at = isoTimeOfAtParameter(url.searchParams.get('at'))
         return sendJson(response, 200, workItemId ? await app.workItemPage(projectId!, workItemId, at) : await app.workItemsList(projectId!, at))
       }
       const viewerApiMatch = VIEWER_API_ROUTE.exec(route)

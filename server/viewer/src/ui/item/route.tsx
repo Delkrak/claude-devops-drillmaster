@@ -17,7 +17,7 @@ const styles = stylex.create({
   column: { width: '100%', maxWidth: shape.pipelineWidth, marginInline: 'auto', paddingTop: space.xxl, paddingBottom: `calc(50vh - 120px)` },
   under: { display: 'flow-root', paddingBottom: space.lg },
   underLit: lineThrough(colors.line),
-  underAhead: lineThrough(colors.ahead),
+  underAhead: lineThrough(colors.notReached),
   text: {
     // Under the step's name: from (AXIS + 30) / WIDTH of the drawing, 390 drawing units wide.
     marginInlineStart: '53.333%',
@@ -60,29 +60,24 @@ const styles = stylex.create({
 
 export const RouteColumn = ({ children }: { children: ReactNode }) => <div {...stylex.props(styles.column)}>{children}</div>
 
-/** What Owner opened under a row, with the line running on beside it in the tone below the row. */
 export function UnderRow({ tone, children }: { tone: LineTone; children: ReactNode }) {
   return <div {...stylex.props(styles.under, tone === 'lit' ? styles.underLit : styles.underAhead)}>{children}</div>
 }
 
-/** The text opened under one step, right of the line, under the step's name. */
 export const UnderStep = ({ testId, children }: { testId?: string; children: ReactNode }) => (
   <section data-testid={testId} {...stylex.props(styles.text)}>
     {children}
   </section>
 )
 
-/** One level of what is opened; each deeper level is set off by a rule. */
 export const Level = ({ deeper = false, children }: { deeper?: boolean; children: ReactNode }) => <div {...stylex.props(styles.level, deeper && styles.nextLevel)}>{children}</div>
 
 export const Label = ({ tone, children }: { tone?: 'sand' | 'orange'; children: ReactNode }) => <span {...stylex.props(styles.label, tone === 'sand' && styles.sand, tone === 'orange' && styles.orange)}>{children}</span>
 export const Para = ({ quiet = false, children }: { quiet?: boolean; children: ReactNode }) => <p {...stylex.props(styles.para, quiet && styles.quiet)}>{children}</p>
 export const Quote = ({ children }: { children: ReactNode }) => <p {...stylex.props(styles.para, styles.quote)}>“{children}”</p>
-/** Lines as a tool printed them. */
-export const Kept = ({ lines }: { lines: readonly string[] }) => <pre {...stylex.props(styles.kept)}>{lines.join('\n')}</pre>
+export const KeptOutput = ({ lines }: { lines: readonly string[] }) => <pre {...stylex.props(styles.kept)}>{lines.join('\n')}</pre>
 
-/** The button that opens the next level down. */
-export const Deeper = ({ onOpen, children }: { onOpen: () => void; children: ReactNode }) => (
+export const DeeperButton = ({ onOpen, children }: { onOpen: () => void; children: ReactNode }) => (
   <button type="button" onClick={onOpen} {...stylex.props(styles.more)}>
     {children}
   </button>

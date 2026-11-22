@@ -40,10 +40,9 @@ const styles = stylex.create({
     '::placeholder': { color: colors.dim },
   },
   notFound: { color: colors.sand },
-  hidden: { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' },
+  visuallyHidden: { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' },
 })
 
-/** Every page: the brand in the header, anything `aside` says at the header's far end, the page below. */
 export function Shell({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
     <div {...stylex.props(styles.root)}>
@@ -54,7 +53,7 @@ export function Shell({ title, aside, children }: { title: string; aside?: React
         {aside && <div {...stylex.props(styles.aside)}>{aside}</div>}
       </header>
       <main>
-        <h1 {...stylex.props(styles.hidden)}>{title}</h1>
+        <h1 {...stylex.props(styles.visuallyHidden)}>{title}</h1>
         {children}
       </main>
     </div>
@@ -67,7 +66,6 @@ export const HeaderLink = ({ to, children }: { to: string; children: ReactNode }
   </a>
 )
 
-/** Which past moment a page shows, and the way back to now. */
 export function MomentLabel({ at, version, nowHref }: { at: string; version?: string; nowHref: string }) {
   return (
     <>
@@ -79,22 +77,21 @@ export function MomentLabel({ at, version, nowHref }: { at: string; version?: st
   )
 }
 
-/** A box to type a work item's number into; `find` says where it is, or null when there is none. */
-export function FindBox({ find }: { find: (number: string) => Promise<string | null> }) {
-  const [missing, setMissing] = useState<string | null>(null)
+export function FindBox({ hrefOfWorkItem }: { hrefOfWorkItem: (number: string) => Promise<string | null> }) {
+  const [missingNumber, setMissingNumber] = useState<string | null>(null)
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const typed = new FormData(event.currentTarget).get('number')?.toString().replace(/\D/g, '') ?? ''
-    if (!typed) return
-    const to = await find(typed)
-    if (to) {
-      setMissing(null)
-      window.location.hash = to
-    } else setMissing(typed)
+    const typedNumber = new FormData(event.currentTarget).get('number')?.toString().replace(/\D/g, '') ?? ''
+    if (!typedNumber) return
+    const workItemHref = await hrefOfWorkItem(typedNumber)
+    if (workItemHref) {
+      setMissingNumber(null)
+      window.location.hash = workItemHref
+    } else setMissingNumber(typedNumber)
   }
   return (
     <form role="search" onSubmit={onSubmit}>
-      {missing && <span {...stylex.props(styles.notFound)}>no #{missing} </span>}
+      {missingNumber && <span {...stylex.props(styles.notFound)}>no #{missingNumber} </span>}
       <input name="number" inputMode="numeric" placeholder="# find" aria-label="find a work item by its number" {...stylex.props(styles.find)} />
     </form>
   )

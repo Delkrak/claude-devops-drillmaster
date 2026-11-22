@@ -48,11 +48,10 @@ export const ItemList = ({ label, children }: { label: string; children: ReactNo
   </ul>
 )
 
-/** One work item in the list: its dot (dim once delivered), number, kind, what it is about, where it is, and how often Owner stepped in. */
-export function ItemRow({ to, issue, kind, summary, where, delivered, friction }: { to: string; issue: string; kind: string | null; summary: string; where: ReactNode; delivered: boolean; friction: number }) {
+export function ItemRow({ itemHref, issue, kind, summary, where, delivered, frictionCount }: { itemHref: string; issue: string; kind: string | null; summary: string; where: ReactNode; delivered: boolean; frictionCount: number }) {
   return (
     <li>
-      <a href={to} data-testid="item-row" {...stylex.props(styles.row)}>
+      <a href={itemHref} data-testid="item-row" {...stylex.props(styles.row)}>
         <span aria-hidden {...stylex.props(styles.dot, delivered && styles.dotDelivered)} />
         <span {...stylex.props(styles.issue)}>{issue}</span>
         <span {...stylex.props(styles.kind)}>{kind}</span>
@@ -60,9 +59,9 @@ export function ItemRow({ to, issue, kind, summary, where, delivered, friction }
           {summary}
         </span>
         <span {...stylex.props(styles.where)}>{where}</span>
-        {friction > 0 ? (
-          <span data-tip={`you stepped in ${friction === 1 ? 'once' : `${friction} times`}`} aria-label={`you stepped in ${friction} times`} {...stylex.props(styles.ring)}>
-            {friction}
+        {frictionCount > 0 ? (
+          <span data-tip={`you stepped in ${frictionCount === 1 ? 'once' : `${frictionCount} times`}`} aria-label={`you stepped in ${frictionCount} times`} {...stylex.props(styles.ring)}>
+            {frictionCount}
           </span>
         ) : (
           <span />

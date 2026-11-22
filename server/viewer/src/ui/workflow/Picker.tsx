@@ -34,31 +34,30 @@ const styles = stylex.create({
 })
 
 const PICKER_WIDTH = 220
-const SCROLL_THAT_CLOSES = 40
+const CLOSING_SCROLL_DISTANCE = 40
 
-/** A short list of work items to open, beside the mark that holds them; Escape, scrolling away or a click elsewhere closes it. */
-export function Picker({ title, items, at, onClose }: { title: string; items: readonly { label: string; to: string }[]; at: { x: number; y: number }; onClose: () => void }) {
-  const list = useRef<HTMLUListElement>(null)
+export function Picker({ title, items, point, onClose }: { title: string; items: readonly { label: string; to: string }[]; point: { x: number; y: number }; onClose: () => void }) {
+  const listRef = useRef<HTMLUListElement>(null)
   useEffect(() => {
-    list.current?.querySelector('a')?.focus({ preventScroll: true })
+    listRef.current?.querySelector('a')?.focus({ preventScroll: true })
     // Only a real scroll closes it: the one that brought its mark into view may still be on its way.
     const openedAt = window.scrollY
-    const onScroll = () => Math.abs(window.scrollY - openedAt) > SCROLL_THAT_CLOSES && onClose()
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
-    const onPointer = (event: MouseEvent) => list.current && !list.current.contains(event.target as Node) && onClose()
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onPointer)
+    const onScroll = () => Math.abs(window.scrollY - openedAt) > CLOSING_SCROLL_DISTANCE && onClose()
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    const onMouseDown = (event: MouseEvent) => listRef.current && !listRef.current.contains(event.target as Node) && onClose()
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onMouseDown)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('scroll', onScroll)
     }
   }, [onClose])
-  const left = Math.max(8, Math.min(at.x + 12, window.innerWidth - PICKER_WIDTH))
-  const top = Math.min(at.y + 12, window.innerHeight - 40 - items.length * 30)
+  const left = Math.max(8, Math.min(point.x + 12, window.innerWidth - PICKER_WIDTH))
+  const top = Math.min(point.y + 12, window.innerHeight - 40 - items.length * 30)
   return (
-    <ul ref={list} role="menu" aria-label={title} data-testid="picker" style={{ left, top }} {...stylex.props(styles.picker)}>
+    <ul ref={listRef} role="menu" aria-label={title} data-testid="picker" style={{ left, top }} {...stylex.props(styles.picker)}>
       <li role="presentation" {...stylex.props(styles.title)}>
         {title}
       </li>

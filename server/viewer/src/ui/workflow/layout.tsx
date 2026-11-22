@@ -19,7 +19,6 @@ export const FirstScreen = ({ children, testId }: { children: ReactNode; testId:
   </section>
 )
 
-/** One part of the drawing, scaled to the column's width; `label` names it for a screen reader. */
 export const Drawing = ({ height, children, testId, id, label }: { height: number; children: ReactNode; testId?: string; id?: string; label?: string }) => (
   <svg viewBox={`0 0 ${WIDTH} ${height}`} data-testid={testId} id={id} role="group" aria-label={label} {...stylex.props(styles.drawing)}>
     {children}

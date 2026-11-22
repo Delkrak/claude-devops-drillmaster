@@ -286,14 +286,12 @@ export interface OwnerInputsJudged extends EventEnvelope {
   inputs: { event: string; friction: boolean; why: string }[]
 }
 
-/** Drillmaster's grouping of the complaints about its tools into recurring problems, each in one line. */
 export interface ComplaintsGrouped extends EventEnvelope {
   type: 'complaints_grouped'
   /** Each problem names the complaints it groups by their ids (see drillmasterPage.ts). */
   groups: { tool: string; summary: string; complaints: string[] }[]
 }
 
-/** Where Drillmaster places each input judged friction: the step that should have caught it, or none. */
 export interface FrictionPlaced extends EventEnvelope {
   type: 'friction_placed'
   work_item_id: string

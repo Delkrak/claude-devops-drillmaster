@@ -9,38 +9,45 @@ import { Loading } from '../ui/Loading'
 import { Shell } from '../ui/Shell'
 import { ProjectNav } from './ProjectNav'
 
-const WHO: Record<Complaint['source'], string> = {
+const SOURCE_IN_WORDS: Record<Complaint['source'], string> = {
   'agent post mortem': "Agent's post mortem",
   'drillmaster post mortem': "Drillmaster's post mortem",
   'agent impediment': 'Agent, while working',
   'your step-in': 'you stepped in',
 }
 
-const UNCOVERED = 'no step covers it'
-const NOT_GROUPED = 'new since Drillmaster last grouped them'
+const UNCOVERED_GROUP_NAME = 'no step covers it'
+const NOT_GROUPED_HEADING = 'new since Drillmaster last grouped them'
 
-/** The row's line: the biggest problem and its count, or, before any grouping, the latest complaint. */
-function biggest(tool: DrillmasterPage['tools'][number]) {
-  const [first] = tool.problems
-  return first ? { text: `${first.summary} (${first.complaints.length} of ${tool.heard})`, quiet: false } : { text: tool.ungrouped[0]!.text, quiet: true }
+function headlineOf(tool: DrillmasterPage['tools'][number]) {
+  const [biggestProblem] = tool.problems
+  return biggestProblem
+    ? { text: `${biggestProblem.summary} (${biggestProblem.complaints.length} of ${tool.heard})`, isLatestComplaint: false }
+    : { text: tool.ungrouped[0]!.text, isLatestComplaint: true }
 }
 
-/** What's wrong in Drillmaster: its tools, most complained about first, each with its biggest problem; open, every problem and complaint. */
-export function ComplaintsPage({ id, at }: { id: string; at: string | null }) {
-  const loaded = usePolled(() => api.drillmaster(id, at), `${id}@${at ?? 'now'}`, at ? null : undefined)
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
-  const toggle = (name: string) =>
-    setOpen((current) => {
+export function ComplaintsPage({ projectId, at }: { projectId: string; at: string | null }) {
+  const loaded = usePolled(() => api.drillmasterPage(projectId, at), `${projectId}@${at ?? 'now'}`, at ? null : undefined)
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set())
+  const toggleGroup = (name: string) =>
+    setOpenGroups((current) => {
       const next = new Set(current)
       if (!next.delete(name)) next.add(name)
       return next
     })
-  const lines = (complaints: readonly Complaint[]) =>
+  const complaintLines = (complaints: readonly Complaint[]) =>
     complaints.map((complaint) => (
-      <ComplaintLine key={complaint.id} who={WHO[complaint.source]} issue={complaint.issue} to={href.workItem(id, complaint.work_item_id, at)} when={dayAndTime(complaint.at)} text={complaint.text} />
+      <ComplaintLine
+        key={complaint.id}
+        who={SOURCE_IN_WORDS[complaint.source]}
+        issue={complaint.issue}
+        workItemHref={href.workItem(projectId, complaint.work_item_id, at)}
+        when={dayAndTime(complaint.at)}
+        text={complaint.text}
+      />
     ))
   return (
-    <Shell title="Complaints about Drillmaster" aside={<ProjectNav id={id} at={at} nowHref={href.complaints(id)} here="complaints" />}>
+    <Shell title="Complaints about Drillmaster" aside={<ProjectNav projectId={projectId} at={at} nowHref={href.complaints(projectId)} currentPage="complaints" />}>
       <Loading loaded={loaded}>
         {(page) =>
           page.tools.length === 0 && page.uncovered.length === 0 ? (
@@ -48,27 +55,43 @@ export function ComplaintsPage({ id, at }: { id: string; at: string | null }) {
           ) : (
             <ComplaintList>
               {page.tools.map((tool) => {
-                const line = biggest(tool)
+                const headline = headlineOf(tool)
                 return (
-                  <ComplaintGroup key={tool.tool} name={tool.tool} count={tool.heard} latest={line.text} quiet={line.quiet} open={open.has(tool.tool)} onToggle={() => toggle(tool.tool)}>
+                  <ComplaintGroup
+                    key={tool.tool}
+                    name={tool.tool}
+                    heardCount={tool.heard}
+                    headline={headline.text}
+                    headlineIsLatestComplaint={headline.isLatestComplaint}
+                    open={openGroups.has(tool.tool)}
+                    onToggle={() => toggleGroup(tool.tool)}
+                  >
                     {tool.problems.map((problem) => (
                       <Fragment key={problem.summary}>
-                        <ProblemHeading summary={problem.summary} count={problem.complaints.length} of={tool.heard} />
-                        {lines(problem.complaints)}
+                        <ProblemHeading summary={problem.summary} complaintCount={problem.complaints.length} toolComplaintCount={tool.heard} />
+                        {complaintLines(problem.complaints)}
                       </Fragment>
                     ))}
                     {tool.ungrouped.length > 0 && (
                       <>
-                        {tool.problems.length > 0 && <ProblemHeading summary={NOT_GROUPED} count={tool.ungrouped.length} of={tool.heard} />}
-                        {lines(tool.ungrouped)}
+                        {tool.problems.length > 0 && <ProblemHeading summary={NOT_GROUPED_HEADING} complaintCount={tool.ungrouped.length} toolComplaintCount={tool.heard} />}
+                        {complaintLines(tool.ungrouped)}
                       </>
                     )}
                   </ComplaintGroup>
                 )
               })}
               {page.uncovered.length > 0 && (
-                <ComplaintGroup name={UNCOVERED} gap count={page.uncovered.length} latest={page.uncovered[0]!.text} quiet open={open.has(UNCOVERED)} onToggle={() => toggle(UNCOVERED)}>
-                  {lines(page.uncovered)}
+                <ComplaintGroup
+                  name={UNCOVERED_GROUP_NAME}
+                  isWorkflowGap
+                  heardCount={page.uncovered.length}
+                  headline={page.uncovered[0]!.text}
+                  headlineIsLatestComplaint
+                  open={openGroups.has(UNCOVERED_GROUP_NAME)}
+                  onToggle={() => toggleGroup(UNCOVERED_GROUP_NAME)}
+                >
+                  {complaintLines(page.uncovered)}
                 </ComplaintGroup>
               )}
             </ComplaintList>

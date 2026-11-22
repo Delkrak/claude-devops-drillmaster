@@ -13,10 +13,10 @@ export const FRICTION_PLACEMENT_REVIEW_KIND = 'friction_placement'
 export type FrictionPlacement = FrictionPlaced['inputs'][number]
 
 export function buildFrictionPlacementPrompt(workflow: WorkflowDocument, item: WorkItemState, frictions: readonly { input: OwnerInput; judgement: FrictionJudgement }[]) {
-  const passed = new Set(item.passed_step_guids)
-  const skipped = new Set(item.skipped_step_guids)
-  const steps = workflow.stages.flatMap((stage) =>
-    stage.steps.map((step) => `- ${stage.n}.${step.n} ${step.name}${step.if ? ` (only when ${step.if})` : ''}: ${passed.has(step.guid) ? 'passed' : skipped.has(step.guid) ? 'skipped' : 'not reached'}`),
+  const passedStepGuids = new Set(item.passed_step_guids)
+  const skippedStepGuids = new Set(item.skipped_step_guids)
+  const stepLines = workflow.stages.flatMap((stage) =>
+    stage.steps.map((step) => `- ${stage.n}.${step.n} ${step.name}${step.if ? ` (only when ${step.if})` : ''}: ${passedStepGuids.has(step.guid) ? 'passed' : skippedStepGuids.has(step.guid) ? 'skipped' : 'not reached'}`),
   )
   return [
     'You are Drillmaster. Owner had to step in on a work item; an independent judge found each input below to be friction.',
@@ -26,7 +26,7 @@ export function buildFrictionPlacementPrompt(workflow: WorkflowDocument, item: W
     `Work item ${item.issue}: ${item.description || 'no description'}`,
     '',
     `Its workflow (${workflow.version}), and how the work item went through it:`,
-    ...steps,
+    ...stepLines,
     '',
     'The inputs judged friction:',
     ...frictions.map(({ input, judgement }) => `- ${input.event_id}${input.after_delivery ? ' (after delivery)' : ''}: "${input.prompt}" (why friction: ${judgement.why})`),
@@ -36,21 +36,20 @@ export function buildFrictionPlacementPrompt(workflow: WorkflowDocument, item: W
   ].join('\n')
 }
 
-/** Keeps the placements of the inputs that were asked about; a step the workflow does not have places nowhere. */
-export function readFrictionPlacementAnswer(workflow: WorkflowDocument, asked: readonly string[], answer: unknown): FrictionPlacement[] {
-  const parsed = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { inputs?: unknown } | undefined
-  if (!parsed || !Array.isArray(parsed.inputs)) return []
-  const askedIds = new Set(asked)
-  return parsed.inputs.flatMap((candidate: { event?: unknown; step?: unknown; why?: unknown }) => {
+export function readFrictionPlacementAnswer(workflow: WorkflowDocument, askedEventIds: readonly string[], answer: unknown): FrictionPlacement[] {
+  const parsedAnswer = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { inputs?: unknown } | undefined
+  if (!parsedAnswer || !Array.isArray(parsedAnswer.inputs)) return []
+  const askedIds = new Set(askedEventIds)
+  return parsedAnswer.inputs.flatMap((candidate: { event?: unknown; step?: unknown; why?: unknown }) => {
     if (typeof candidate.event !== 'string' || !askedIds.has(candidate.event)) return []
-    const position = typeof candidate.step === 'string' ? /^(\d+)\.(\d+)$/.exec(candidate.step.trim()) : null
-    const stepGuid = position ? (stepGuidAt(workflow, Number(position[1]), Number(position[2])) ?? null) : null
+    const stepRefMatch = typeof candidate.step === 'string' ? /^(\d+)\.(\d+)$/.exec(candidate.step.trim()) : null
+    const stepGuid = stepRefMatch ? (stepGuidAt(workflow, Number(stepRefMatch[1]), Number(stepRefMatch[2])) ?? null) : null
     return [{ event: candidate.event, step_guid: stepGuid, why: typeof candidate.why === 'string' ? candidate.why : '' }]
   })
 }
 
 export function frictionPlacementsOf(events: readonly DrillmasterEvent[]) {
-  const placements = new Map<string, FrictionPlacement>()
-  for (const event of events) if (event.type === 'friction_placed') for (const placement of event.inputs) placements.set(placement.event, placement)
-  return placements
+  const placementByEventId = new Map<string, FrictionPlacement>()
+  for (const event of events) if (event.type === 'friction_placed') for (const placement of event.inputs) placementByEventId.set(placement.event, placement)
+  return placementByEventId
 }

@@ -10,11 +10,11 @@ import { Shell } from '../ui/Shell'
 import { Key, type KeyMark } from '../ui/workflow/Key'
 import { stopKindOf } from '../ui/workflow/marks'
 import { Tip } from '../ui/workflow/Tip'
-import { Route, type Opened } from './item/Route'
-import type { Depth } from './item/StepDetail'
+import { Route, type OpenedDepths } from './item/Route'
+import type { DetailDepth } from './item/StepDetail'
 import { ProjectNav } from './ProjectNav'
 
-function State({ page }: { page: Page }) {
+function ItemState({ page }: { page: Page }) {
   if (page.delivered) {
     return (
       <>
@@ -22,21 +22,20 @@ function State({ page }: { page: Page }) {
       </>
     )
   }
-  const here = page.stages.flatMap((stage) => stage.steps).find((step) => step.status === 'here')
-  return here ? (
+  const currentStep = page.stages.flatMap((stage) => stage.steps).find((step) => step.status === 'here')
+  return currentStep ? (
     <>
-      in progress at <Strong>{here.name}</Strong>
+      in progress at <Strong>{currentStep.name}</Strong>
     </>
   ) : (
     <>waiting to be delivered</>
   )
 }
 
-/** The key names only what this work item's route draws. */
-function marksOf(page: Page): KeyMark[] {
+function keyMarksOf(page: Page): KeyMark[] {
   const steps = page.stages.flatMap((stage) => stage.steps)
   const verdicts = steps.flatMap((step) => step.happened.verdicts)
-  const has: Record<KeyMark, boolean> = {
+  const isDrawn: Record<KeyMark, boolean> = {
     always: steps.some((step) => stopKindOf(step) === 'always'),
     if: steps.some((step) => stopKindOf(step) === 'if'),
     approve: steps.some((step) => stopKindOf(step) === 'approve'),
@@ -51,18 +50,13 @@ function marksOf(page: Page): KeyMark[] {
     delivered: page.delivered !== null,
     afterDelivery: page.delivered !== null,
   }
-  return (Object.keys(has) as KeyMark[]).filter((mark) => has[mark])
+  return (Object.keys(isDrawn) as KeyMark[]).filter((mark) => isDrawn[mark])
 }
 
-/**
- * What happened to one work item: its route along the workflow it runs on, lit where it went and
- * faded where it skipped, with Owner's step-ins at the step that should have caught them. A step
- * opens one level at a time: what happened, the evidence, every tool call.
- */
-export function WorkItemPage({ id, workItemId, at }: { id: string; workItemId: string; at: string | null }) {
-  const loaded = usePolled(() => api.workItem(id, workItemId, at), `${id}/${workItemId}@${at ?? 'now'}`, at ? null : undefined)
-  const [opened, setOpened] = useState<Opened>(new Map())
-  const onOpen = (key: string, depth: Depth | null) =>
+export function WorkItemPage({ projectId, workItemId, at }: { projectId: string; workItemId: string; at: string | null }) {
+  const loaded = usePolled(() => api.workItemPage(projectId, workItemId, at), `${projectId}/${workItemId}@${at ?? 'now'}`, at ? null : undefined)
+  const [opened, setOpened] = useState<OpenedDepths>(new Map())
+  const onOpen = (key: string, depth: DetailDepth | null) =>
     setOpened((current) => {
       const next = new Map(current)
       if (depth === null) next.delete(key)
@@ -73,17 +67,17 @@ export function WorkItemPage({ id, workItemId, at }: { id: string; workItemId: s
   return (
     <Shell
       title={page ? `Work item ${page.issue}` : 'Work item'}
-      aside={<ProjectNav id={id} at={at} version={page?.workflow_version} nowHref={href.workItem(id, workItemId)} here="workItem" />}
+      aside={<ProjectNav projectId={projectId} at={at} version={page?.workflow_version} nowHref={href.workItem(projectId, workItemId)} currentPage="workItem" />}
     >
       <Loading loaded={loaded}>
-        {(data) => (
+        {(loadedPage) => (
           <RouteColumn>
-            <ItemTitle issue={data.issue} kind={data.kind} state={<State page={data} />} description={data.description} />
-            <Route page={data} opened={opened} onOpen={onOpen} />
+            <ItemTitle issue={loadedPage.issue} kind={loadedPage.kind} state={<ItemState page={loadedPage} />} description={loadedPage.description} />
+            <Route page={loadedPage} opened={opened} onOpen={onOpen} />
           </RouteColumn>
         )}
       </Loading>
-      {page && <Key marks={marksOf(page)} />}
+      {page && <Key marks={keyMarksOf(page)} />}
       <Tip />
     </Shell>
   )

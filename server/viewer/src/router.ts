@@ -2,38 +2,33 @@ import { useEffect, useState } from 'react'
 
 export type Route =
   | { page: 'home' }
-  | { page: 'workflow'; id: string; at: string | null }
-  | { page: 'workItems'; id: string; at: string | null }
-  | { page: 'changes'; id: string; at: string | null }
-  | { page: 'complaints'; id: string; at: string | null }
-  | { page: 'workItem'; id: string; workItemId: string; at: string | null }
+  | { page: 'workflow'; projectId: string; at: string | null }
+  | { page: 'workItems'; projectId: string; at: string | null }
+  | { page: 'changes'; projectId: string; at: string | null }
+  | { page: 'complaints'; projectId: string; at: string | null }
+  | { page: 'workItem'; projectId: string; workItemId: string; at: string | null }
 
-/**
- * `#/p/<project>/workflow`, `#/p/<project>/items`, `#/p/<project>/items/<work item>` and
- * `#/p/<project>/changes` and `#/p/<project>/complaints`, each with
- * `?at=<ISO time>`; any other project link opens the Workflow page.
- */
 export function parseRoute(hash: string): Route {
   const [routePath = '', query = ''] = hash.replace(/^#\/?/, '').split('?')
-  const [section, id, page, workItemId] = routePath.split('/').filter(Boolean).map(decodeURIComponent)
+  const [section, projectId, page, workItemId] = routePath.split('/').filter(Boolean).map(decodeURIComponent)
   const at = new URLSearchParams(query).get('at')
-  if (section !== 'p' || !id) return { page: 'home' }
-  if (page === 'items' && workItemId) return { page: 'workItem', id, workItemId, at }
-  if (page === 'items') return { page: 'workItems', id, at }
-  if (page === 'changes') return { page: 'changes', id, at }
-  if (page === 'complaints') return { page: 'complaints', id, at }
-  return { page: 'workflow', id, at }
+  if (section !== 'p' || !projectId) return { page: 'home' }
+  if (page === 'items' && workItemId) return { page: 'workItem', projectId, workItemId, at }
+  if (page === 'items') return { page: 'workItems', projectId, at }
+  if (page === 'changes') return { page: 'changes', projectId, at }
+  if (page === 'complaints') return { page: 'complaints', projectId, at }
+  return { page: 'workflow', projectId, at }
 }
 
-const moment = (at?: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
+const atQuery = (at?: string | null) => (at ? `?at=${encodeURIComponent(at)}` : '')
 
 export const href = {
   home: () => '#/',
-  workflow: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/workflow${moment(at)}`,
-  changes: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/changes${moment(at)}`,
-  complaints: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/complaints${moment(at)}`,
-  workItems: (id: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items${moment(at)}`,
-  workItem: (id: string, workItemId: string, at?: string | null) => `#/p/${encodeURIComponent(id)}/items/${encodeURIComponent(workItemId)}${moment(at)}`,
+  workflow: (projectId: string, at?: string | null) => `#/p/${encodeURIComponent(projectId)}/workflow${atQuery(at)}`,
+  changes: (projectId: string, at?: string | null) => `#/p/${encodeURIComponent(projectId)}/changes${atQuery(at)}`,
+  complaints: (projectId: string, at?: string | null) => `#/p/${encodeURIComponent(projectId)}/complaints${atQuery(at)}`,
+  workItems: (projectId: string, at?: string | null) => `#/p/${encodeURIComponent(projectId)}/items${atQuery(at)}`,
+  workItem: (projectId: string, workItemId: string, at?: string | null) => `#/p/${encodeURIComponent(projectId)}/items/${encodeURIComponent(workItemId)}${atQuery(at)}`,
 }
 
 export function useRoute(): Route {

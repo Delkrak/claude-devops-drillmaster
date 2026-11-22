@@ -139,21 +139,20 @@ export function evaluateCondition(condition: Condition, inputs: InputValues): bo
   }
 }
 
-/** A condition in plain words, for people: `kind == 'feature' || user_visible == 'yes'` is "kind is feature or user visible is yes". */
 export function conditionInWords(condition: Condition): string {
   switch (condition.kind) {
     case 'compare': {
-      const input = condition.input.replace(/[_-]+/g, ' ')
-      const values = condition.values.join(' or ')
-      return condition.op === '!=' ? `${input} is not ${values}` : `${input} is ${values}`
+      const inputInWords = condition.input.replace(/[_-]+/g, ' ')
+      const valuesInWords = condition.values.join(' or ')
+      return condition.op === '!=' ? `${inputInWords} is not ${valuesInWords}` : `${inputInWords} is ${valuesInWords}`
     }
     case 'not':
       return `not (${conditionInWords(condition.operand)})`
     case 'and':
     case 'or': {
-      // A part that joins the other way keeps its brackets, so "a and (b or c)" reads as it runs.
-      const part = (operand: Condition) => (operand.kind !== condition.kind && (operand.kind === 'and' || operand.kind === 'or') ? `(${conditionInWords(operand)})` : conditionInWords(operand))
-      return `${part(condition.left)} ${condition.kind} ${part(condition.right)}`
+      // An operand that joins the other way keeps its brackets, so "a and (b or c)" reads as it runs.
+      const operandInWords = (operand: Condition) => (operand.kind !== condition.kind && (operand.kind === 'and' || operand.kind === 'or') ? `(${conditionInWords(operand)})` : conditionInWords(operand))
+      return `${operandInWords(condition.left)} ${condition.kind} ${operandInWords(condition.right)}`
     }
   }
 }
