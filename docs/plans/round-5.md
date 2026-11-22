@@ -193,8 +193,8 @@ comes from where the item stands; old change events keep their row; a skip names
 read; prefixed tool names count; failed placements are retried at the retrospective; nested
 conditions keep their brackets; this table follows the work.
 
-### 8. 🟥 Owner's review
-Owner walks the stories in the new viewer; then the round-4 review goes on through it.
+### 8. 🟩 Owner's review
+Owner walked the stories in the new viewer: ok. The round-4 review goes on through it.
 
 ### 9. 🟥 Finish
 DESIGN.md rewritten from the built viewer (`impeccable document`, with tokens and
