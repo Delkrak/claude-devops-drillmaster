@@ -164,7 +164,7 @@ page, by typing #N, and from a list. Every detail is there, revealed one level a
 - 🟩 **Owner reviewed it**: no one-line summary under the header (the route shows it); the list
   says what each work item is about.
 
-### 5. 🟧 "Did the change help?" shaped and built
+### 5. 🟩 "Did the change help?" shaped and built
 Owner's pace from here: ask Owner first, then build, with one blind read of the built page; a
 separate mock round only when the layout is new.
 Owner's answers: the first screen is each change's verdict; its own "changes" page; numbers first,
@@ -173,7 +173,7 @@ the verdict in words on hover; open, a change says why it was made and what it d
   `GET /api/projects/:id/changes[?at=]`; the changes page; "changes" in every project header.
 - 🟩 **Blind read of the built page**: it read every change as "helped"; two were "not proven" and
   one "too early". Fixed: a header names the measure and that lower is better.
-- 🟧 **Owner reviews it**, and decides whether the verdict word shows on the row.
+- 🟩 **Owner reviewed it**: the verdict word shows on the row, the explanation in a few words.
 ### 6. 🟧 "What's wrong in Drillmaster?" shaped and built, the same way
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
 
