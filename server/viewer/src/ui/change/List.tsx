@@ -7,7 +7,7 @@ const styles = stylex.create({
   item: { borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule },
   row: {
     display: 'grid',
-    gridTemplateColumns: '56px 1fr 150px 90px',
+    gridTemplateColumns: '56px 1fr 130px 100px',
     alignItems: 'center',
     columnGap: space.lg,
     width: '100%',
@@ -23,14 +23,16 @@ const styles = stylex.create({
     textAlign: 'start',
     cursor: 'pointer',
   },
-  head: { display: 'grid', gridTemplateColumns: '56px 1fr 150px 90px', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.sm, borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule, color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
-  headMeasure: { gridColumn: '3 / span 2', textAlign: 'end' },
+  head: { display: 'grid', gridTemplateColumns: '56px 1fr 130px 100px', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.sm, borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule, color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
+  // One line, reaching left over the change column when it is longer than the numbers.
+  headMeasure: { gridColumn: '3 / span 2', justifySelf: 'end', whiteSpace: 'nowrap' },
   version: { color: colors.dim, fontSize: font.sizeSm, fontWeight: font.weightHeavy, letterSpacing: '1px' },
   change: { fontSize: '15px', fontWeight: font.weightBold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  numbers: { display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: space.sm, fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums', cursor: 'help' },
+  numbers: { display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: space.sm, fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums' },
   before: { color: colors.dim },
   arrow: { color: colors.dim, fontSize: font.sizeSm },
-  counted: { color: colors.dim, fontSize: font.sizeSm, textAlign: 'end' },
+  verdict: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy, cursor: 'help' },
+  verdictHelped: { color: colors.line },
   sand: { color: colors.sand },
   detail: { display: 'grid', gridTemplateColumns: '56px 1fr', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.lg, fontSize: '14px', lineHeight: 1.45 },
   detailBody: { gridColumn: 2, maxWidth: '640px' },
@@ -56,10 +58,10 @@ export const ChangeList = ({ measure, children }: { measure: string; children: R
 )
 
 /**
- * One change: the version it made, what it changed, and its measure before → after with the
- * explanation in `tip`; open, it shows `children` under it.
+ * One change: the version it made, what it changed, its measure before → after, and the verdict in
+ * a word with what it rests on in `tip`; open, it shows `children` under it.
  */
-export function ChangeItem({ version, change, before, after, tip, counted, worse, open, onToggle, children }: { version: string; change: string; before: string; after: string; tip: string; counted: string; worse: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function ChangeItem({ version, change, before, after, verdict, tip, helped, worse, open, onToggle, children }: { version: string; change: string; before: string; after: string; verdict: string; tip: string; helped: boolean; worse: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <li data-testid="change" {...stylex.props(styles.item)}>
       <button type="button" aria-expanded={open} onClick={onToggle} {...stylex.props(styles.row)}>
@@ -67,12 +69,14 @@ export function ChangeItem({ version, change, before, after, tip, counted, worse
         <span title={change} {...stylex.props(styles.change)}>
           {change}
         </span>
-        <span data-tip={tip} aria-label={tip} data-testid="measure" {...stylex.props(styles.numbers)}>
+        <span data-testid="measure" {...stylex.props(styles.numbers)}>
           <span {...stylex.props(styles.before)}>{before}</span>
           <span {...stylex.props(styles.arrow)}>→</span>
           <span {...stylex.props(worse && styles.sand)}>{after}</span>
         </span>
-        <span {...stylex.props(styles.counted)}>{counted}</span>
+        <span data-tip={tip} data-testid="verdict" {...stylex.props(styles.verdict, helped && styles.verdictHelped)}>
+          {verdict}
+        </span>
       </button>
       {open && (
         <div data-testid="change-detail" {...stylex.props(styles.detail)}>

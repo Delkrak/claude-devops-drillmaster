@@ -19,21 +19,22 @@ const MEASURE_WORDS: Record<string, string> = {
 
 const number = (value: number | null) => (value === null ? '–' : String(Math.round(value * 100) / 100))
 
-/** The verdict in words, for the explanation under the numbers. */
-function verdictWords(change: ChangeRow) {
-  const measure = change.measure ? (MEASURE_WORDS[change.measure] ?? change.measure) : 'its measure'
-  const numbers = `${measure}: ${number(change.before)} before, ${number(change.after)} over ${change.counted} work item${change.counted === 1 ? '' : 's'} since`
-  if (change.verdict === 'keep') return `helped. ${numbers}`
-  if (change.verdict === 'rethink') return `not proven: the difference is within chance, or misses its target. ${numbers}`
-  if (change.verdict === 'running') return `too early: ${change.counted} of ${change.judge_after} work items. ${numbers}`
-  return 'not measured'
+const VERDICT_WORDS = { keep: 'helped', rethink: 'not proven', running: 'too early' } as const
+const verdictWord = (change: ChangeRow) => (change.verdict ? VERDICT_WORDS[change.verdict] : 'not measured')
+
+/** The explanation under the verdict: what it rests on, in a few words. */
+function verdictTip(change: ChangeRow) {
+  if (change.verdict === 'keep') return `better beyond chance, over ${change.counted} work items`
+  if (change.verdict === 'rethink') return `could be chance, over ${change.counted} work items`
+  if (change.verdict === 'running') return `${change.counted} of ${change.judge_after} work items so far`
+  return 'no measure set for this change'
 }
 
 /** What the numbers measure, and which way is better; every measure is lower-is-better. */
 function measureHeader(changes: readonly ChangeRow[]) {
   const measures = [...new Set(changes.flatMap((change) => (change.measure ? [change.measure] : [])))]
   const words = measures.length === 1 ? (MEASURE_WORDS[measures[0]!] ?? measures[0]!) : 'the measure'
-  return `${words}, before → after · lower is better`
+  return `${words} · lower is better`
 }
 
 /** Every change to the workflow, latest first: its measure before → after; open, why it was made and what it changed. */
@@ -61,8 +62,9 @@ export function ChangesPage({ id, at }: { id: string; at: string | null }) {
                   change={change.change}
                   before={number(change.before)}
                   after={number(change.after)}
-                  tip={verdictWords(change)}
-                  counted={change.verdict === 'running' ? `${change.counted} of ${change.judge_after} items` : `${change.counted} items`}
+                  verdict={verdictWord(change)}
+                  tip={verdictTip(change)}
+                  helped={change.verdict === 'keep'}
                   worse={change.before !== null && change.after !== null && change.after > change.before}
                   open={open.has(change.version)}
                   onToggle={() => toggle(change.version)}
