@@ -31,11 +31,17 @@ export interface ChangeRow {
   measure: string | null
   /** The measure over the work items before the change, and over those counted since. */
   before: number | null
+  /** The standard deviation of the measure over the work items before the change. */
+  before_sd: number | null
   after: number | null
   counted: number
   judge_after: number | null
-  /** keep: it made the measure better beyond chance; rethink: it did not show that; running: too few items yet. */
-  verdict: 'keep' | 'rethink' | 'running' | null
+  /**
+   * significant: the measure beat its baseline by more than the baseline's standard deviation and met
+   * the target; below target: it beat it but missed the target; not significant: it did not beat it;
+   * insufficient data: fewer work items than the experiment is judged on. Null when nothing is measured.
+   */
+  outcome: 'significant' | 'below target' | 'not significant' | 'insufficient data' | null
   edits: WorkflowEdit[]
 }
 
@@ -92,10 +98,11 @@ export function changesView(events: readonly DrillmasterEvent[], at?: string): C
         hypothesis: experiment?.hypothesis || proposal?.hypothesis || null,
         measure: experiment?.measure ?? null,
         before: judged?.baseline ?? null,
+        before_sd: judged?.baseline_sd ?? null,
         after: judged?.mean ?? null,
         counted: judged ? Math.min(judged.counted, judged.judge_after) : 0,
         judge_after: judged?.judge_after ?? null,
-        verdict: judged?.status ?? null,
+        outcome: !judged ? null : judged.status === 'running' ? 'insufficient data' : !judged.null_rejected ? 'not significant' : judged.target_met ? 'significant' : 'below target',
         edits: workflowEdits(from, to),
       }]
     })

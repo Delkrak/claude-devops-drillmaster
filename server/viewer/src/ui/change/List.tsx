@@ -7,7 +7,7 @@ const styles = stylex.create({
   item: { borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule },
   row: {
     display: 'grid',
-    gridTemplateColumns: '56px 1fr 130px 100px',
+    gridTemplateColumns: '56px 1fr 120px 136px',
     alignItems: 'center',
     columnGap: space.lg,
     width: '100%',
@@ -23,7 +23,7 @@ const styles = stylex.create({
     textAlign: 'start',
     cursor: 'pointer',
   },
-  head: { display: 'grid', gridTemplateColumns: '56px 1fr 130px 100px', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.sm, borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule, color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
+  head: { display: 'grid', gridTemplateColumns: '56px 1fr 120px 136px', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.sm, borderBottomWidth: shape.borderWidth, borderBottomStyle: 'solid', borderBottomColor: colors.rule, color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
   // One line, reaching left over the change column when it is longer than the numbers.
   headMeasure: { gridColumn: '3 / span 2', justifySelf: 'end', whiteSpace: 'nowrap' },
   version: { color: colors.dim, fontSize: font.sizeSm, fontWeight: font.weightHeavy, letterSpacing: '1px' },
@@ -31,7 +31,7 @@ const styles = stylex.create({
   numbers: { display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: space.sm, fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums' },
   before: { color: colors.dim },
   arrow: { color: colors.dim, fontSize: font.sizeSm },
-  verdict: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy, cursor: 'help' },
+  verdict: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy, whiteSpace: 'nowrap', cursor: 'help' },
   helped: { color: colors.helped },
   notProven: { color: colors.sand },
   tooEarly: { color: colors.dim },
@@ -62,6 +62,7 @@ export const ChangeList = ({ measure, children }: { measure: string; children: R
  * One change: the version it made, what it changed, its measure before → after, and the verdict in
  * a word with what it rests on in `tip`; open, it shows `children` under it.
  */
+/** helped: significant; notProven: below target or not significant; tooEarly: insufficient data. */
 export type VerdictTone = 'helped' | 'notProven' | 'tooEarly'
 
 export function ChangeItem({ version, change, before, after, verdict, tone, tip, open, onToggle, children }: { version: string; change: string; before: string; after: string; verdict: string; tone: VerdictTone; tip: string; open: boolean; onToggle: () => void; children: ReactNode }) {

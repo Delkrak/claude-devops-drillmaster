@@ -8,10 +8,10 @@ const fixture = JSON.parse(readFileSync(new URL('../viewer/fixtures/reviewed-run
 
 describe('the changes page', () => {
   it('lists every change to the workflow, latest first, with its measure before and after and its verdict', () => {
-    expect(changesView(fixture).map((row) => [row.version, row.before, row.after, row.counted, row.judge_after, row.verdict])).toEqual([
-      ['3.0.0', 0.4, 0, 2, 3, 'running'],
-      ['2.1.0', 0.67, 0.33, 3, 3, 'rethink'],
-      ['2.0.0', 0.67, 0.33, 3, 3, 'rethink'],
+    expect(changesView(fixture).map((row) => [row.version, row.before, row.after, row.counted, row.judge_after, row.outcome])).toEqual([
+      ['3.0.0', 0.4, 0, 2, 3, 'insufficient data'],
+      ['2.1.0', 0.67, 0.33, 3, 3, 'not significant'],
+      ['2.0.0', 0.67, 0.33, 3, 3, 'not significant'],
     ])
   })
 
@@ -25,9 +25,9 @@ describe('the changes page', () => {
   })
 
   it('shows the changes made by a moment, with the verdict as it stood then', () => {
-    expect(changesView(fixture, '2026-11-20T19:10:16.785Z').map((row) => [row.version, row.counted, row.verdict])).toEqual([
-      ['2.1.0', 1, 'running'],
-      ['2.0.0', 1, 'running'],
+    expect(changesView(fixture, '2026-11-20T19:10:16.785Z').map((row) => [row.version, row.counted, row.outcome])).toEqual([
+      ['2.1.0', 1, 'insufficient data'],
+      ['2.0.0', 1, 'insufficient data'],
     ])
   })
 

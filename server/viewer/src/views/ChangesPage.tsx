@@ -19,15 +19,17 @@ const MEASURE_WORDS: Record<string, string> = {
 
 const number = (value: number | null) => (value === null ? '–' : String(Math.round(value * 100) / 100))
 
-const VERDICT_WORDS = { keep: 'helped', rethink: 'not proven', running: 'too early' } as const
-const verdictWord = (change: ChangeRow) => (change.verdict ? VERDICT_WORDS[change.verdict] : 'not measured')
+const verdictWord = (change: ChangeRow) => change.outcome ?? 'not measured'
 
-/** The explanation under the verdict: what it rests on, in a few words. */
+/**
+ * What the verdict rests on, in standard notation. Drillmaster's rule: significant when the mean
+ * since the change is more than one standard deviation of the baseline below it, and on target.
+ */
 function verdictTip(change: ChangeRow) {
-  if (change.verdict === 'keep') return `better beyond chance, over ${change.counted} work items`
-  if (change.verdict === 'rethink') return `could be chance, over ${change.counted} work items`
-  if (change.verdict === 'running') return `${change.counted} of ${change.judge_after} work items so far`
-  return 'no measure set for this change'
+  const baseline = `baseline ${number(change.before)} ± ${number(change.before_sd)} (SD)`
+  if (change.outcome === 'insufficient data') return `n = ${change.counted} of ${change.judge_after} · ${baseline}`
+  if (change.outcome === null) return 'no measure set for this change'
+  return `n = ${change.counted} · ${baseline}${change.outcome === 'below target' ? ' · target not met' : ''}`
 }
 
 /** What the numbers measure, and which way is better; every measure is lower-is-better. */
@@ -64,7 +66,7 @@ export function ChangesPage({ id, at }: { id: string; at: string | null }) {
                   after={number(change.after)}
                   verdict={verdictWord(change)}
                   tip={verdictTip(change)}
-                  tone={change.verdict === 'keep' ? 'helped' : change.verdict === 'rethink' ? 'notProven' : 'tooEarly'}
+                  tone={change.outcome === 'significant' ? 'helped' : change.outcome === 'below target' || change.outcome === 'not significant' ? 'notProven' : 'tooEarly'}
                   open={open.has(change.version)}
                   onToggle={() => toggle(change.version)}
                 >

@@ -118,9 +118,10 @@ export interface ChangeRow {
   hypothesis: string | null
   measure: string | null
   before: number | null
+  before_sd: number | null
   after: number | null
   counted: number
   judge_after: number | null
-  verdict: 'keep' | 'rethink' | 'running' | null
+  outcome: 'significant' | 'below target' | 'not significant' | 'insufficient data' | null
   edits: WorkflowEdit[]
 }
