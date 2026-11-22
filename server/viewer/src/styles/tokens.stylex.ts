@@ -12,6 +12,8 @@ export const colors = stylex.defineVars({
   ahead: '#3a443c',
   panelRule: '#2c342e',
   sand: '#e3c97e',
+  /** A change that helped, and nothing else. */
+  helped: '#a3c27a',
   /** Friction, and nothing else. */
   orange: '#ff7a1a',
   keyGround: 'rgb(20 26 22 / 0.92)',

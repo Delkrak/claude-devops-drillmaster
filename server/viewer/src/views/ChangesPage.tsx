@@ -64,8 +64,7 @@ export function ChangesPage({ id, at }: { id: string; at: string | null }) {
                   after={number(change.after)}
                   verdict={verdictWord(change)}
                   tip={verdictTip(change)}
-                  helped={change.verdict === 'keep'}
-                  worse={change.before !== null && change.after !== null && change.after > change.before}
+                  tone={change.verdict === 'keep' ? 'helped' : change.verdict === 'rethink' ? 'notProven' : 'tooEarly'}
                   open={open.has(change.version)}
                   onToggle={() => toggle(change.version)}
                 >

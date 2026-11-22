@@ -37,7 +37,9 @@ A dark, olive-tinted ground with bone line work; colour is reserved for meaning.
 - **Safety orange** (#FF7A1A): friction only, where Owner had to step in.
 
 ### Tertiary
-- **Sand** (#E3C97E): Owner's planned approvals (the approval stop) and work Drillmaster sent back.
+- **Sand** (#E3C97E): Owner's planned approvals (the approval stop) and work Drillmaster sent back;
+  a change whose effect is not proven, which waits on Owner.
+- **Olive green** (#A3C27A): a change that helped. Used for that verdict only.
 
 ### Neutral
 - **Ground** (#0F1311): the page.

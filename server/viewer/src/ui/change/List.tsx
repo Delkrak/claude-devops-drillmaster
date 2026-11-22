@@ -32,8 +32,9 @@ const styles = stylex.create({
   before: { color: colors.dim },
   arrow: { color: colors.dim, fontSize: font.sizeSm },
   verdict: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy, cursor: 'help' },
-  verdictHelped: { color: colors.line },
-  sand: { color: colors.sand },
+  helped: { color: colors.helped },
+  notProven: { color: colors.sand },
+  tooEarly: { color: colors.dim },
   detail: { display: 'grid', gridTemplateColumns: '56px 1fr', columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.lg, fontSize: '14px', lineHeight: 1.45 },
   detailBody: { gridColumn: 2, maxWidth: '640px' },
   label: { display: 'block', marginTop: space.sm, marginBottom: '2px', color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
@@ -61,7 +62,10 @@ export const ChangeList = ({ measure, children }: { measure: string; children: R
  * One change: the version it made, what it changed, its measure before → after, and the verdict in
  * a word with what it rests on in `tip`; open, it shows `children` under it.
  */
-export function ChangeItem({ version, change, before, after, verdict, tip, helped, worse, open, onToggle, children }: { version: string; change: string; before: string; after: string; verdict: string; tip: string; helped: boolean; worse: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+export type VerdictTone = 'helped' | 'notProven' | 'tooEarly'
+
+export function ChangeItem({ version, change, before, after, verdict, tone, tip, open, onToggle, children }: { version: string; change: string; before: string; after: string; verdict: string; tone: VerdictTone; tip: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  const toned = styles[tone]
   return (
     <li data-testid="change" {...stylex.props(styles.item)}>
       <button type="button" aria-expanded={open} onClick={onToggle} {...stylex.props(styles.row)}>
@@ -72,9 +76,9 @@ export function ChangeItem({ version, change, before, after, verdict, tip, helpe
         <span data-testid="measure" {...stylex.props(styles.numbers)}>
           <span {...stylex.props(styles.before)}>{before}</span>
           <span {...stylex.props(styles.arrow)}>→</span>
-          <span {...stylex.props(worse && styles.sand)}>{after}</span>
+          <span {...stylex.props(toned)}>{after}</span>
         </span>
-        <span data-tip={tip} data-testid="verdict" {...stylex.props(styles.verdict, helped && styles.verdictHelped)}>
+        <span data-tip={tip} data-testid="verdict" data-tone={tone} {...stylex.props(styles.verdict, toned)}>
           {verdict}
         </span>
       </button>
