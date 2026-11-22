@@ -251,9 +251,14 @@ looking better. `owner_friction_per_item` counts the inputs judged friction, plu
 Owner rejected. Until the judge has judged, an input counts unless it started or resumed the work
 item, and after delivery only when Agent then changed the work.
 
+Drillmaster, which knows the workflow, then places each input judged friction at the step that
+should have caught it, or at none when no step covers it; a placement that fails is tried again at
+the next retrospective. At each retrospective Drillmaster also groups the complaints about its own
+tools, from the post mortems and Agent's impediments, into recurring problems, one line each.
+
 On workflow `0.0.0` there are no gates, so Owner often steps in after delivery. Agent first asks
 Owner "fix it now, or create a separate issue?". A fix done now is reported as an `added_step` against the same work item. It's
-the only report allowed after delivery, and the viewer can search for it.
+the only report allowed after delivery, and the work item's page in the viewer shows it.
 
 Each work gate is judged by the level of the chain of command it belongs to:
 - **Self gate:** Agent's own self check decides it at once.
@@ -287,19 +292,28 @@ drillmaster inspect [--json]
 ## The viewer
 
 Each project's server also serves a read-only web viewer of that project at its own address: run
-`drillmaster open` in the work folder. It shows:
-- the overview (objective, measures and what is happening now), the workflow at
-  any version, the work items, the retrospectives with each proposal's status, and the measures per
-  work item;
-- for each work item, a timeline you can filter and search (for example for `added_step`), with
-  both post mortems.
+`drillmaster open` in the work folder. Each page answers one question for Owner:
+- **Workflow** (it opens here): the pipeline, where the work items are, and where Owner had to step
+  in. The overview comes first; scrolling brings in each stage's steps.
+- **A work item** (`#` find in the header, or a box on the Workflow page): its route through the
+  workflow, what it skipped and why, and each of Owner's step-ins at the step that should have
+  caught it. A step opens one level at a time: what happened, the evidence, every tool call.
+- **Work items**: every work item, latest first.
+- **Changes**: each change to the workflow, the measure before and after, and whether the change
+  was significant.
+- **Complaints**: what to fix next in Drillmaster itself: its tools, most complained about first,
+  each with its biggest problem.
 
-The viewer refreshes every few seconds, so you can follow a live session.
+Add `?at=<time>` to any page to see it as it was then. The viewer refreshes every few seconds, so
+you can follow a live session.
 
-It's a React app in `server/viewer/` with a token-driven design:
-- `styles/tokens.stylex.ts` holds the design tokens (StyleX `defineVars`, light and dark).
+It's a React app in `server/viewer/` with a token-driven design, recorded in
+[DESIGN.md](DESIGN.md):
+- `styles/tokens.stylex.ts` holds the design tokens (StyleX `defineVars`).
 - `ui/` holds the primitives, styled only from those tokens.
 - `views/` composes the primitives into pages.
+
+The accepted mocks each page was built from are in [docs/design/](docs/design/).
 
 `npm run build` builds the viewer into `server/dist/viewer`.
 
