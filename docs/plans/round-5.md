@@ -37,15 +37,16 @@ at a time.
 
 ## How a story is shaped and built
 
-1. 🟧 **Ask Owner first**: what the story is for, what the first screen answers, what follows, how
+1. 🟩 **Ask Owner first**: what the story is for, what the first screen answers, what follows, how
    much detail. Challenge the idea before drawing.
-2. 🟧 **A mock from real data**: drawn from the fixture at a moment, never hand-placed.
-3. 🟧 **Blind agents before Owner**, fresh, screenshots only: first look (glances in order, what pulls
+2. 🟩 **A mock from real data**: drawn from the fixture at a moment, never hand-placed. From story 5
+   on, by Owner's choice, only when the layout is new.
+3. 🟩 **Blind agents before Owner**, fresh, screenshots only: first look (glances in order, what pulls
    attention without mattering), symbols only (the mock as a wireframe), and the story's question
    marked SURE or GUESS. Two options get one agent each.
-4. 🟧 **Owner decides**, with steps to follow and the agents' answers side by side.
-5. 🟧 **Record it**: the accepted mock in `docs/design/`, its surface brief, DESIGN.md updated.
-6. 🟧 **Build it** into the viewer, test it, run the same blind tests on the built page, and give it to
+4. 🟩 **Owner decides**, with steps to follow and the agents' answers side by side.
+5. 🟩 **Record it**: the accepted mock in `docs/design/`, its surface brief, DESIGN.md updated.
+6. 🟩 **Build it** into the viewer, test it, run the same blind tests on the built page, and give it to
    Owner before the next story starts.
 
 ## Build order
