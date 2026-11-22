@@ -174,7 +174,16 @@ the verdict in words on hover; open, a change says why it was made and what it d
 - 🟩 **Blind read of the built page**: it read every change as "helped"; two were "not proven" and
   one "too early". Fixed: a header names the measure and that lower is better.
 - 🟩 **Owner reviewed it**: the verdict word shows on the row, the explanation in a few words.
-### 6. 🟧 "What's wrong in Drillmaster?" shaped and built, the same way
+### 6. 🟩 "What's wrong in Drillmaster?" shaped and built
+Owner's answers: complaints by tool; from Agent's and Drillmaster's post mortems, Agent's impediments
+and Owner's step-ins no workflow step covers; to pick what to fix next.
+- 🟩 **Built** (18ca507): `drillmasterPageView`, `GET /api/projects/:id/drillmaster`, the complaints
+  page; each complaint opens in full with a link to its work item.
+- 🟩 **Blind read**: right on what to fix first, but the "latest" line was jargon. Owner chose
+  summaries: Drillmaster groups each tool's complaints into problems at each retrospective
+  (`complaints_grouped`); the row shows the biggest problem with its count. Fixture grouped with the
+  Claude reviewer by `test/viewer/fixtures/group-complaints.ts`.
+- 🟧 **Owner reviews it.**
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
 
 ### 7. 🟥 Agent review
