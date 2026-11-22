@@ -183,7 +183,7 @@ and Owner's step-ins no workflow step covers; to pick what to fix next.
   summaries: Drillmaster groups each tool's complaints into problems at each retrospective
   (`complaints_grouped`); the row shows the biggest problem with its count. Fixture grouped with the
   Claude reviewer by `test/viewer/fixtures/group-complaints.ts`.
-- 🟧 **Owner reviews it.**
+- 🟩 **Owner reviewed it**: ok.
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
 
 ### 7. 🟥 Agent review
