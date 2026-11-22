@@ -24,6 +24,15 @@ describe('the changes page', () => {
     ])
   })
 
+  it('keeps a change whose event was written before events recorded the version they were made on', () => {
+    const withoutVersions = fixture.map((event) => (event.type === 'workflow_changed' ? { ...event, workflow_version: undefined } : event)) as DrillmasterEvent[]
+    expect(changesView(withoutVersions).map((row) => [row.version, row.from_version])).toEqual([
+      ['3.0.0', null],
+      ['2.1.0', null],
+      ['2.0.0', null],
+    ])
+  })
+
   it('shows the changes made by a moment, with the verdict as it stood then', () => {
     expect(changesView(fixture, '2026-11-20T19:10:16.785Z').map((row) => [row.version, row.counted, row.outcome])).toEqual([
       ['2.1.0', 1, 'insufficient data'],

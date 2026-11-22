@@ -62,7 +62,7 @@ function Opened({ steps, tone, page, opened, onOpen }: { steps: readonly WorkIte
   return (
     <UnderRow tone={tone}>
       {open.map((step) => (
-        <StepDetail key={step.guid} step={step} item={page} depth={opened.get(step.guid)!} onDeeper={(depth) => onOpen(step.guid, depth)} />
+        <StepDetail key={step.guid} step={step} depth={opened.get(step.guid)!} onDeeper={(depth) => onOpen(step.guid, depth)} />
       ))}
     </UnderRow>
   )

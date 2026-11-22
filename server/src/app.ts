@@ -11,7 +11,7 @@ import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resol
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { averageMeasure, BASELINE_WINDOW, currentMeasureName, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
 import { buildFrictionPrompt, FRICTION_REVIEW_KIND, readFrictionAnswer } from './core/friction.js'
-import { buildFrictionPlacementPrompt, FRICTION_PLACEMENT_REVIEW_KIND, readFrictionPlacementAnswer } from './core/frictionPlacement.js'
+import { buildFrictionPlacementPrompt, FRICTION_PLACEMENT_REVIEW_KIND, frictionPlacementsOf, readFrictionPlacementAnswer } from './core/frictionPlacement.js'
 import { frictionJudgementsOf, ownerInputsOf } from './core/ownerInputs.js'
 import {
   applyProposal,
@@ -990,6 +990,20 @@ export class Drillmaster {
     if (frictions.length > 0) await this.placeFriction(projectDir, workItemId, frictions)
   }
 
+  /** Places the step-ins judged friction whose placement failed before, so none stays unplaced for good. */
+  private async placeUnplacedFriction(projectDir: string) {
+    const events = await this.events(projectDir)
+    const judgements = frictionJudgementsOf(events)
+    const placements = frictionPlacementsOf(events)
+    const byItem = new Map<string, Parameters<typeof buildFrictionPlacementPrompt>[2][number][]>()
+    for (const input of ownerInputsOf(events)) {
+      const judgement = judgements.get(input.event_id)
+      if (!input.work_item_id || !judgement?.friction || placements.has(input.event_id)) continue
+      byItem.set(input.work_item_id, [...(byItem.get(input.work_item_id) ?? []), { input, judgement }])
+    }
+    for (const [workItemId, frictions] of byItem) await this.placeFriction(projectDir, workItemId, frictions)
+  }
+
   /** Drillmaster places each input judged friction at the step that should have caught it. */
   private async placeFriction(projectDir: string, workItemId: string, frictions: Parameters<typeof buildFrictionPlacementPrompt>[2]) {
     const state = foldState(await this.events(projectDir))
@@ -1063,6 +1077,7 @@ export class Drillmaster {
     const itemsToJudge = new Set(ownerInputsOf(beforeJudging).flatMap((input) => (input.work_item_id && deliveredIds.has(input.work_item_id) && !judged.has(input.event_id) ? [input.work_item_id] : [])))
     await Promise.all([...itemsToJudge].map((workItemId) => this.judgeFriction(projectDir, workItemId)))
     this.runInBackground(this.groupComplaints(projectDir))
+    this.runInBackground(this.placeUnplacedFriction(projectDir))
     const events = await this.events(projectDir)
     const state = foldState(events)
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)

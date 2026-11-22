@@ -60,7 +60,8 @@ export function complaintsByTool(events: readonly DrillmasterEvent[], toolNames:
     }
     if (event.type === 'work_reported' && (event as WorkReported).kind === 'impediment') {
       const report = event as WorkReported
-      for (const tool of toolNames.filter((name) => new RegExp(`\\b${name}\\b`).test(report.text))) {
+      // A tool is named on its own or with its MCP prefix: "work_gate", "mcp__drillmaster__work_gate".
+      for (const tool of toolNames.filter((name) => new RegExp(`(?<![A-Za-z0-9])${name}(?![A-Za-z0-9_])`).test(report.text))) {
         add(tool, { id: event.id, at: event.at, source: 'agent impediment', work_item_id: report.work_item_id, issue: issueOf(report.work_item_id), text: report.text })
       }
     }

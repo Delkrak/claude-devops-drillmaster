@@ -66,6 +66,8 @@ const MAX_CALL_TEXT = 110
 const shortened = (text: string, max = MAX_CALL_TEXT) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 const toolName = (tool: string) => tool.replace(/^mcp__.*?__/, '')
 const GATE_TOOL = /(?:^|__)work_gate$/
+/** The hooks that trace a finished tool call: done, or failed. */
+const TRACED_CALLS = new Set(['PostToolUse', 'PostToolUseFailure'])
 
 /** A tool call in one line: the command it ran, the file it touched, what it reported, or the step it submitted. */
 function whatCallDid(input: string | undefined, projectDir: string) {
@@ -81,7 +83,7 @@ function whatCallDid(input: string | undefined, projectDir: string) {
   if (typeof args.command === 'string') return shortened(inProject(args.command).replace(/^cd \. && /, ''))
   if (typeof args.file_path === 'string') return inProject(args.file_path).replace(/\\/g, '/')
   if (typeof args.kind === 'string' && typeof args.text === 'string') return shortened(`${args.kind}: ${args.text}`)
-  if (typeof args.step === 'string') return `step ${args.step}`
+  if (typeof args.step === 'string') return `step ${args.step.replace(/^step\s+/, '')}`
   if (typeof args.issue === 'string') return args.issue
   return shortened(input)
 }
@@ -110,6 +112,21 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
       }
     })
 
+  // A gate call is traced after the work item has moved on; the step it submitted is in its input. An
+  // input cut short when it was traced is not JSON: that call is placed by where it was traced.
+  const submittedStep = new Map<string, string>()
+  for (const event of mine) {
+    if (event.type !== 'work_trace' || !event.tool || !GATE_TOOL.test(event.tool) || !event.input) continue
+    try {
+      const step = (JSON.parse(event.input) as { step?: unknown }).step
+      if (typeof step === 'string') submittedStep.set(event.id, step.replace(/^step\s+/, '').trim())
+    } catch {
+      // placed by where it was traced
+    }
+  }
+  const passedSteps = new Set(item.passed_step_guids)
+  const skippedSteps = new Set(item.skipped_step_guids)
+
   const stages = workflow.stages.map((stage) => ({
     n: stage.n,
     guid: stage.guid,
@@ -121,14 +138,16 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
       const skip = mine.find((event): event is StepSkipDecided => event.type === 'step_skip_decided' && atStep(event) && event.accepted)
       const submissions = mine.filter((event): event is GateSubmitted => event.type === 'gate_submitted' && atStep(event))
       const lastSubmission = submissions.at(-1)
-      // A gate call is traced after the work item has moved on; the step it submitted is in its input.
-      const gateStepOf = (trace: WorkTrace) => (trace.tool && GATE_TOOL.test(trace.tool) && trace.input ? (JSON.parse(trace.input) as { step?: string }).step : undefined)
-      const calls = mine.filter((event): event is WorkTrace => event.type === 'work_trace' && event.hook === 'PostToolUse' && (gateStepOf(event) !== undefined ? gateStepOf(event) === ref : atStep(event)))
-      const passed = verdicts.some((verdict) => verdict.accepted)
+      const calls = mine.filter(
+        (event): event is WorkTrace => event.type === 'work_trace' && TRACED_CALLS.has(event.hook) && (submittedStep.has(event.id) ? submittedStep.get(event.id) === ref : atStep(event)),
+      )
+      // Where the work item stands now decides, not its history: moving back undoes passes and skips.
+      const passed = passedSteps.has(step.guid)
+      const skipped = skippedSteps.has(step.guid)
       const isHere = here !== null && here.stage === stage.n && here.step === step.n
       // A step before where the item stands that it did not pass, it went past on its condition; the skip is recorded a moment later.
       const before = here !== null && here.stage !== null && here.step !== null && (stage.n < here.stage || (stage.n === here.stage && step.n < here.step))
-      const passedOver = !skip && !passed && before
+      const passedOver = !skipped && !passed && before
       const conditionSkip = step.if ? `only when ${conditionInWords(parseCondition(step.if))}; ${describeInputsOf(parseCondition(step.if), inputs)}` : ''
       const kept = new Map(submissions.flatMap((submission) => submission.capture_traces ?? []).map((id) => [id, true]))
       return {
@@ -139,9 +158,9 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
         if: step.if ?? null,
         when: step.if ? conditionInWords(parseCondition(step.if)) : null,
         alternative: alternativeOf(step.if),
-        status: skip || passedOver ? 'skipped' : passed ? 'passed' : isHere ? 'here' : 'ahead',
+        status: skipped || passedOver ? 'skipped' : isHere ? 'here' : passed ? 'passed' : 'ahead',
         happened: {
-          skip: skip ? { by: skip.by, why: skip.by === 'condition' ? conditionSkip : skip.why } : passedOver ? { by: 'condition', why: conditionSkip } : null,
+          skip: skipped && skip ? { by: skip.by, why: skip.by === 'condition' ? conditionSkip : skip.why } : skipped || passedOver ? { by: 'condition', why: conditionSkip } : null,
           verdicts: verdicts.map((verdict) => ({ at: verdict.at, by: verdict.by, accepted: verdict.accepted, why: verdict.why })),
           reports: mine.filter((event): event is WorkReported => event.type === 'work_reported' && atStep(event)).map((report) => ({ kind: report.kind, text: report.text })),
           submitted: lastSubmission?.text ?? null,
@@ -153,7 +172,7 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
             .filter((event): event is WorkTrace => event.type === 'work_trace' && kept.has(event.id))
             .flatMap((trace) => (trace.captures ?? []).map((capture) => ({ tool: toolName(trace.tool ?? ''), name: capture.name, lines: [...new Set(capture.lines)] }))),
         },
-        calls: calls.map((call) => ({ at: call.at, tool: toolName(call.tool ?? ''), did: whatCallDid(call.input, projectDir), failed: call.error === true })),
+        calls: calls.map((call) => ({ at: call.at, tool: toolName(call.tool ?? ''), did: whatCallDid(call.input, projectDir), failed: call.error === true || call.hook === 'PostToolUseFailure' })),
         step_ins: stepIns.filter(({ stepGuid }) => stepGuid === step.guid).map(({ stepIn }) => stepIn),
       }
     }),
@@ -197,7 +216,8 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
   const seen = at ? events.filter((event) => event.at <= at) : events
   const state = foldState(seen)
   const judgements = frictionJudgementsOf(seen)
-  const frictionOf = (workItemId: string) => ownerInputsOf(seen).filter((input) => input.work_item_id === workItemId && isFriction(input, judgements)).length
+  const friction = new Map<string, number>()
+  for (const input of ownerInputsOf(seen)) if (input.work_item_id && isFriction(input, judgements)) friction.set(input.work_item_id, (friction.get(input.work_item_id) ?? 0) + 1)
   return Object.values(state.workItems)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .map((item) => {
@@ -212,7 +232,7 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
         status: item.status,
         started_at: item.started_at,
         at_step: step ? step.name : null,
-        friction: frictionOf(item.work_item_id),
+        friction: friction.get(item.work_item_id) ?? 0,
       }
     })
 }

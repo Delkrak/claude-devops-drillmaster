@@ -77,15 +77,16 @@ export function changesView(events: readonly DrillmasterEvent[], at?: string): C
   const state = foldState(seen)
   const delivered = measureDeliveredItems(seen)
   const retrospectives = seen.filter((event): event is RetrospectiveRan => event.type === 'retrospective_ran')
-  const changes = seen.filter((event): event is WorkflowChanged => event.type === 'workflow_changed')
+  // Each change adds one version after the project's first workflow: the i-th runs from version i to
+  // version i + 1, also for events written before they recorded the version they were made on.
+  const sinceStart = seen.slice(seen.findLastIndex((event) => event.type === 'project_initialized') + 1)
+  const changes = sinceStart.filter((event): event is WorkflowChanged => event.type === 'workflow_changed')
   return changes
-    .flatMap((event): ChangeRow[] => {
-      // The workflow the change produced is the version after the one it was made on.
-      const index = state.versions.findIndex((version) => version.version === event.workflow_version)
+    .flatMap((event, index): ChangeRow[] => {
       const from = state.versions[index]
       const to = state.versions[index + 1]
-      // Writing the first workflow, as setup or a seed does, changes nothing that was there.
-      if (index < 0 || !from || !to) return []
+      // Writing the first steps, as setup or a seed does, changes nothing that was there.
+      if (!from || !to || from.stages.length === 0) return []
       const proposal = retrospectives.find((retro) => retro.retro_id === event.retro_id)?.proposals.find((candidate) => candidate.id === event.proposal)
       const experiment = to.experiments.find((candidate) => candidate.version === to.version)
       const judged = experiment ? judgeExperiment(experiment, delivered, [], to) : undefined

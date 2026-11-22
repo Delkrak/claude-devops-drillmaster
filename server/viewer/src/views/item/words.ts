@@ -20,3 +20,6 @@ export const stepInLabel = (stepIn: StepIn) => `you stepped in${stepIn.after_del
 export const keptName = (name: string) => (name === 'tests' ? 'test totals' : name === 'failures' ? 'failing tests' : name)
 
 export const hasEvidence = (step: WorkItemPageStep) => step.evidence.self_check.length > 0 || step.evidence.kept_output.length > 0
+
+/** A reason as a sentence: "only when kind is bug; kind is feature" becomes "Only when kind is bug; kind is feature." */
+export const sentence = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`

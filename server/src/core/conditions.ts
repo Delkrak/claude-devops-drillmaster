@@ -150,8 +150,11 @@ export function conditionInWords(condition: Condition): string {
     case 'not':
       return `not (${conditionInWords(condition.operand)})`
     case 'and':
-    case 'or':
-      return `${conditionInWords(condition.left)} ${condition.kind} ${conditionInWords(condition.right)}`
+    case 'or': {
+      // A part that joins the other way keeps its brackets, so "a and (b or c)" reads as it runs.
+      const part = (operand: Condition) => (operand.kind !== condition.kind && (operand.kind === 'and' || operand.kind === 'or') ? `(${conditionInWords(operand)})` : conditionInWords(operand))
+      return `${part(condition.left)} ${condition.kind} ${part(condition.right)}`
+    }
   }
 }
 

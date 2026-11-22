@@ -66,6 +66,33 @@ describe('the work item page', () => {
     expect(stepOf(feature, '2.2').happened.verdicts).toMatchObject([{ by: 'owner', accepted: true }])
   })
 
+  it('draws where the work item stands now: going back undoes the passes after it', () => {
+    const id = idOf('#5')
+    const atMoment = fixture.filter((event) => event.at <= MOMENT)
+    const backToStart = { id: 'ev_back', at: '2026-11-20T19:10:17.000Z', type: 'input_set', work_item_id: id, stage: 4, step: 4, name: 'kind', value: 'feature', by: 'owner', goes_back: { to: { stage: 1, step: 1 }, kept: [] } } as DrillmasterEvent
+    const page = workItemPageView([...atMoment, backToStart], id)!
+    expect(stepOf(page, '1.1').status).toBe('here')
+    expect(stepOf(page, '2.2').status).toBe('ahead')
+    expect(stepOf(page, '4.4').status).toBe('ahead')
+  })
+
+  it("places every gate call, even one whose input was cut short or names its step as 'step 4.4', and lists failed calls", () => {
+    const id = idOf('#2')
+    const trace = (extra: object) => ({ at: '2026-11-20T18:56:20.000Z', type: 'work_trace', session_id: 's', work_item_id: id, stage: 4, step: 4, step_guid: stepOf(bug, '4.4').guid, ...extra }) as DrillmasterEvent
+    const events = [
+      ...fixture,
+      trace({ id: 'ev_cut', hook: 'PostToolUse', tool: 'mcp__x__work_gate', input: '{"step":"4.4","text":"a very long report...' }),
+      trace({ id: 'ev_prefixed', hook: 'PostToolUse', tool: 'mcp__x__work_gate', stage: null, step: null, step_guid: undefined, input: '{"step":"step 4.4"}' }),
+      trace({ id: 'ev_failed', hook: 'PostToolUseFailure', tool: 'Bash', input: '{"command":"npm test"}', error: true }),
+    ]
+    const calls = stepOf(workItemPageView(events, id)!, '4.4').calls
+    expect(calls.slice(-3).map((call) => [call.tool, call.did, call.failed])).toEqual([
+      ['work_gate', '{"step":"4.4","text":"a very long report...', false],
+      ['work_gate', 'step 4.4', false],
+      ['Bash', 'npm test', true],
+    ])
+  })
+
   it('has no page for a work item it does not know', () => {
     expect(workItemPageView(fixture, 'wi_unknown')).toBeUndefined()
   })

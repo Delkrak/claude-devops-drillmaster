@@ -30,10 +30,10 @@ at a time.
 
 | Story | Owner comes to... | Status |
 |---|---|---|
-| 🟩 Workflow (replaces "Is it working?" and "What does Agent do?") | see the pipeline, where the work items are, and where the friction is | designed |
-| 🟥 What happened to #N? | understand one piece of work: its steps, the ones it skipped and why, where Owner stepped in | to shape |
-| 🟥 Did the change help? | judge the last retrospective: what it changed, and whether that worked | to shape |
-| 🟥 What's wrong in Drillmaster? | see what to fix in Drillmaster: the complaint heard most | to shape |
+| 🟩 Workflow (replaces "Is it working?" and "What does Agent do?") | see the pipeline, where the work items are, and where the friction is | built, reviewed |
+| 🟩 What happened to #N? | understand one piece of work: its steps, the ones it skipped and why, where Owner stepped in | built, reviewed |
+| 🟩 Did the change help? | judge the last retrospective: what it changed, and whether that worked | built, reviewed |
+| 🟩 What's wrong in Drillmaster? | see what to fix in Drillmaster: the complaint heard most | built, reviewed |
 
 ## How a story is shaped and built
 
@@ -186,8 +186,12 @@ and Owner's step-ins no workflow step covers; to pick what to fix next.
 - 🟩 **Owner reviewed it**: ok.
 A story that needs data the fixture lacks gets a new run only with Owner's OK, given the cost.
 
-### 7. 🟥 Agent review
-`/code-review` on the round's diff, with its findings fixed.
+### 7. 🟩 Agent review
+`/code-review` on the round's diff, with its findings fixed: ten findings, all fixed with tests.
+A long gate call no longer breaks the work item page; failed tool calls are listed; a step's state
+comes from where the item stands; old change events keep their row; a skip names the inputs it
+read; prefixed tool names count; failed placements are retried at the retrospective; nested
+conditions keep their brackets; this table follows the work.
 
 ### 8. 🟥 Owner's review
 Owner walks the stories in the new viewer; then the round-4 review goes on through it.

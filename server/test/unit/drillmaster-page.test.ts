@@ -33,10 +33,11 @@ describe("the page of what's wrong in Drillmaster", () => {
     expect(drillmasterPageView(fixture, TOOLS).uncovered).toMatchObject([{ source: 'your step-in', issue: '#4', text: expect.stringContaining('no step of this workflow covers') }])
   })
 
-  it('counts an impediment Agent reported that names a tool', () => {
-    const impediment = { id: 'ev_x', at: '2026-11-23T00:00:00.000Z', type: 'work_reported', work_item_id: 'wi_x', stage: 1, step: 1, kind: 'impediment', text: 'work_status does not say the gate.' } as DrillmasterEvent
+  it('counts an impediment Agent reported that names a tool, also by its MCP name', () => {
+    const impediment = { id: 'ev_x', at: '2026-11-23T00:00:00.000Z', type: 'work_reported', work_item_id: 'wi_x', stage: 1, step: 1, kind: 'impediment', text: 'mcp__drillmaster__work_status does not say the gate.' } as DrillmasterEvent
     const status = drillmasterPageView([...fixture, impediment], TOOLS).tools.find((tool) => tool.tool === 'work_status')!
-    expect(status.ungrouped).toMatchObject([{ id: 'ev_x', source: 'agent impediment', text: 'work_status does not say the gate.' }])
+    expect(status.ungrouped).toMatchObject([{ id: 'ev_x', source: 'agent impediment' }])
+    expect(drillmasterPageView([...fixture, impediment], TOOLS).tools.find((tool) => tool.tool === 'work_start')!.ungrouped).toEqual([])
   })
 
   it('asks Drillmaster to group each tool\'s complaints, and keeps only the tools and complaints it asked about, each once', () => {

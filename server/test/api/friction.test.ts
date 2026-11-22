@@ -95,3 +95,20 @@ describe("Drillmaster's grouping of the complaints about its tools", () => {
     expect((await app.events(DIR)).find((event) => event.type === 'complaints_grouped')).toMatchObject({ groups: [{ tool: 'work_deliver', summary: 'Deliveries stay uncommitted' }] })
   })
 })
+
+describe('placing friction that could not be placed before', () => {
+  it('places it at the next retrospective', async () => {
+    const { app, ports, token } = await deliveredWithInputs()
+    const separatorInput = (await app.events(DIR)).filter((event) => event.type === 'work_trace' && event.hook === 'UserPromptSubmit').at(-1)!.id
+    ports.reviewer.enqueue('friction', { inputs: [{ event: separatorInput, friction: true, why: 'Owner had to say it.' }] })
+    // no answer for the placement: the reviewer fails it
+    await app.callTool(DIR, 'work_deliver', { token, pr: 'local', summary: 'CSV export' })
+    await app.idle()
+    expect((await app.events(DIR)).some((event) => event.type === 'friction_placed')).toBe(false)
+    ports.reviewer.enqueue('friction_placement', { inputs: [{ event: separatorInput, step: null, why: 'no step covers it' }] })
+    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [] })
+    await app.callTool(DIR, 'workflow_retrospective', { action: 'run' })
+    await app.idle()
+    expect((await app.events(DIR)).find((event) => event.type === 'friction_placed')).toMatchObject({ inputs: [{ event: separatorInput, step_guid: null }] })
+  })
+})

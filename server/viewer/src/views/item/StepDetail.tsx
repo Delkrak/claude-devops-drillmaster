@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { timeOfDay } from '../../time'
 import type { StepIn, WorkItemPage, WorkItemPageStep } from '../../types'
 import { CallLine, Deeper, Kept, Label, Level, Para, Quote, UnderStep } from '../../ui/item/route'
-import { hasEvidence, keptName, stepInLabel, whoDecided } from './words'
+import { hasEvidence, keptName, sentence, stepInLabel, whoDecided } from './words'
 
 /** How deep Owner has opened a step: what happened, then the evidence, then every tool call. */
 export type Depth = 1 | 2 | 3
@@ -26,7 +26,7 @@ function StepInText({ stepIn }: { stepIn: StepIn }) {
   )
 }
 
-function WhatHappened({ step, issue, kind }: { step: WorkItemPageStep; issue: string; kind: string | null }) {
+function WhatHappened({ step }: { step: WorkItemPageStep }) {
   const { happened } = step
   const nothing = !happened.skip && happened.verdicts.length === 0 && !happened.submitted && happened.reports.length === 0 && step.step_ins.length === 0
   return (
@@ -37,7 +37,7 @@ function WhatHappened({ step, issue, kind }: { step: WorkItemPageStep; issue: st
       {happened.skip && (
         <>
           <Label>skipped</Label>
-          <Para>{happened.skip.by === 'condition' && step.when ? `Only when ${step.when}. ${issue} is ${kind ? `a ${kind}` : 'not'}.` : happened.skip.why}</Para>
+          <Para>{sentence(happened.skip.why)}</Para>
         </>
       )}
       {happened.verdicts.map((verdict) => (
@@ -90,7 +90,7 @@ function Evidence({ step }: { step: WorkItemPageStep }) {
 }
 
 /** What Owner opened under a step, one level at a time. */
-export function StepDetail({ step, item, depth, onDeeper }: { step: WorkItemPageStep; item: Pick<WorkItemPage, 'issue' | 'kind'>; depth: Depth; onDeeper: (depth: Depth) => void }) {
+export function StepDetail({ step, depth, onDeeper }: { step: WorkItemPageStep; depth: Depth; onDeeper: (depth: Depth) => void }) {
   const reached = step.status === 'passed' || step.status === 'here'
   const evidence = reached && hasEvidence(step)
   // Without evidence, the tool calls are the next level down.
@@ -103,7 +103,7 @@ export function StepDetail({ step, item, depth, onDeeper }: { step: WorkItemPage
   return (
     <UnderStep testId="step-detail">
       <Level>
-        <WhatHappened step={step} issue={item.issue} kind={item.kind} />
+        <WhatHappened step={step} />
         {depth === 1 && deeperButton()}
       </Level>
       {evidence && depth >= 2 && (

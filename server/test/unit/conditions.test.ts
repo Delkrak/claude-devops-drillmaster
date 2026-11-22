@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { describeInputsOf, evaluateCondition, InvalidCondition, parseCondition } from '../../src/core/conditions.js'
+import { conditionInWords, describeInputsOf, evaluateCondition, InvalidCondition, parseCondition } from '../../src/core/conditions.js'
 import { migrateWorkflow, WorkflowDocument } from '../../src/core/workflow.js'
 import { WORKFLOW_3 } from '../helpers.js'
 
 const evaluate = (text: string, inputs: Record<string, string>) => evaluateCondition(parseCondition(text), inputs)
 
 describe('the if of a stage or step', () => {
+  it('says a condition in plain words, with brackets where parts join the other way', () => {
+    const words = (text: string) => conditionInWords(parseCondition(text))
+    expect(words("kind == 'feature' || user_visible == 'yes'")).toBe('kind is feature or user visible is yes')
+    expect(words("kind == 'feature' && (user_visible == 'yes' || risk == 'high')")).toBe('kind is feature and (user visible is yes or risk is high)')
+    expect(words("(kind == 'bug' && size == 'large') || risk == 'high'")).toBe('(kind is bug and size is large) or risk is high')
+    expect(words("kind == 'a' || kind == 'b' || kind == 'c'")).toBe('kind is a or kind is b or kind is c')
+  })
+
+
   it('reads comparisons joined with &&, || and !, grouped with parentheses', () => {
     expect(evaluate("kind == 'bug'", { kind: 'bug' })).toBe(true)
     expect(evaluate("kind != 'bug'", { kind: 'bug' })).toBe(false)
