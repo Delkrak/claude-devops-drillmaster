@@ -31,12 +31,15 @@ const styles = stylex.create({
   gap: { color: colors.dim, fontSize: '14px', fontWeight: font.weightHeavy },
   count: { fontSize: '17px', fontWeight: font.weightHeavy, fontVariantNumeric: 'tabular-nums', textAlign: 'end' },
   countFriction: { color: colors.orange },
-  latest: { fontSize: '14px', color: colors.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  latest: { fontSize: '14px', color: colors.line, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   detail: { display: 'grid', gridTemplateColumns: COLUMNS, columnGap: space.lg, paddingInline: space.lg, paddingBottom: space.lg },
   complaints: { gridColumn: '3', margin: 0, padding: 0, listStyle: 'none', fontSize: '14px', lineHeight: 1.45 },
   complaint: { paddingBlock: space.sm, borderTopWidth: shape.borderWidth, borderTopStyle: 'solid', borderTopColor: colors.panelRule },
   who: { display: 'flex', gap: space.sm, marginBottom: '2px', color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
   link: { color: colors.line },
+  problem: { paddingTop: space.md, paddingBottom: space.xs, fontSize: '15px', fontWeight: font.weightHeavy },
+  problemCount: { color: colors.dim, fontWeight: font.weightBold },
+  quiet: { color: colors.dim },
   text: { margin: 0 },
 })
 
@@ -46,17 +49,18 @@ export const ComplaintList = ({ children }: { children: ReactNode }) => (
     <li aria-hidden {...stylex.props(styles.head)}>
       <span>tool</span>
       <span {...stylex.props(styles.headCount)}>heard</span>
-      <span>latest</span>
+      <span>biggest problem</span>
     </li>
     {children}
   </ul>
 )
 
 /**
- * One tool, or `gap` for step-ins no workflow step covers: how often it was complained about, the
- * latest complaint on one line; open, `children` under it.
+ * One tool, or `gap` for step-ins no workflow step covers: how often it was complained about, and
+ * its biggest problem on one line (`quiet` when it is only the latest complaint, not yet grouped);
+ * open, `children` under it.
  */
-export function ComplaintGroup({ name, gap = false, count, latest, open, onToggle, children }: { name: string; gap?: boolean; count: number; latest: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function ComplaintGroup({ name, gap = false, count, latest, quiet = false, open, onToggle, children }: { name: string; gap?: boolean; count: number; latest: string; quiet?: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <li data-testid="complaint-group" {...stylex.props(styles.item)}>
       <button type="button" aria-expanded={open} onClick={onToggle} {...stylex.props(styles.row)}>
@@ -64,7 +68,7 @@ export function ComplaintGroup({ name, gap = false, count, latest, open, onToggl
         <span data-testid="heard" {...stylex.props(styles.count, gap && styles.countFriction)}>
           {count}
         </span>
-        <span title={latest} {...stylex.props(styles.latest)}>
+        <span title={latest} data-testid="biggest" {...stylex.props(styles.latest, quiet && styles.quiet)}>
           {latest}
         </span>
       </button>
@@ -94,3 +98,10 @@ export function ComplaintLine({ who, issue, to, when, text }: { who: string; iss
     </li>
   )
 }
+
+/** A problem's summary, with how many of the tool's complaints say it; its complaints follow it. */
+export const ProblemHeading = ({ summary, count, of }: { summary: string; count: number; of: number }) => (
+  <li data-testid="problem" {...stylex.props(styles.problem)}>
+    {summary} <span {...stylex.props(styles.problemCount)}>· {count} of {of}</span>
+  </li>
+)

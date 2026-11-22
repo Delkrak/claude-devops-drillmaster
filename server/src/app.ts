@@ -56,7 +56,7 @@ import {
 import { componentHistory } from './core/history.js'
 import * as views from './core/views.js'
 import { changesView } from './core/changesPage.js'
-import { drillmasterPageView } from './core/drillmasterPage.js'
+import { buildComplaintGroupingPrompt, COMPLAINT_GROUPING_REVIEW_KIND, complaintsByTool, drillmasterPageView, readComplaintGroupingAnswer } from './core/drillmasterPage.js'
 import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
@@ -1011,6 +1011,25 @@ export class Drillmaster {
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'friction_placed', work_item_id: workItemId, inputs: placements }))
   }
 
+  /** Drillmaster groups the complaints about its tools into recurring problems, when some are new since its last grouping. */
+  private async groupComplaints(projectDir: string) {
+    const events = await this.events(projectDir)
+    const byTool = complaintsByTool(events, TOOL_NAMES)
+    const lastGrouping = events.filter((event) => event.type === 'complaints_grouped').at(-1)
+    const grouped = new Set(lastGrouping?.type === 'complaints_grouped' ? lastGrouping.groups.flatMap((group) => group.complaints) : [])
+    if (![...byTool.values()].flat().some((complaint) => !grouped.has(complaint.id))) return
+    let groups
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: COMPLAINT_GROUPING_REVIEW_KIND, prompt: buildComplaintGroupingPrompt(byTool) })
+      groups = readComplaintGroupingAnswer(byTool, answer)
+    } catch {
+      // Ungrouped complaints still show, each on its own.
+      return
+    }
+    if (groups.length === 0) return
+    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'complaints_grouped', groups }))
+  }
+
   private async writeDrillmasterPostMortem(projectDir: string, workItemId: string) {
     const events = await this.events(projectDir)
     const state = foldState(events)
@@ -1043,6 +1062,7 @@ export class Drillmaster {
     const deliveredIds = new Set(Object.values(foldState(beforeJudging).workItems).filter((item) => item.status === 'delivered').map((item) => item.work_item_id))
     const itemsToJudge = new Set(ownerInputsOf(beforeJudging).flatMap((input) => (input.work_item_id && deliveredIds.has(input.work_item_id) && !judged.has(input.event_id) ? [input.work_item_id] : [])))
     await Promise.all([...itemsToJudge].map((workItemId) => this.judgeFriction(projectDir, workItemId)))
+    this.runInBackground(this.groupComplaints(projectDir))
     const events = await this.events(projectDir)
     const state = foldState(events)
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)

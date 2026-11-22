@@ -128,6 +128,7 @@ export interface ChangeRow {
 
 /** One complaint about Drillmaster: who made it, on which work item, and what it says. */
 export interface Complaint {
+  id: string
   at: string
   source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in'
   work_item_id: string
@@ -135,7 +136,13 @@ export interface Complaint {
   text: string
 }
 
+/** A problem heard more than once about a tool, in one line, with the complaints that say it. */
+export interface Problem {
+  summary: string
+  complaints: Complaint[]
+}
+
 export interface DrillmasterPage {
-  tools: { tool: string; complaints: Complaint[] }[]
+  tools: { tool: string; heard: number; problems: Problem[]; ungrouped: Complaint[] }[]
   uncovered: Complaint[]
 }

@@ -78,3 +78,20 @@ describe("Drillmaster's placement of friction", () => {
     expect(placed).toMatchObject({ inputs: [{ event: separatorInput, why: 'Capturing the work should have asked for the separator.' }] })
   })
 })
+
+describe("Drillmaster's grouping of the complaints about its tools", () => {
+  it('groups the complaints at a retrospective, once there are new ones', async () => {
+    const { app, ports, token } = await deliveredWithInputs()
+    ports.reviewer.enqueue('friction', { inputs: [] })
+    await app.callTool(DIR, 'work_deliver', { token, pr: 'local', summary: 'CSV export' })
+    await app.callTool(DIR, 'work_post_mortem', { token, keep: [], change: [{ refs: ['tool work_deliver'], text: 'Local deliveries stay uncommitted.' }], experiment_reflections: [] })
+    await app.idle()
+    const [complaint] = (await app.events(DIR)).filter((event) => event.type === 'post_mortem_written' && event.author === 'agent')
+    ports.reviewer.enqueue('complaint_grouping', { groups: [{ tool: 'work_deliver', summary: 'Deliveries stay uncommitted', complaints: [`${complaint!.id}#0`] }] })
+    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [] })
+    await app.callTool(DIR, 'workflow_retrospective', { action: 'run' })
+    await app.idle()
+    expect(ports.reviewer.requests.find((request) => request.kind === 'complaint_grouping')!.prompt).toContain('Local deliveries stay uncommitted.')
+    expect((await app.events(DIR)).find((event) => event.type === 'complaints_grouped')).toMatchObject({ groups: [{ tool: 'work_deliver', summary: 'Deliveries stay uncommitted' }] })
+  })
+})

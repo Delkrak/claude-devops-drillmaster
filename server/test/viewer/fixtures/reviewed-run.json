@@ -19161,5 +19161,76 @@
         "why": "Owner's step-in was about the delivery report not mentioning the post mortem, and no step of this workflow covers writing a post mortem or reporting what was delivered."
       }
     ]
+  },
+  {
+    "id": "ev_f6178835",
+    "at": "2026-11-22T22:49:49.979Z",
+    "workflow_version": "3.0.0",
+    "drillmaster_version": "0.3.0",
+    "writer": "w_25cba89c",
+    "type": "complaints_grouped",
+    "groups": [
+      {
+        "tool": "work_status",
+        "summary": "After approval it omits the next step's details, so lookups are needed",
+        "complaints": [
+          "ev_38586eea#0"
+        ]
+      },
+      {
+        "tool": "work_gate",
+        "summary": "Choices repeat, so Owner's preview cuts off the rules to approve",
+        "complaints": [
+          "ev_be0d02bb#0"
+        ]
+      },
+      {
+        "tool": "work_gate",
+        "summary": "Agent must write a diff file into the project, and it gets delivered",
+        "complaints": [
+          "ev_be0d02bb#4"
+        ]
+      },
+      {
+        "tool": "work_gate",
+        "summary": "Review verdicts cite records that don't exist, so can't be checked",
+        "complaints": [
+          "ev_050b5484#3"
+        ]
+      },
+      {
+        "tool": "work_deliver",
+        "summary": "Delivered work stays uncommitted, so each review diff is hand-built",
+        "complaints": [
+          "ev_c60eeb84#1",
+          "ev_ba26e779#1",
+          "ev_71a50687#2",
+          "ev_2f73d976#0",
+          "ev_2b634d2c#0"
+        ]
+      },
+      {
+        "tool": "work_deliver",
+        "summary": "Agent's assumptions aren't shown to Owner, so errors surface late",
+        "complaints": [
+          "ev_7956b50c#1"
+        ]
+      },
+      {
+        "tool": "work_deliver",
+        "summary": "Side findings are only prose, so they get lost or raised again",
+        "complaints": [
+          "ev_2ead4bdd#3"
+        ]
+      },
+      {
+        "tool": "work_start",
+        "summary": "No start point is saved, so separating an item's changes is fragile",
+        "complaints": [
+          "ev_7956b50c#0",
+          "ev_2ead4bdd#0"
+        ]
+      }
+    ]
   }
 ]

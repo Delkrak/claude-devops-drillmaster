@@ -1,22 +1,32 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { drillmasterPageView } from '../../src/core/drillmasterPage.js'
+import { buildComplaintGroupingPrompt, complaintsByTool, drillmasterPageView, readComplaintGroupingAnswer } from '../../src/core/drillmasterPage.js'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../viewer/fixtures/reviewed-run.json', import.meta.url), 'utf8')) as DrillmasterEvent[]
 const TOOLS = ['work_start', 'work_report', 'work_gate', 'work_deliver', 'work_status']
+/** The run as recorded, before Drillmaster grouped its complaints. */
+const ungrouped = fixture.filter((event) => event.type !== 'complaints_grouped')
 
 describe("the page of what's wrong in Drillmaster", () => {
-  it('ranks its tools by how often the post mortems complain about them, then by how recently', () => {
+  it('ranks its tools by how often they are complained about, each with its problems biggest first', () => {
     const page = drillmasterPageView(fixture, TOOLS)
-    expect(page.tools.map((tool) => [tool.tool, tool.complaints.length])).toEqual([
+    expect(page.tools.map((tool) => [tool.tool, tool.heard])).toEqual([
       ['work_deliver', 7],
       ['work_gate', 3],
       ['work_start', 2],
       ['work_status', 1],
     ])
-    expect(page.tools[0]!.complaints[0]).toMatchObject({ source: 'drillmaster post mortem', issue: '#7' })
-    expect(page.tools[3]!.complaints[0]).toMatchObject({ source: 'agent post mortem', issue: '#1', text: expect.stringContaining('work_status gave the position') })
+    const deliver = page.tools[0]!
+    expect(deliver.problems.map((problem) => problem.complaints.length)).toEqual([5, 1, 1])
+    expect(deliver.problems[0]!.summary).toMatch(/uncommitted/)
+    expect(deliver.ungrouped).toEqual([])
+  })
+
+  it('shows complaints made after the last grouping as ungrouped, newest first', () => {
+    const page = drillmasterPageView(ungrouped, TOOLS)
+    expect(page.tools[0]).toMatchObject({ tool: 'work_deliver', heard: 7, problems: [] })
+    expect(page.tools[0]!.ungrouped[0]).toMatchObject({ source: 'drillmaster post mortem', issue: '#7' })
   })
 
   it("lists Owner's step-ins that no workflow step covers, with why", () => {
@@ -24,16 +34,25 @@ describe("the page of what's wrong in Drillmaster", () => {
   })
 
   it('counts an impediment Agent reported that names a tool', () => {
-    const impediment = { id: 'ev_x', at: '2026-11-21T00:00:00.000Z', type: 'work_reported', work_item_id: 'wi_x', stage: 1, step: 1, kind: 'impediment', text: 'work_status does not say the gate.' } as DrillmasterEvent
-    const page = drillmasterPageView([...fixture, impediment], TOOLS)
-    expect(page.tools.find((tool) => tool.tool === 'work_status')!.complaints[0]).toMatchObject({ source: 'agent impediment', text: 'work_status does not say the gate.' })
+    const impediment = { id: 'ev_x', at: '2026-11-23T00:00:00.000Z', type: 'work_reported', work_item_id: 'wi_x', stage: 1, step: 1, kind: 'impediment', text: 'work_status does not say the gate.' } as DrillmasterEvent
+    const status = drillmasterPageView([...fixture, impediment], TOOLS).tools.find((tool) => tool.tool === 'work_status')!
+    expect(status.ungrouped).toMatchObject([{ id: 'ev_x', source: 'agent impediment', text: 'work_status does not say the gate.' }])
   })
 
-  it('shows what had been said by a moment', () => {
-    expect(drillmasterPageView(fixture, TOOLS, '2026-11-20T19:00:00.000Z').tools.map((tool) => [tool.tool, tool.complaints.length])).toEqual([
-      ['work_deliver', 2],
-      ['work_gate', 2],
-      ['work_status', 1],
+  it('asks Drillmaster to group each tool\'s complaints, and keeps only the tools and complaints it asked about, each once', () => {
+    const byTool = complaintsByTool(ungrouped, TOOLS)
+    const [first, second] = byTool.get('work_gate')!
+    expect(buildComplaintGroupingPrompt(byTool)).toContain(`- ${first!.id} (drillmaster post mortem, ${first!.issue}): `)
+    const answer = {
+      groups: [
+        { tool: 'work_gate', summary: 'diff files land in the project', complaints: [first!.id, 'ev_unknown#0'] },
+        { tool: 'work_gate', summary: 'the same one again', complaints: [first!.id, second!.id] },
+        { tool: 'no_such_tool', summary: 'x', complaints: [first!.id] },
+      ],
+    }
+    expect(readComplaintGroupingAnswer(byTool, answer)).toEqual([
+      { tool: 'work_gate', summary: 'diff files land in the project', complaints: [first!.id] },
+      { tool: 'work_gate', summary: 'the same one again', complaints: [second!.id] },
     ])
   })
 })
