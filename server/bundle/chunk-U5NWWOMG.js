@@ -21422,7 +21422,7 @@ function portsFromEnv(env = process.env) {
 }
 
 // src/version.ts
-var VERSION = "0.3.0";
+var VERSION = "0.3.1";
 
 // src/projectServer.ts
 var START_POLL_MS = 150;
@@ -21434,13 +21434,18 @@ var FIRST_PROJECT_SERVER_VERSION = "0.3.0";
 var NPM_PACKAGE = "claude-devops-drillmaster";
 var CannotServeProject = class extends Error {
 };
+var ownBuildServes = (pinnedVersion2) => {
+  const [major, minor] = VERSION.split(".");
+  const [pinnedMajor, pinnedMinor] = pinnedVersion2.split(".");
+  return pinnedMajor === major && pinnedMinor === minor && compareVersions(pinnedVersion2, VERSION) <= 0;
+};
 function serverCommandFor(version2, projectKeyOfServer) {
   if (!SEMVER.test(version2)) throw new CannotServeProject(`The pinned Drillmaster version "${version2}" is not a version (major.minor.patch).`);
   if (compareVersions(version2, FIRST_PROJECT_SERVER_VERSION) < 0) {
     throw new CannotServeProject(`Drillmaster ${version2} is pinned, but it can't run as the server of one project; ${FIRST_PROJECT_SERVER_VERSION} is the first that can. Pin a later one with \`drillmaster upgrade\`.`);
   }
   const daemonArgs = ["daemon", "--key", projectKeyOfServer];
-  if (version2 === VERSION) {
+  if (ownBuildServes(version2)) {
     const thisModule = fileURLToPath(import.meta.url);
     return { command: process.execPath, args: [...process.execArgv, path6.join(path6.dirname(thisModule), `cli${path6.extname(thisModule)}`), ...daemonArgs], timeoutMs: OWN_BUILD_START_TIMEOUT_MS };
   }
@@ -21494,7 +21499,7 @@ async function upgradeProject(projectDir, version2, env = process.env, published
   serverCommandFor(version2, "check");
   const project = projectToServe(projectDir);
   if (!project) throw new CannotServeProject(`${projectDir} is not a Drillmaster project: it has no .drillmaster file.`);
-  if (version2 !== VERSION && !await published(version2)) {
+  if (!ownBuildServes(version2) && !await published(version2)) {
     throw new CannotServeProject(`npm has no ${NPM_PACKAGE}@${version2}, so no machine could start it. Pin a published version, or this one (${VERSION}).`);
   }
   const stopped = await stopProjectServer(project.key, env);
@@ -21586,6 +21591,7 @@ export {
   FIRST_PROJECT_SERVER_VERSION,
   NPM_PACKAGE,
   CannotServeProject,
+  ownBuildServes,
   serverCommandFor,
   findOrStartProjectServer,
   stopProjectServer,

@@ -159,7 +159,8 @@ on different versions run side by side and know nothing of each other.
 - The MCP server and the hooks read `.drillmaster`, and find the project's server through
   `~/.drillmaster/projects/<project>/daemon.json`.
 - When none runs, they start one. First they fetch the Drillmaster repository's main and read the
-  pin. Then they start the plugin's own build if the pin is its version, or
+  pin. Then they start the plugin's own build if the pin is its version or an earlier patch of it
+  (0.3.1 serves a project pinned to 0.3.0), or
   `npx -y claude-devops-drillmaster@<pin> daemon` if it isn't. A pin that can't run (not a
   version, or older than 0.3.0, the first with a server per project) is refused, with a message.
 - `drillmaster upgrade [--to <version>]` pushes a new pin to main first, then stops the running

@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { projectKey } from '../../src/adapters/projects.js'
+import { VERSION } from '../../src/version.js'
 import { OBJECTIVE, tempDir } from '../helpers.js'
 
 // The plugin as a marketplace install gets it: only the files git ships, no npm install, no build.
@@ -72,7 +73,7 @@ describe('the plugin installed from the marketplace', () => {
   })
 
   it("starts its MCP server from the plugin's files alone", async () => {
-    expect(client.getServerVersion()).toMatchObject({ name: 'drillmaster', version: '0.3.0' })
+    expect(client.getServerVersion()).toMatchObject({ name: 'drillmaster', version: VERSION })
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(PLUGIN_TOOLS)
   })
 
@@ -83,7 +84,7 @@ describe('the plugin installed from the marketplace', () => {
     })
     expect(setup.isError).toBeFalsy()
     const { url, version } = JSON.parse(await readFile(serverInfoFile(), 'utf8')) as { url: string; version: string }
-    expect(version).toBe('0.3.0')
+    expect(version).toBe(VERSION)
     const viewer = await fetch(`${url}/`)
     expect(viewer.status).toBe(200)
     expect(await viewer.text()).toMatch(/<script type="module" [^>]*src="\/assets\/index-/)

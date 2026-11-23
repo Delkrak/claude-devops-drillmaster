@@ -1,6 +1,6 @@
 {
   "name": "claude-devops-drillmaster",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "The Drillmaster server: stores work traces, work reports and the workflow, and runs the work gates, for the devops-drillmaster Claude Code plugin.",
   "license": "MIT",
   "author": "delkrak",

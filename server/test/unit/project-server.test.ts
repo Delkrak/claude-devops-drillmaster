@@ -30,8 +30,11 @@ beforeAll(async () => {
 afterAll(() => root.remove())
 
 describe("the server of a project, at the project's pinned version", () => {
-  it("runs this plugin's own build for its own version, and npx for any other", () => {
+  it("runs this plugin's own build for its own version and an earlier patch of it, and npx for any other", () => {
     expect(serverCommandFor(VERSION, 'shop-1')).toMatchObject({ command: process.execPath, args: expect.arrayContaining(['daemon', '--key', 'shop-1']) })
+    const [major, minor, patch] = VERSION.split('.').map(Number)
+    expect(serverCommandFor(`${major}.${minor}.0`, 'shop-1')).toMatchObject({ command: process.execPath })
+    expect(serverCommandFor(`${major}.${minor}.${patch! + 1}`, 'shop-1')).toMatchObject({ command: 'npx' })
     expect(serverCommandFor('0.4.2', 'shop-1')).toMatchObject({ command: 'npx', args: ['-y', 'claude-devops-drillmaster@0.4.2', 'daemon', '--key', 'shop-1'] })
   })
 
