@@ -4,7 +4,8 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const POST_TIMEOUT_MS = 4000
-const SERVER_BUILD = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist')
+// The plugin's committed bundle: a marketplace install has no build of its own.
+const SERVER_BUILD = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'bundle')
 const buildModule = (name) => import(pathToFileURL(path.join(SERVER_BUILD, name)).href)
 
 const readHookPayload = () => {

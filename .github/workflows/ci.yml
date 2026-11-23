@@ -44,3 +44,16 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:viewer
+
+  bundle:
+    # A marketplace install runs the committed server/bundle: it must be built from the current sources.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/bundle.mjs --check

@@ -19,9 +19,11 @@ const CONTENT_TYPES: Record<string, string> = {
 
 export function findBuiltViewerDir() {
   const thisDir = path.dirname(fileURLToPath(import.meta.url))
+  // The plugin's bundle keeps the viewer beside its code; the build keeps it a folder up from daemon/.
+  const builtInBundle = path.join(thisDir, 'viewer')
   const builtNextToServer = path.join(thisDir, '..', 'viewer')
   const builtWhenRunFromSource = path.join(thisDir, '..', '..', 'dist', 'viewer')
-  return [builtNextToServer, builtWhenRunFromSource].find((dir) => existsSync(path.join(dir, 'index.html')))
+  return [builtInBundle, builtNextToServer, builtWhenRunFromSource].find((dir) => existsSync(path.join(dir, 'index.html')))
 }
 
 export async function serveViewer(response: http.ServerResponse, pathname: string) {

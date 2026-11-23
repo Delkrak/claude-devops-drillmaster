@@ -273,10 +273,11 @@ cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailur
 that failed, such as a red test run), Stop and SubagentStop. A project
 without a workflow is never traced.
 
-Until the package is published, build it once, then load the plugin from this folder:
+The plugin runs the server from `server/bundle/`, a build committed with the code, so a
+marketplace install works as it is: no npm install, no build. To load the plugin from a clone
+instead:
 
 ```
-cd server && npm install && npm run build
 claude --plugin-dir <path to this repo>
 ```
 
@@ -367,6 +368,12 @@ npm run build && npm run test:viewer                               # the viewer 
 npm run build && DRILLMASTER_PLUGIN_TESTS=1 npm run test:plugin   # real Claude Code, scripted reviewer
 npm run sim -- test/sim/scenarios/export-features.json --owner llm # an agent plays Owner
 ```
+
+After changing the server or the viewer, run `npm run bundle` in `server/` and commit
+`server/bundle/`: it is what the plugin runs, the server and its dependencies in a few files, with
+the viewer beside them. CI fails when the committed bundle wasn't built from the current sources,
+and `test/mcp/marketplace-install.test.ts` installs the plugin the way the marketplace does and
+starts it.
 
 The plugin's own MCP server is declared in `.claude-plugin/plugin.json`. The root `.mcp.json` is
 for development only: it adds the Playwright MCP, so a Claude Code session in this repo can check

@@ -1,0 +1,2 @@
+# The plugin's committed build: made by `npm run bundle` in server/, never edited by hand.
+server/bundle/** -text -diff linguist-generated=true
