@@ -61,4 +61,6 @@ export interface ProjectResolver {
   resolve(projectDir: string): ProjectRef | undefined
   /** Makes the folder part of the project kept at `repository`. */
   link(projectDir: string, repository: DrillmasterRepositoryPlace): Promise<ProjectRef>
+  /** Why the folder can't be linked, checked before setup pushes anything; undefined when it can. */
+  linkProblem(projectDir: string): string | undefined
 }

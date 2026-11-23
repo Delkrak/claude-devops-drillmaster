@@ -3,9 +3,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { DotDrillmasterResolver } from '../../src/adapters/projects.js'
+import { DotDrillmasterResolver, projectKey } from '../../src/adapters/projects.js'
+import { RepositoryPublisher } from '../../src/adapters/repositoryPublisher.js'
 import { Drillmaster } from '../../src/app.js'
 import { VERSION } from '../../src/version.js'
+import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE, ownerAnswers, tempDir, testPorts } from '../helpers.js'
 
 let root: Awaited<ReturnType<typeof tempDir>>
@@ -92,6 +94,28 @@ describe('a project kept in its Drillmaster repository', () => {
     expect(existsSync(path.join(other, '.drillmaster'))).toBe(false)
     const moved = await app.callTool(work, 'workflow_retrospective', { action: 'setup', objective: 'x', measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'elsewhere' })
     expect(textOf(moved)).toMatch(/belongs to the project in .* \(folder shop\), as its .drillmaster says/)
+  })
+
+  it('refuses a folder with an old .drillmaster folder before it pushes anything, saying what to do', async () => {
+    const old = path.join(root.dir, 'old-coach')
+    await mkdir(path.join(old, '.drillmaster'), { recursive: true })
+    const refused = await app.callTool(old, 'workflow_retrospective', { action: 'setup', objective: OBJECTIVE.text, measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'old-coach' })
+    expect(textOf(refused)).toMatch(/has a .drillmaster folder, left by an older Drillmaster .* Move it out of the way or delete it, then run setup again/)
+    expect(() => git(drillmasterRepository, 'show', 'main:old-coach/workflow.json')).toThrow()
+  })
+
+  it('finishes a setup that pushed to main and then failed before it linked the work folder', async () => {
+    const half = path.join(root.dir, 'half')
+    await mkdir(half)
+    const place = { url: drillmasterRepository, folder: 'half' }
+    await RepositoryPublisher.forProject(path.join(root.dir, 'home-w_a', 'projects'), projectKey(place), place, 'w_a').setUp(workflowZero(OBJECTIVE as never), VERSION)
+    expect(JSON.parse(git(drillmasterRepository, 'show', 'main:half/workflow.json'))).toMatchObject({ version: '0.0.0' })
+    const again = await app.callTool(half, 'workflow_retrospective', { action: 'setup', objective: OBJECTIVE.text, measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'half' })
+    expect(again.isError).toBeUndefined()
+    expect(JSON.parse(await readFile(path.join(half, '.drillmaster'), 'utf8'))).toEqual({ drillmaster_repository: drillmasterRepository, folder: 'half' })
+    expect(textOf(await app.callTool(half, 'workflow_get', {}))).not.toMatch(/no workflow yet/)
+    const otherObjective = await app.callTool(path.join(root.dir, 'other'), 'workflow_retrospective', { action: 'setup', objective: 'something else', measures: OBJECTIVE.measures, drillmaster_repository: drillmasterRepository, folder: 'half' })
+    expect(textOf(otherObjective)).toMatch(/Folder "half" of .* already holds a Drillmaster project/)
   })
 
   it('pushes each workflow change to main before it applies, so main has the workflow history', async () => {
