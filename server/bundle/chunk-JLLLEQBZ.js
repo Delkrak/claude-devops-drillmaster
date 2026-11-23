@@ -7,7 +7,7 @@ import {
   projectToServe,
   readProjectServerInfo,
   runningProjectServer
-} from "./chunk-VLIYJGQJ.js";
+} from "./chunk-NOJDCKZL.js";
 
 // src/projectServer.ts
 import { execFile as execFile3, spawn as spawn2 } from "node:child_process";
@@ -21079,7 +21079,10 @@ var RepositoryPublisher = class _RepositoryPublisher {
   /** Starts the project's folder on main with the pin and workflow 0.0.0, refusing a folder that has a project already. */
   async setUp(workflow, drillmasterVersion) {
     await this.mainAsTheRemoteHasIt();
-    if (await this.git.readFile(`refs/remotes/origin/${MAIN2}`, workflowFile(this.place.folder))) {
+    const workflowOnMain = await this.git.readFile(`refs/remotes/origin/${MAIN2}`, workflowFile(this.place.folder));
+    if (workflowOnMain) {
+      const unfinishedSetup = workflowOnMain === workflowJson(workflow) && (await this.git.readJsonlFiles(this.place.folder)).length === 0;
+      if (unfinishedSetup) return;
       throw new RepositoryConflict(`Folder "${this.place.folder}" of ${this.place.url} already holds a Drillmaster project. Pick another folder.`);
     }
     await this.git.writeFiles(

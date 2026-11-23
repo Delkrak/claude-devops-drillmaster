@@ -45,6 +45,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 var MAX_READABLE_NAME_LENGTH = 40;
 var DRILLMASTER_FILE = ".drillmaster";
+var OLD_DRILLMASTER_FOLDER = "This folder has a .drillmaster folder, left by an older Drillmaster (claude-coach 0.4 kept its files there). Move it out of the way or delete it, then run setup again: this Drillmaster links a folder to its project with one .drillmaster file.";
 var readable = (name) => name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, MAX_READABLE_NAME_LENGTH) || "project";
 var shortHash = (text) => createHash("sha256").update(text).digest("hex").slice(0, 12);
 var projectKey = (place) => `${readable(place.folder)}-${shortHash(`${place.url}
@@ -69,7 +70,16 @@ var DotDrillmasterResolver = class {
     const place = readPlace(file);
     return place ? { key: projectKey(place), repository: place } : void 0;
   }
+  linkProblem(projectDir) {
+    try {
+      return statSync(path.join(projectDir, DRILLMASTER_FILE)).isDirectory() ? OLD_DRILLMASTER_FOLDER : void 0;
+    } catch {
+      return void 0;
+    }
+  }
   async link(projectDir, repository) {
+    const problem = this.linkProblem(projectDir);
+    if (problem) throw new Error(problem);
     await writeFile(path.join(projectDir, DRILLMASTER_FILE), JSON.stringify({ drillmaster_repository: repository.url, folder: repository.folder }, null, 2) + "\n");
     return { key: projectKey(repository), repository };
   }

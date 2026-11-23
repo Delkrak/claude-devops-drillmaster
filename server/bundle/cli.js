@@ -82,7 +82,7 @@ import {
   workReportsOf,
   workTracesOf,
   workflowZero
-} from "./chunk-JJ4RDKM7.js";
+} from "./chunk-JLLLEQBZ.js";
 import {
   __commonJS,
   __toESM,
@@ -93,7 +93,7 @@ import {
   readProjectServerInfo,
   requestJson,
   runningProjectServer
-} from "./chunk-VLIYJGQJ.js";
+} from "./chunk-NOJDCKZL.js";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
@@ -10407,6 +10407,8 @@ var Drillmaster = class {
     if (existing && foldState(await this.ports.store.read(existing.key)).initialized) {
       throw new UserError("This project already has a workflow. It changes only at a workflow retrospective.", 409);
     }
+    const linkProblem = this.ports.projects.linkProblem(projectDir);
+    if (linkProblem) throw new UserError(linkProblem, 409);
     const workflow = workflowZero(parsedObjective.data);
     const candidate = { key: projectKey(place), repository: place };
     const publisher = this.publisherFor(candidate);
