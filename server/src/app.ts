@@ -611,6 +611,9 @@ export class Drillmaster {
     if (existing && foldState(await this.ports.store.read(existing.key)).initialized) {
       throw new UserError('This project already has a workflow. It changes only at a workflow retrospective.', 409)
     }
+    // Checked before anything is pushed, so a folder that can't be linked leaves no half-set-up project behind.
+    const linkProblem = this.ports.projects.linkProblem(projectDir)
+    if (linkProblem) throw new UserError(linkProblem, 409)
     const workflow = workflowZero(parsedObjective.data)
     const candidate: ProjectRef = { key: projectKey(place), repository: place }
     const publisher = this.publisherFor(candidate)

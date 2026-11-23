@@ -159,7 +159,8 @@ on different versions run side by side and know nothing of each other.
 - The MCP server and the hooks read `.drillmaster`, and find the project's server through
   `~/.drillmaster/projects/<project>/daemon.json`.
 - When none runs, they start one. First they fetch the Drillmaster repository's main and read the
-  pin. Then they start the plugin's own build if the pin is its version, or
+  pin. Then they start the plugin's own build if the pin is its version or an earlier patch of it
+  (0.3.1 serves a project pinned to 0.3.0), or
   `npx -y claude-devops-drillmaster@<pin> daemon` if it isn't. A pin that can't run (not a
   version, or older than 0.3.0, the first with a server per project) is refused, with a message.
 - `drillmaster upgrade [--to <version>]` pushes a new pin to main first, then stops the running
@@ -273,10 +274,11 @@ cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailur
 that failed, such as a red test run), Stop and SubagentStop. A project
 without a workflow is never traced.
 
-Until the package is published, build it once, then load the plugin from this folder:
+The plugin runs the server from `server/bundle/`, a build committed with the code, so a
+marketplace install works as it is: no npm install, no build. To load the plugin from a clone
+instead:
 
 ```
-cd server && npm install && npm run build
 claude --plugin-dir <path to this repo>
 ```
 
@@ -367,6 +369,12 @@ npm run build && npm run test:viewer                               # the viewer 
 npm run build && DRILLMASTER_PLUGIN_TESTS=1 npm run test:plugin   # real Claude Code, scripted reviewer
 npm run sim -- test/sim/scenarios/export-features.json --owner llm # an agent plays Owner
 ```
+
+After changing the server or the viewer, run `npm run bundle` in `server/` and commit
+`server/bundle/`: it is what the plugin runs, the server and its dependencies in a few files, with
+the viewer beside them. CI fails when the committed bundle wasn't built from the current sources,
+and `test/mcp/marketplace-install.test.ts` installs the plugin the way the marketplace does and
+starts it.
 
 The plugin's own MCP server is declared in `.claude-plugin/plugin.json`. The root `.mcp.json` is
 for development only: it adds the Playwright MCP, so a Claude Code session in this repo can check

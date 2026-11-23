@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { projectKey } from '../../src/adapters/projects.js'
+import { VERSION } from '../../src/version.js'
 import { OBJECTIVE, tempDir } from '../helpers.js'
 
 const SERVER_DIR = path.resolve(import.meta.dirname, '../..')
@@ -62,7 +63,7 @@ describe('stdio MCP shim', () => {
     })
     expect(setup.isError).toBeFalsy()
     const info = JSON.parse(await readFile(serverInfoFile(), 'utf8')) as { url: string; version: string }
-    expect(info).toMatchObject({ url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), version: '0.3.0' })
+    expect(info).toMatchObject({ url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), version: VERSION })
     expect(JSON.parse(await readFile(path.join(project.dir, '.drillmaster'), 'utf8'))).toEqual({ drillmaster_repository: drillmasterRepository, folder: 'shim' })
     const after = await client.callTool({ name: 'workflow_get', arguments: {} })
     expect(JSON.parse(text(after))).toMatchObject({ kind: 'overview', version: '0.0.0', objective: OBJECTIVE })

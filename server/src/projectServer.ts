@@ -20,6 +20,13 @@ export const NPM_PACKAGE = 'claude-devops-drillmaster'
 
 export class CannotServeProject extends Error {}
 
+/** A patch release runs the projects pinned to an earlier patch of its own minor version: 0.3.1 serves 0.3.0. */
+export const ownBuildServes = (pinnedVersion: string) => {
+  const [major, minor] = VERSION.split('.')
+  const [pinnedMajor, pinnedMinor] = pinnedVersion.split('.')
+  return pinnedMajor === major && pinnedMinor === minor && compareVersions(pinnedVersion, VERSION) <= 0
+}
+
 /** The command that runs Drillmaster `version` as the server of one project. */
 export function serverCommandFor(version: string, projectKeyOfServer: string) {
   if (!SEMVER.test(version)) throw new CannotServeProject(`The pinned Drillmaster version "${version}" is not a version (major.minor.patch).`)
@@ -27,7 +34,7 @@ export function serverCommandFor(version: string, projectKeyOfServer: string) {
     throw new CannotServeProject(`Drillmaster ${version} is pinned, but it can't run as the server of one project; ${FIRST_PROJECT_SERVER_VERSION} is the first that can. Pin a later one with \`drillmaster upgrade\`.`)
   }
   const daemonArgs = ['daemon', '--key', projectKeyOfServer]
-  if (version === VERSION) {
+  if (ownBuildServes(version)) {
     const thisModule = fileURLToPath(import.meta.url)
     return { command: process.execPath, args: [...process.execArgv, path.join(path.dirname(thisModule), `cli${path.extname(thisModule)}`), ...daemonArgs], timeoutMs: OWN_BUILD_START_TIMEOUT_MS }
   }
@@ -97,7 +104,7 @@ export async function upgradeProject(projectDir: string, version: string, env: N
   serverCommandFor(version, 'check')
   const project = projectToServe(projectDir)
   if (!project) throw new CannotServeProject(`${projectDir} is not a Drillmaster project: it has no .drillmaster file.`)
-  if (version !== VERSION && !(await published(version))) {
+  if (!ownBuildServes(version) && !(await published(version))) {
     throw new CannotServeProject(`npm has no ${NPM_PACKAGE}@${version}, so no machine could start it. Pin a published version, or this one (${VERSION}).`)
   }
   const stopped = await stopProjectServer(project.key, env)

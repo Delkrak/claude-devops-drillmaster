@@ -6,6 +6,8 @@ import type { DrillmasterRepositoryPlace, ProjectRef, ProjectResolver } from '..
 
 const MAX_READABLE_NAME_LENGTH = 40
 export const DRILLMASTER_FILE = '.drillmaster'
+const OLD_DRILLMASTER_FOLDER =
+  'This folder has a .drillmaster folder, left by an older Drillmaster (claude-coach 0.4 kept its files there). Move it out of the way or delete it, then run setup again: this Drillmaster links a folder to its project with one .drillmaster file.'
 
 const readable = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, MAX_READABLE_NAME_LENGTH) || 'project'
 const shortHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12)
@@ -50,7 +52,17 @@ export class DotDrillmasterResolver implements ProjectResolver {
     return place ? { key: projectKey(place), repository: place } : undefined
   }
 
+  linkProblem(projectDir: string) {
+    try {
+      return statSync(path.join(projectDir, DRILLMASTER_FILE)).isDirectory() ? OLD_DRILLMASTER_FOLDER : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   async link(projectDir: string, repository: DrillmasterRepositoryPlace): Promise<ProjectRef> {
+    const problem = this.linkProblem(projectDir)
+    if (problem) throw new Error(problem)
     await writeFile(path.join(projectDir, DRILLMASTER_FILE), JSON.stringify({ drillmaster_repository: repository.url, folder: repository.folder }, null, 2) + '\n')
     return { key: projectKey(repository), repository }
   }
@@ -62,6 +74,10 @@ export class FolderResolver implements ProjectResolver {
 
   resolve(projectDir: string): ProjectRef {
     return { key: folderKey(projectDir), repository: this.linked.get(path.resolve(projectDir)) ?? null }
+  }
+
+  linkProblem() {
+    return undefined
   }
 
   async link(projectDir: string, repository: DrillmasterRepositoryPlace): Promise<ProjectRef> {

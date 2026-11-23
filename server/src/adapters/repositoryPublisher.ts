@@ -44,7 +44,12 @@ export class RepositoryPublisher {
   /** Starts the project's folder on main with the pin and workflow 0.0.0, refusing a folder that has a project already. */
   async setUp(workflow: WorkflowDocument, drillmasterVersion: string) {
     await this.mainAsTheRemoteHasIt()
-    if (await this.git.readFile(`refs/remotes/origin/${MAIN}`, workflowFile(this.place.folder))) {
+    const workflowOnMain = await this.git.readFile(`refs/remotes/origin/${MAIN}`, workflowFile(this.place.folder))
+    if (workflowOnMain) {
+      // A setup that pushed, then failed before it linked the work folder, left this very workflow and
+      // no history: running setup again finishes it. Anything else is another project's folder.
+      const unfinishedSetup = workflowOnMain === workflowJson(workflow) && (await this.git.readJsonlFiles(this.place.folder)).length === 0
+      if (unfinishedSetup) return
       throw new RepositoryConflict(`Folder "${this.place.folder}" of ${this.place.url} already holds a Drillmaster project. Pick another folder.`)
     }
     await this.git.writeFiles(
