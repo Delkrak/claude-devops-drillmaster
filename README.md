@@ -64,8 +64,8 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
 7. With no work stages yet (workflow `0.0.0`), there are no gates: **Agent** does its best, and
    **Owner** steps in where needed. Owner's inputs are recorded, and the workflow grows from them.
 8. **Agent** calls `work_deliver` once every gate has passed, with a summary and artifacts such as
-   screenshots. **Drillmaster** writes its post mortem in the background, and a separate friction
-   judge decides which of Owner's inputs on the work item were friction: Owner having to step in.
+   screenshots. **Drillmaster** writes its post mortem in the background, and in it judges each
+   measure the workflow defines, at the step that should have caught each occurrence.
 9. **Agent** writes its own post mortem with `work_post_mortem`: what to keep, what to change, how
    the experiments did, and anything else. With both post mortems written, the work item's branch is
    squash-merged into the Drillmaster repository's main branch as one commit.
@@ -74,8 +74,8 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
 
 10. **Owner** runs `/devops-drillmaster:retrospective`.
 11. **Agent** calls `workflow_retrospective(run)`. **Drillmaster** first judges the last
-    retrospective's actions, then reads the post mortems, the work reports, Owner's inputs with the
-    friction judge's verdicts, and the measures. It returns findings and at most four proposals,
+    retrospective's actions, then reads the post mortems, the work reports, Owner's inputs, the
+    measures, and where each defined measure happened. It returns findings and at most four proposals,
     each with a hypothesis, a null hypothesis and a target. The server's verdicts on the running
     experiments come with them.
 12. **Owner** decides each proposal in AskUserQuestion: Approve alone approves, and Decline, a note
@@ -186,15 +186,23 @@ on different versions run side by side and know nothing of each other.
 
 Every work tool answers in markdown, for Agent, and with the same data as `structuredContent`.
 
-**Measures.** v1 computes five measures from the events:
-- `owner_friction_per_item`;
+**Measures.** Drillmaster counts four measures from the events:
 - `gate_rejections_per_item`;
 - `review_rounds_per_item`;
 - `minutes_per_item`;
 - `tool_calls_per_item`.
 
-A workflow experiment's baseline is its measure's mean over the last 5 delivered work items, with
-its standard deviation. Every measure is lower-is-better. Once `judge_after` items have run on the
+The workflow defines the others in words, at setup or at a retrospective (`add_measure`,
+`change_measure`, `remove_measure`): a name, a definition of what counts as one occurrence, a short
+name and a colour for the viewer, and whether the viewer shows it. For example *policy friction*
+(PF): Owner caught what a rule should have caught. Drillmaster judges each one in its post mortem of
+every work item delivered from then on, placing each occurrence at the step that should have caught
+it, or at none; what Owner says after the post mortem is judged at the next retrospective. A measure
+is never judged on work items delivered before it was defined, so history stays as it was.
+
+A workflow experiment's baseline is its measure's mean over the last 5 delivered work items judged
+on it, with its standard deviation; an experiment on a defined measure waits until 5 work items are
+judged. Every measure is lower-is-better. Once `judge_after` items have run on the
 experiment's version, the server judges it: the null hypothesis is rejected when the mean beats the
 baseline by more than the standard deviation, and the experiment is kept only if that holds and the
 target is met.
@@ -245,17 +253,14 @@ removes the rules, which start empty.
 **Owner inputs.** Owner's chat prompts are Owner inputs. Each belongs to what it leads to: one after
 which Agent calls `work_start` or `work_resume` starts or resumes that work item, one after which
 Agent calls `workflow_retrospective` belongs to the retrospective, and any other to the work item
-the session is on. At delivery, and again before a retrospective, a separate friction judge decides
-for each input whether it was friction. It sees only the work item, Owner's inputs and what Agent
-did around them, never the workflow or the retrospectives, so it has no stake in the workflow
-looking better. `owner_friction_per_item` counts the inputs judged friction, plus the Owner gates
-Owner rejected. Until the judge has judged, an input counts unless it started or resumed the work
-item, and after delivery only when Agent then changed the work.
+the session is on. The measures the workflow defines are judged from them, with the rest of the
+work item's trace.
 
-Drillmaster, which knows the workflow, then places each input judged friction at the step that
-should have caught it, or at none when no step covers it; a placement that fails is tried again at
-the next retrospective. At each retrospective Drillmaster also groups the complaints about its own
-tools, from the post mortems and Agent's impediments, into recurring problems, one line each.
+Drillmaster 0.3 had one judged measure built in, `owner_friction_per_item`, with a friction judge
+of its own. A workflow that names it keeps it as a measure it defines, and the work items 0.3
+delivered keep the friction it judged then, shown as *friction (old)*. At each retrospective
+Drillmaster also groups the complaints about its own tools, from the post mortems and Agent's
+impediments, into recurring problems, one line each.
 
 On workflow `0.0.0` there are no gates, so Owner often steps in after delivery. Agent first asks
 Owner "fix it now, or create a separate issue?". A fix done now is reported as an `added_step` against the same work item. It's
@@ -287,7 +292,7 @@ The CLI:
 ```
 drillmaster open      # this project's viewer in your browser
 drillmaster upgrade [--to <version>]   # pin the project to a Drillmaster version
-drillmaster init --objective "<Owner's objective>" --measure owner_friction_per_item --repository <git url> [--folder <name>]
+drillmaster init --objective "<Owner's objective>" --measure gate_rejections_per_item --repository <git url> [--folder <name>]
 drillmaster inspect [--json]
 ```
 
@@ -295,11 +300,12 @@ drillmaster inspect [--json]
 
 Each project's server also serves a read-only web viewer of that project at its own address: run
 `drillmaster open` in the work folder. Each page answers one question for Owner:
-- **Workflow** (it opens here): the pipeline, where the work items are, and where Owner had to step
-  in. The overview comes first; scrolling brings in each stage's steps.
+- **Workflow** (it opens here): the pipeline, where the work items are, and where each measure the
+  workflow shows happened, as a pill in its colour with its short name and count (`PF 2`). The
+  overview comes first; scrolling brings in each stage's steps.
 - **A work item** (`#` find in the header, or a box on the Workflow page): its route through the
-  workflow, what it skipped and why, and each of Owner's step-ins at the step that should have
-  caught it. A step opens one level at a time: what happened, the evidence, every tool call.
+  workflow, what it skipped and why, and each occurrence of a shown measure at the step that should
+  have caught it. A step opens one level at a time: what happened, the evidence, every tool call.
 - **Work items**: every work item, latest first.
 - **Changes**: each change to the workflow, the measure before and after, and whether the change
   was significant.

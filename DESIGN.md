@@ -5,6 +5,9 @@ colors:
   ground: "#0F1311"
   bone: "#D9DED6"
   safety-orange: "#FF7A1A"
+  rose: "#FF6F91"
+  violet: "#A993FF"
+  sky: "#6CC4F0"
   sand: "#E3C97E"
   olive-green: "#A3C27A"
   dim: "#8E998F"
@@ -62,10 +65,10 @@ components:
     textColor: "{colors.bone}"
     typography: "{typography.count}"
     height: "22px"
-  friction-ring:
+  measure-pill:
     textColor: "{colors.safety-orange}"
     typography: "{typography.count}"
-    size: "28px"
+    height: "28px"
   tip:
     backgroundColor: "{colors.tip-ground}"
     textColor: "{colors.tip-text}"
@@ -108,7 +111,7 @@ Workflow page, by clicking a step, a row or a mark everywhere else, one level at
 zooms, snaps or animates for show. Every claim on screen traces back to the events it came from.
 
 Five pages share the header and the language: the Workflow (the pipeline, where the work items are,
-where the friction is), a work item's route, the work items, the changes to the workflow, and the
+where the measures say it went wrong), a work item's route, the work items, the changes to the workflow, and the
 complaints about Drillmaster itself.
 
 **Key Characteristics:**
@@ -116,7 +119,7 @@ complaints about Drillmaster itself.
 - Work items always left of the line, problems always right of it.
 - Symbols first, a small key and short explanations behind them; text only where a symbol cannot do.
 - Detail opens one level at a time, under what was clicked; the line runs on beside it.
-- Orange means friction, and nothing else.
+- The measure colours mean what the workflow measures, and nothing else.
 
 ## Colors
 
@@ -126,7 +129,8 @@ A dark, olive-tinted ground with bone line work; colour is reserved for meaning.
 - **Bone**: the line, the stops, work-item dots, counts and names; everything Owner should read.
 
 ### Secondary
-- **Safety orange**: friction only, where Owner had to step in.
+- **The measure colours** (safety orange, rose, violet, sky): a measure the workflow defines, each
+  in the colour its definition names; old friction, judged before workflows defined measures, in dim.
 
 ### Tertiary
 - **Sand**: Owner's approvals (the approval stop), work Drillmaster sent back, what waits on Owner
@@ -145,8 +149,9 @@ A dark, olive-tinted ground with bone line work; colour is reserved for meaning.
   shows on hover or focus.
 
 ### Named Rules
-**The One Alarm Rule.** Safety orange marks friction and nothing else: not links, not selection, not
-the active page. If orange appears, Owner had to step in there.
+**The One Alarm Rule.** The measure colours mark what a measure counted and nothing else: not links,
+not selection, not the active page. If one appears, something the workflow counts as going wrong
+happened there.
 
 **The Meaning-Only Colour Rule.** Sand and olive green carry one meaning each, listed above. Anything
 else is bone or dim.
@@ -166,8 +171,8 @@ the military hint. Both are bundled with the viewer, never loaded from the netwo
 - **Stage** (500, 15px): stage names, in dim, with the stage number spaced before them.
 - **Body** (500, 14px, 1.45): what opens under a step or a row; kept to about 60 characters a line.
 - **Label** (700, 11.5px, 0.08em, uppercase): the level labels under a step ("AGENT REPORTED",
-  "WHY IT COUNTS AS FRICTION") and the list headers.
-- **Count** (700, 13px): the numbers in work-item boxes and friction rings.
+  "WHY IT COUNTS") and the list headers.
+- **Count** (700, 13px): the numbers in work-item boxes and measure pills.
 
 ### Named Rules
 **The Stencil Once Rule.** The stencil face is the brand's and appears nowhere else.
@@ -202,7 +207,9 @@ ground, still without shadow.
   square; Owner's approval = sand diamond; Drillmaster's review = a filled square inside a ring.
 - **Work items:** a rounded box (22 high, fully rounded) holding a count, or one work item's number,
   left of a dot; always an aggregate on the Workflow page.
-- **Friction:** an orange ring (28 across) with its count, right of the line.
+- **Measures:** a pill (28 high, fully rounded) per measure, its short name and count in the
+  measure's colour ("PF 2"), right of the line; old friction a dashed dim pill ("F 1"). What no step
+  covers sits on a row of its own, "no step covers it", between the last stage and delivery.
 - **Splits:** the line forks into smooth curves and joins again; only steps that are alternatives on
   the same input split.
 - **Delivery:** a short bar across the line; after delivery the line continues dotted.
@@ -213,7 +220,7 @@ ground, still without shadow.
 ### Stops, boxes and rings (the drawing)
 - **Reached:** bone at full strength. **Skipped:** faded to 28%, the name dim, the reason under it
   ("skipped: only when kind is feature"). **Not reached:** at half strength on the not-yet line.
-- **Doors:** a work-item box or a friction ring opens its work item, or a short list of them when
+- **Doors:** a work-item box or a measure pill opens its work item, or a short list of them when
   it holds several; a stage row jumps to its stage; a step on a route opens what happened there.
 - Every mark is reachable with Tab and a tap, and shows its explanation on focus as on hover, with
   a 2px bone focus ring.
@@ -224,7 +231,8 @@ ground, still without shadow.
 
 ### Key
 - **Style:** key ground, a hairline rule border, 12px radius, 12px 16px padding; one swatch and word
-  per symbol, sand and orange entries in their colour.
+  per symbol, sand and measure entries in their colour; a measure's entry shows its pill and name, and
+  its definition on hover.
 - **Rule:** a page lists only the symbols it draws.
 
 ### Header and navigation
@@ -247,7 +255,8 @@ ground, still without shadow.
   insufficient data dim); the outcome's basis in the explanation ("n = 3 · baseline 0.67 ± 0.47
   (SD)").
 - **Complaints:** the tool in monospace, how often it was heard, its biggest problem in one plain
-  line with its count; the step-ins no workflow step covers last, their count in orange.
+  line with its count; what the measures counted that no workflow step covers last, their count in
+  orange.
 
 ## Do's and Don'ts
 
@@ -265,5 +274,5 @@ ground, still without shadow.
 - **Don't** repeat the overview at the end of the page.
 - **Don't** add a status sentence or other text where a symbol already says it (Owner: "present
   less").
-- **Don't** use orange for anything but friction.
+- **Don't** use a measure colour for anything but a measure.
 - **Don't** dress the screen in military costume: no camouflage, badges or stencil beyond the brand.

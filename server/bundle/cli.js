@@ -4,14 +4,14 @@ import {
   ACCEPTED_ARTIFACTS,
   AT_START,
   BASELINE_WINDOW,
+  COUNTED_MEASURES,
   GateKind,
   InputOption,
   InputSetter,
   InvalidArtifact,
   InvalidReference,
+  JudgedMeasure,
   MAX_ARTIFACT_BYTES,
-  MEASURE_NAMES,
-  Objective,
   PolicyRule,
   RepositoryConflict,
   RepositoryPublisher,
@@ -42,10 +42,16 @@ import {
   findWorkItemByTokenHash,
   foldState,
   frictionJudgementsOf,
+  frictionPlacementsOf,
   intersection,
+  isCountedMeasure,
   isFriction,
+  isMeasureOf,
   isPublishMoment,
   iso_exports,
+  itemsWithMeasure,
+  judgedMeasuresOf,
+  lastItemsWithMeasure,
   literal,
   looseObject,
   measureBaseline,
@@ -59,6 +65,7 @@ import {
   parseCondition,
   parsePipeline,
   parseRef,
+  parseWorkflowZero,
   portsFromEnv,
   preprocess,
   readArtifactFromWorkFolder,
@@ -81,8 +88,9 @@ import {
   viewWorkflow,
   workReportsOf,
   workTracesOf,
-  workflowZero
-} from "./chunk-U5NWWOMG.js";
+  workflowForReading,
+  writtenBeforeMeasuresWereJudged
+} from "./chunk-IMON7JRT.js";
 import {
   __commonJS,
   __toESM,
@@ -8486,93 +8494,61 @@ function extractFirstJsonObject(text) {
   }
 }
 
-// src/core/friction.ts
-var FRICTION_REVIEW_KIND = "friction";
-var TRACES_AROUND_AN_INPUT = 8;
-var ROLE_WORDS = {
-  start: "it started the work item",
-  resume: "it took the work item up again in a later session",
-  retrospective: "it called a retrospective",
-  input: "it came while Agent worked on the work item"
+// src/core/judgedMeasures.ts
+function measuresToJudge(workflow) {
+  if (workflow.measures.length === 0) return [];
+  return [
+    "The measures the workflow defines. Each counts something that should not happen. For each measure, list every occurrence on this work item that its definition counts, judged from everything recorded above, Owner's inputs included.",
+    'For each occurrence, name the work step that should have caught it ("3.1"), or null when no step of the workflow covers it; the ids of the recorded events it is about; and why it counts, in one sentence.',
+    "List each measure, with no occurrences when nothing counts.",
+    ...workflow.measures.map((measure) => `- "${measure.name}": ${measure.definition}`)
+  ];
+}
+var MEASURED_ANSWER_EXAMPLE = '"measured":[{"measure":"<its name>","occurrences":[{"step":"3.1","events":["<event id>"],"why":"<one sentence>"}]}]';
+var Occurrence = external_exports.object({ step: external_exports.unknown(), events: external_exports.array(external_exports.string()).catch([]), why: external_exports.string().catch("") });
+var MeasuredAnswer = external_exports.array(external_exports.object({ measure: external_exports.string(), occurrences: external_exports.array(Occurrence.loose()).catch([]) }).loose()).catch([]);
+var stepGuidOfAnswer = (workflow, step) => {
+  const stepRef = typeof step === "string" ? /^(?:step\s+)?(\d+)\.(\d+)$/.exec(step.trim()) : null;
+  return stepRef ? stepGuidAt(workflow, Number(stepRef[1]), Number(stepRef[2])) ?? null : null;
 };
-var traceLine = (trace) => `    - ${trace.tool ?? trace.hook}${trace.input ? ` ${trace.input.slice(0, 160)}` : ""}${trace.error ? " (failed)" : ""}`;
-function buildFrictionPrompt(item, inputs, events) {
-  const sessionTraces = (sessionId) => events.filter((event) => event.type === "work_trace" && event.session_id === sessionId && event.hook !== "UserPromptSubmit");
-  const inputBlocks = inputs.map((input) => {
-    const traces = sessionTraces(input.session_id);
-    const before = traces.filter((trace) => trace.at < input.at).slice(-TRACES_AROUND_AN_INPUT);
-    const after = traces.filter((trace) => trace.at > input.at).slice(0, TRACES_AROUND_AN_INPUT);
-    return [
-      `- ${input.event_id} (${ROLE_WORDS[input.role]}${input.after_delivery ? ", after delivery" : ""}): "${input.prompt}"`,
-      "  What Agent did just before:",
-      ...before.length ? before.map(traceLine) : ["    - nothing"],
-      "  What Agent did just after:",
-      ...after.length ? after.map(traceLine) : ["    - nothing"]
-    ].join("\n");
-  });
-  return [
-    "You judge friction between Owner and Agent on one work item, independently: you know nothing of how the work is organised, and need not.",
-    "For each of Owner's inputs below, decide whether it was friction: Owner had to step in, because the work was wrong, incomplete, missed something Owner expects, or went somewhere Owner did not want.",
-    "It is not friction when Owner hands Agent the work, takes it up again, answers a question Agent asked, or asks for something new that the work could not have known.",
-    "",
-    `Work item ${item.work_item_id} (${item.issue}): ${item.description || "no description"}`,
-    "",
-    "Owner's inputs:",
-    ...inputBlocks,
-    "",
-    "Answer with JSON only:",
-    `{"inputs": [{"event": "<the input's id>", "friction": true|false, "why": "<one sentence>"}]}`
-  ].join("\n");
+function readMeasuredAnswer(workflow, itemEventIds, measured) {
+  const answered = MeasuredAnswer.parse(measured);
+  return workflow.measures.map((measure) => ({
+    measure: measure.name,
+    occurrences: answered.filter((candidate) => candidate.measure === measure.name).flatMap((candidate) => candidate.occurrences).map((occurrence) => ({ step_guid: stepGuidOfAnswer(workflow, occurrence.step), events: occurrence.events.filter((id) => itemEventIds.has(id)), why: occurrence.why }))
+  }));
 }
-function readFrictionAnswer(inputs, answer) {
-  const parsed = typeof answer === "string" ? extractFirstJsonObject(answer) : answer;
-  if (!parsed || !Array.isArray(parsed.inputs)) return [];
-  const asked = new Set(inputs.map((input) => input.event_id));
-  return parsed.inputs.flatMap(
-    (candidate) => typeof candidate.event === "string" && asked.has(candidate.event) && typeof candidate.friction === "boolean" ? [{ event: candidate.event, friction: candidate.friction, why: typeof candidate.why === "string" ? candidate.why : "" }] : []
-  );
-}
-
-// src/core/frictionPlacement.ts
-var FRICTION_PLACEMENT_REVIEW_KIND = "friction_placement";
-function buildFrictionPlacementPrompt(workflow, item, frictions) {
-  const passedStepGuids = new Set(item.passed_step_guids);
-  const skippedStepGuids = new Set(item.skipped_step_guids);
-  const stepLines = workflow.stages.flatMap(
-    (stage) => stage.steps.map((step) => `- ${stage.n}.${step.n} ${step.name}${step.if ? ` (only when ${step.if})` : ""}: ${passedStepGuids.has(step.guid) ? "passed" : skippedStepGuids.has(step.guid) ? "skipped" : "not reached"}`)
-  );
-  return [
-    "You are Drillmaster. Owner had to step in on a work item; an independent judge found each input below to be friction.",
-    "For each, name the one work step that should have caught what Owner had to point out, so the step-in shows where the workflow let it through.",
-    "Name a step only when its purpose covers what Owner asked for; answer null when no step of this workflow covers it.",
-    "",
-    `Work item ${item.issue}: ${item.description || "no description"}`,
-    "",
-    `Its workflow (${workflow.version}), and how the work item went through it:`,
-    ...stepLines,
-    "",
-    "The inputs judged friction:",
-    ...frictions.map(({ input, judgement }) => `- ${input.event_id}${input.after_delivery ? " (after delivery)" : ""}: "${input.prompt}" (why friction: ${judgement.why})`),
-    "",
-    "Answer with JSON only:",
-    `{"inputs": [{"event": "<the input's id>", "step": "<stage.step, e.g. 3.1>" | null, "why": "<one sentence>"}]}`
-  ].join("\n");
-}
-function readFrictionPlacementAnswer(workflow, askedEventIds, answer) {
-  const parsedAnswer = typeof answer === "string" ? extractFirstJsonObject(answer) : answer;
-  if (!parsedAnswer || !Array.isArray(parsedAnswer.inputs)) return [];
-  const askedIds = new Set(askedEventIds);
-  return parsedAnswer.inputs.flatMap((candidate) => {
-    if (typeof candidate.event !== "string" || !askedIds.has(candidate.event)) return [];
-    const stepRefMatch = typeof candidate.step === "string" ? /^(\d+)\.(\d+)$/.exec(candidate.step.trim()) : null;
-    const stepGuid = stepRefMatch ? stepGuidAt(workflow, Number(stepRefMatch[1]), Number(stepRefMatch[2])) ?? null : null;
-    return [{ event: candidate.event, step_guid: stepGuid, why: typeof candidate.why === "string" ? candidate.why : "" }];
+var LATE_MEASURES_REVIEW_KIND = "late_measures";
+var eventLine = (event) => event.type === "work_trace" ? `- ${event.id} ${event.hook}${event.tool ? ` ${event.tool}` : ""}${event.input ? ` ${event.input}` : ""}${event.prompt ? ` Owner: "${event.prompt}"` : ""}` : `- ${JSON.stringify(event)}`;
+var isEventOf = (workItemId) => (event) => "work_item_id" in event && event.work_item_id === workItemId;
+function itemsToJudgeLate(events) {
+  const judged = judgedMeasuresOf(events);
+  return [...judged.keys()].flatMap((workItemId) => {
+    const itemEvents = events.filter(isEventOf(workItemId));
+    const lastJudging = itemEvents.findLastIndex((event) => event.type === "post_mortem_written" && event.author === "drillmaster" || event.type === "late_measures_judged");
+    const unjudged = itemEvents.slice(lastJudging + 1);
+    const ownerSpoke = unjudged.some((event) => event.type === "work_trace" && event.hook === "UserPromptSubmit");
+    return ownerSpoke ? [{ workItemId, unjudged }] : [];
   });
 }
-function frictionPlacementsOf(events) {
-  const placementByEventId = /* @__PURE__ */ new Map();
-  for (const event of events) if (event.type === "friction_placed") for (const placement of event.inputs) placementByEventId.set(placement.event, placement);
-  return placementByEventId;
+function buildLateMeasuresPrompt(item, workflow, unjudged) {
+  return [
+    `You are Drillmaster. You wrote your post mortem on work item ${item.work_item_id} (${item.issue}) when it was delivered, and judged the workflow's measures then. Since then, this happened on it, oldest first:`,
+    ...unjudged.map(eventLine),
+    "",
+    `The workflow it ran on (version ${workflow.version}):`,
+    workflowForReading(workflow),
+    "",
+    ...measuresToJudge(workflow),
+    "Judge only what happened since your post mortem, listed above.",
+    "",
+    "Answer with JSON only:",
+    `{${MEASURED_ANSWER_EXAMPLE}}`
+  ].join("\n");
+}
+function readLateMeasuresAnswer(workflow, unjudged, answer) {
+  const answered = typeof answer === "string" ? extractFirstJsonObject(answer) : answer;
+  return readMeasuredAnswer(workflow, new Set(unjudged.map((event) => event.id)), answered?.measured);
 }
 
 // src/core/retro.ts
@@ -8682,7 +8658,10 @@ var WorkflowOp = external_exports.preprocess(
     external_exports.object({ op: external_exports.literal("add_tool_capture"), capture: NewToolCapture }).strict(),
     external_exports.object({ op: external_exports.literal("change_tool_capture"), capture: Ref, command: external_exports.string().min(1).optional(), keep: external_exports.string().min(1).optional() }).strict(),
     external_exports.object({ op: external_exports.literal("remove_tool_capture"), capture: Ref }).strict(),
-    external_exports.object({ op: external_exports.literal("set_objective"), text: external_exports.string().min(1).optional(), measures: external_exports.array(external_exports.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
+    external_exports.object({ op: external_exports.literal("set_objective"), text: external_exports.string().min(1).optional(), measures: external_exports.array(external_exports.string().min(1)).min(1).optional() }).strict(),
+    external_exports.object({ op: external_exports.literal("add_measure"), measure: JudgedMeasure }).strict(),
+    external_exports.object({ op: external_exports.literal("change_measure"), measure: external_exports.string().min(1), definition: external_exports.string().min(1).optional(), show: external_exports.boolean().optional(), short: JudgedMeasure.shape.short.optional(), color: JudgedMeasure.shape.color.optional() }).strict(),
+    external_exports.object({ op: external_exports.literal("remove_measure"), measure: external_exports.string().min(1) }).strict(),
     external_exports.object({ op: external_exports.literal("end_experiment"), id: external_exports.number().int().positive(), outcome: external_exports.enum(["kept", "rethought"]) }).strict()
   ])
 );
@@ -8701,12 +8680,15 @@ function levelOfOp(op) {
     case "change_stage":
       return op.if !== void 0 ? "major" : "minor";
     case "end_experiment":
+    case "add_measure":
+    case "change_measure":
+    case "remove_measure":
       return "patch";
     default:
       return "minor";
   }
 }
-var opensWorkflowExperiment = (ops) => ops.some((op) => op.op !== "end_experiment");
+var opensWorkflowExperiment = (ops) => ops.some((op) => !["end_experiment", "add_measure", "change_measure", "remove_measure"].includes(op.op));
 function levelOfOps(ops) {
   const highest = ops.map(levelOfOp).reduce((level, opLevel) => LEVEL_RANK2[opLevel] > LEVEL_RANK2[level] ? opLevel : level, "patch");
   return opensWorkflowExperiment(ops) && highest === "patch" ? "minor" : highest;
@@ -8743,6 +8725,11 @@ function requireRule(workflow, ruleRef) {
 function requireToolCapture(workflow, captureRef) {
   const { guid } = resolveForChange(workflow, captureRef, "capture");
   return workflow.tool_captures.find((capture) => capture.guid === guid);
+}
+function requireMeasure(workflow, name) {
+  const measure = workflow.measures.find((candidate) => candidate.name === name);
+  if (!measure) throw new InvalidChange(`The workflow defines no measure "${name}"; it defines ${workflow.measures.map((candidate) => `"${candidate.name}"`).join(", ") || "none"}.`);
+  return measure;
 }
 function requireInput(workflow, inputRef) {
   const { guid } = resolveForChange(workflow, inputRef, "input");
@@ -8874,6 +8861,20 @@ function applyWorkflowOps(current, ops, makeGuid = newGuid) {
       case "set_objective":
         workflow.objective = { text: op.text ?? workflow.objective.text, measures: op.measures ?? workflow.objective.measures };
         break;
+      case "add_measure":
+        if (workflow.measures.some((measure) => measure.name === op.measure.name)) throw new InvalidChange(`Measure "${op.measure.name}" already exists; change it instead.`);
+        workflow.measures.push(op.measure);
+        break;
+      case "change_measure": {
+        const { op: _op, measure: measureName, ...measureChanges } = op;
+        Object.assign(requireMeasure(workflow, measureName), withoutUndefined(measureChanges));
+        break;
+      }
+      case "remove_measure": {
+        const removed = requireMeasure(workflow, op.measure);
+        workflow.measures = workflow.measures.filter((measure) => measure !== removed);
+        break;
+      }
       case "end_experiment":
         if (!workflow.experiments.some((experiment) => experiment.id === op.id)) throw new InvalidChange(`There is no running workflow experiment ${op.id}.`);
         workflow.experiments = workflow.experiments.filter((experiment) => experiment.id !== op.id);
@@ -8897,7 +8898,7 @@ function applyProposal(current, proposal, deliveredItems, today) {
   const next = applyWorkflowOps(current, ops);
   if (opensWorkflowExperiment(ops)) {
     const named = currentMeasureName(proposal.measure);
-    const measure = MEASURE_NAMES.includes(named) ? named : current.objective.measures[0] ?? "owner_friction_per_item";
+    const measure = isMeasureOf(next, named) ? named : current.objective.measures[0];
     const experimentId = Math.max(0, ...current.experiments.map((experiment) => experiment.id), ...next.experiments.map((experiment) => experiment.id)) + 1;
     next.experiments.push({
       id: experimentId,
@@ -8917,7 +8918,6 @@ function applyProposal(current, proposal, deliveredItems, today) {
   }
   return { workflow: WorkflowDocument.parse(next), level: levelOfOps(ops) };
 }
-var workflowForReading = (workflow) => JSON.stringify(workflow, (key, value) => key === "guid" ? void 0 : value, 2);
 var noDifference = (change, measure) => `"${change}" makes no difference to ${measure}.`;
 var WORKFLOW_OP_REFERENCE = `Operations. They name what they change by reference: a stage by its number ("1"), a step by "<stage>.<step>" ("1.2"), a rule by "<policy> <rule id>" ("pr 1.1"), a work item input by its name. Stages and steps are renumbered after each operation; refer to them as they are after the previous operation. An input stays at its step when the step's number changes.
 {"op":"add_stage","name":"build","purpose":"<what the stage achieves>","after":"1","steps":[{"name":"write the tests first","instruction":"<the work to do in this step, as an order to Agent>","gate":"self","rules":["test 1.1"],"report":["test result"]}]}   (after: the stage it follows, "0" to put it first; omit to append)
@@ -8939,7 +8939,10 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"add_tool_capture","capture":{"name":"tests","command":"npm (run )?test","keep":"|~ \`^# (tests|pass|fail) \` | pattern \`# <what> <count>\`"}}   (what the trace of a Bash or PowerShell call keeps of a matching command's output, instead of its last 20 lines: command is a regular expression found anywhere in the command line (Agent often runs "cd <folder> && npm test", so don't anchor it with ^), keep a pipeline in LogQL's syntax (https://grafana.com/docs/loki/latest/logql/): line filters |= != |~ !~, | json, | logfmt, | pattern, | regexp, field filters like | count > 0, and | line_format. Add one when a gate's claim about a command's output could not be checked)
 {"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
 {"op":"remove_tool_capture","capture":"tests"}
-{"op":"set_objective","text":"...","measures":["owner_friction_per_item"]}
+{"op":"set_objective","text":"...","measures":["gate_rejections_per_item","policy friction"]}   (measures: ones Drillmaster counts, and ones the workflow defines)
+{"op":"add_measure","measure":{"name":"policy friction","short":"PF","color":"orange|rose|violet|sky","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment can use it once ${BASELINE_WINDOW} work items are judged)
+{"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show, short, color; work items judged before keep their judgement)
+{"op":"remove_measure","measure":"policy friction"}   (not while the objective or a running experiment uses it)
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`;
 function deliveredSinceLastRetro(state, events) {
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId].at : "";
@@ -8970,11 +8973,18 @@ function buildRetroPrompt(state, events, tools) {
   const recentItemIds = /* @__PURE__ */ new Set([...recentDelivered.map((item) => item.work_item_id), ...openItems.map((item) => item.work_item_id)]);
   const recentItemEvents = events.filter((event) => "work_item_id" in event && event.work_item_id && recentItemIds.has(event.work_item_id));
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId].at : "";
-  const judgements = frictionJudgementsOf(events);
-  const ownerInputLines = ownerInputsOf(events).filter((input) => input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt).map((input) => ownerInputLine(input, judgements.get(input.event_id)));
+  const frictionJudgements = frictionJudgementsOf(events);
+  const ownerInputLines = ownerInputsOf(events).filter((input) => input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt).map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)));
+  const judgedMeasures = judgedMeasuresOf(events);
+  const occurrenceLines = [...recentItemIds].flatMap(
+    (workItemId) => (judgedMeasures.get(workItemId) ?? []).flatMap(
+      (judgement) => judgement.occurrences.map((occurrence) => `- ${workItemId} (${state.workItems[workItemId].issue}), ${judgement.measure}, ${occurrence.step_guid ? `step ${refOfGuid(workflow, occurrence.step_guid)?.name ?? "no longer in the workflow"}` : "no step covers it"}: ${occurrence.why}`)
+    )
+  );
+  const definedMeasureLines = workflow.measures.map((measure) => `- "${measure.name}" (judged): ${measure.definition}`);
   const reportLines = recentItemEvents.filter((event) => ["work_reported", "gate_verdict", "review_failed", "post_mortem_written"].includes(event.type)).map((event) => `- ${JSON.stringify(event)}`);
   const measureLines = workflow.objective.measures.map(
-    (measure) => `- ${measure}: last ${recentDelivered.length} items ${averageMeasure(recentDelivered, measure) ?? "n/a"}; all ${allDelivered.length} items ${averageMeasure(allDelivered, measure) ?? "n/a"}`
+    (measure) => `- ${measure}: last ${itemsWithMeasure(recentDelivered, measure).length} items ${averageMeasure(recentDelivered, measure) ?? "n/a"}; all ${itemsWithMeasure(allDelivered, measure).length} items ${averageMeasure(allDelivered, measure) ?? "n/a"}`
   );
   const experimentLines = judgeExperiments(workflow, allDelivered).map((verdict) => {
     const experiment = workflow.experiments.find((candidate) => candidate.id === verdict.id);
@@ -8989,7 +8999,7 @@ function buildRetroPrompt(state, events, tools) {
   return [
     "You are Drillmaster, carrying out a workflow retrospective that Owner called for. The workflow retrospective is the only place the workflow changes.",
     "Open by judging the last retrospective's actions (findings.opening): for each change it applied, did it do what it was meant to, judged by its experiment's verdict and what happened since? Say plainly which ones did not.",
-    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all those a separate judge called friction: where Owner had to step in.",
+    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all the occurrences of the measures Drillmaster judged: what the workflow counts as going wrong, at the step that should have caught it.",
     "Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.",
     "Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.",
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
@@ -9004,8 +9014,10 @@ function buildRetroPrompt(state, events, tools) {
     `Current workflow (version ${workflow.version}):`,
     workflowForReading(workflow),
     "",
-    `Measures (Owner's objective: "${workflow.objective.text}"):`,
+    `Measures (Owner's objective: "${workflow.objective.text}"). A judged measure counts only the work items Drillmaster judged it on:`,
     ...measureLines,
+    "The measures the workflow defines, which Drillmaster judges:",
+    ...definedMeasureLines.length ? definedMeasureLines : ["- none"],
     `Gate rejections per rule, over the work items delivered since the last retrospective: ${Object.entries(rejectionsByRule(recentDelivered)).map(([rule, count]) => `${rule}: ${count}`).join(", ") || "none"}`,
     "",
     "The last retrospective's actions:",
@@ -9017,8 +9029,11 @@ function buildRetroPrompt(state, events, tools) {
     `Delivered work items since the last retrospective: ${recentDelivered.map((item) => `${item.work_item_id} (${item.issue})`).join(", ") || "none"}`,
     `Open work items, partly done (their reports and Owner's words below count too): ${openItems.map((item) => `${item.work_item_id} (${item.issue}) at ${item.stage === null ? "delivery" : `step ${item.stage}.${item.step}`}`).join(", ") || "none"}`,
     "",
-    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs, with the friction judge's verdict. Owner decides only in AskUserQuestion; an input is a prompt:",
+    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs. Owner decides only in AskUserQuestion; an input is a prompt:",
     ...ownerInputLines.length ? ownerInputLines : ["- none"],
+    "",
+    "Occurrences of the judged measures on those work items, each at the step that should have caught it:",
+    ...occurrenceLines.length ? occurrenceLines : ["- none"],
     "",
     "Work reports, verdicts and post mortems:",
     ...reportLines.length ? reportLines : ["- none"],
@@ -9031,10 +9046,10 @@ function buildRetroPrompt(state, events, tools) {
   ].join("\n");
 }
 var ROLE_LABELS = { start: "started it", resume: "took it up again", retrospective: "called a retrospective", input: "input" };
-function ownerInputLine(input, judgement) {
+function ownerInputLine(input, frictionJudgement) {
   const where = input.work_item_id ? `${input.work_item_id}, ${ROLE_LABELS[input.role]}${input.after_delivery ? ", after delivery" : ""}` : ROLE_LABELS[input.role];
-  const verdict = judgement ? `${judgement.friction ? "friction" : "no friction"}: ${judgement.why}` : "not judged yet";
-  return `- ${where}: "${input.prompt}" (${verdict})`;
+  const verdict = frictionJudgement ? ` (${frictionJudgement.friction ? "friction" : "no friction"}: ${frictionJudgement.why})` : "";
+  return `- ${where}: "${input.prompt}"${verdict}`;
 }
 var FeedbackAnswer = external_exports.preprocess(
   (value) => typeof value === "string" ? value.trim() ? [{ refs: [], text: value }] : [] : value,
@@ -9065,6 +9080,9 @@ function proposalsReliedOn(relies, current, earlier, afterOwnOps, toolNames) {
   return [...dependsOn];
 }
 function cannotShowImprovement(measure, target, deliveredItems) {
+  const judgedItems = itemsWithMeasure(deliveredItems, measure).length;
+  if (!isCountedMeasure(measure) && judgedItems < BASELINE_WINDOW)
+    return `It is judged on ${measure}, which Drillmaster has judged on ${judgedItems} delivered work items; it needs ${BASELINE_WINDOW} for a baseline. Judge it on another measure, or wait.`;
   if (deliveredItems.length === 0) return void 0;
   const baseline = measureBaseline(deliveredItems, measure);
   if (baseline === 0) return `It is judged on ${measure}, which is 0 over the last ${Math.min(deliveredItems.length, BASELINE_WINDOW)} delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.`;
@@ -9095,7 +9113,7 @@ function readRetroAnswer(workflow, answer, toolNames = [], deliveredItems = []) 
     try {
       const ops = external_exports.array(WorkflowOp).min(1).parse(candidate.ops);
       const named = typeof candidate.measure === "string" ? currentMeasureName(candidate.measure) : "";
-      const measure = MEASURE_NAMES.includes(named) ? named : workflow.objective.measures[0];
+      const measure = isMeasureOf(workflowAfterEarlierProposals, named) ? named : workflow.objective.measures[0];
       const noImprovement = opensWorkflowExperiment(ops) ? cannotShowImprovement(measure, candidate.target, deliveredItems) : void 0;
       if (noImprovement) {
         dropped.push({ change, error: noImprovement });
@@ -9134,9 +9152,7 @@ function readRetroAnswer(workflow, answer, toolNames = [], deliveredItems = []) 
 }
 function buildPostMortemPrompt(item, workflow, events) {
   const itemEvents = events.filter((event) => "work_item_id" in event && event.work_item_id === item.work_item_id);
-  const eventLines = itemEvents.map(
-    (event) => event.type === "work_trace" ? `- ${event.hook}${event.tool ? ` ${event.tool}` : ""}${event.input ? ` ${event.input}` : ""}${event.prompt ? ` Owner: "${event.prompt}"` : ""}` : `- ${JSON.stringify(event)}`
-  );
+  const eventLines = itemEvents.map(eventLine);
   const delivered = measureDeliveredItems(events);
   const experimentLines = workflow.experiments.map((experiment) => {
     const counted = itemsCountedFor(experiment, delivered);
@@ -9158,23 +9174,27 @@ function buildPostMortemPrompt(item, workflow, events) {
     "Running workflow experiments, and how this work item counts for each (use these counts in experiment_reflections):",
     ...experimentLines.length ? experimentLines : ["- none"],
     "",
+    ...measuresToJudge(workflow),
+    "",
     `Write keep and change as lists. In each entry, ${FEEDBACK_REFS_HELP}`,
     "Answer with JSON only:",
-    '{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}]}'
+    `{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}],${MEASURED_ANSWER_EXAMPLE}}`
   ].join("\n");
 }
 var PostMortem = external_exports.object({
   keep: FeedbackAnswer,
   change: FeedbackAnswer,
-  experiment_reflections: external_exports.preprocess((value) => Array.isArray(value) ? value : [], external_exports.array(ReflectionInput.loose()).catch([]))
+  experiment_reflections: external_exports.preprocess((value) => Array.isArray(value) ? value : [], external_exports.array(ReflectionInput.loose()).catch([])),
+  measured: external_exports.unknown().optional()
 });
-function readPostMortemAnswer(answer, workflow, toolNames) {
+function readPostMortemAnswer(answer, workflow, toolNames, itemEventIds = /* @__PURE__ */ new Set()) {
   const parsed = PostMortem.safeParse(typeof answer === "string" ? extractFirstJsonObject(answer) : answer);
   if (!parsed.success) throw new InvalidAnswer(`Drillmaster's post mortem is unreadable: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR2)}`);
   return {
     keep: resolveFeedback(workflow, parsed.data.keep, toolNames, "drop"),
     change: resolveFeedback(workflow, parsed.data.change, toolNames, "drop"),
-    experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text }))
+    experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text })),
+    measured: readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured)
   };
 }
 var toRetroView = (event, dropped = []) => ({
@@ -9516,7 +9536,7 @@ function projectView(projectId, events) {
     })),
     measures: workflow.objective.measures.map((measure) => ({
       name: measure,
-      last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure),
+      last_5: averageMeasure(lastItemsWithMeasure(deliveredItems, measure), measure),
       all: averageMeasure(deliveredItems, measure),
       per_item: deliveredItems.map((item) => ({ work_item_id: item.work_item_id, issue: item.issue, value: item.values[measure] })),
       by_input: workflow.inputs.map((input) => ({ input: input.name, options: splitMeasureByInput(deliveredItems, measure, input.name) }))
@@ -9629,6 +9649,69 @@ function changesView(events, at) {
   }).reverse();
 }
 
+// src/core/marks.ts
+var OLD_FRICTION = "friction (old)";
+var OLD_FRICTION_DEFINITION = "Owner's inputs a separate judge called friction, and Owner gates Owner sent back, before the workflow defined its measures.";
+function marksOf(events, workflow) {
+  const shown = workflow.measures.filter((measure) => measure.show);
+  const promptByEventId = new Map(events.flatMap((event) => event.type === "work_trace" && event.prompt !== void 0 ? [[event.id, event.prompt]] : []));
+  const atByEventId = new Map(events.map((event) => [event.id, event.at]));
+  const marks = [];
+  for (const event of events) {
+    if (event.type !== "post_mortem_written" && event.type !== "late_measures_judged") continue;
+    if (event.type === "post_mortem_written" && event.author !== "drillmaster") continue;
+    for (const judgement of event.measured ?? []) {
+      if (!shown.some((measure) => measure.name === judgement.measure)) continue;
+      for (const occurrence of judgement.occurrences) {
+        marks.push({
+          measure: judgement.measure,
+          work_item_id: event.work_item_id,
+          step_guid: occurrence.step_guid,
+          at: occurrence.events.map((id) => atByEventId.get(id) ?? "").filter(Boolean).sort()[0] ?? event.at,
+          after_delivery: false,
+          why: occurrence.why,
+          placed_why: null,
+          prompts: occurrence.events.flatMap((id) => promptByEventId.get(id) ?? [])
+        });
+      }
+    }
+  }
+  const judgedItemIds = new Set(judgedMeasuresOf(events).keys());
+  const judgedMarks = marks.filter((mark) => judgedItemIds.has(mark.work_item_id));
+  const hasOldFriction = (workItemId, drillmasterVersion) => !judgedItemIds.has(workItemId) && writtenBeforeMeasuresWereJudged(drillmasterVersion);
+  const oldMarks = [];
+  for (const event of events) {
+    if (event.type !== "gate_verdict" || event.by !== "owner" || event.accepted || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue;
+    oldMarks.push({ measure: OLD_FRICTION, work_item_id: event.work_item_id, step_guid: event.step_guid ?? null, at: event.at, after_delivery: false, why: `you sent it back at your gate: ${event.why}`, placed_why: null, prompts: [] });
+  }
+  const frictionJudgements = frictionJudgementsOf(events);
+  const frictionPlacements = frictionPlacementsOf(events);
+  const versionByEventId = new Map(events.map((event) => [event.id, event.drillmaster_version]));
+  for (const input of ownerInputsOf(events)) {
+    if (!input.work_item_id || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue;
+    const placement = frictionPlacements.get(input.event_id);
+    oldMarks.push({
+      measure: OLD_FRICTION,
+      work_item_id: input.work_item_id,
+      step_guid: placement?.step_guid ?? null,
+      at: input.at,
+      after_delivery: input.after_delivery,
+      why: frictionJudgements.get(input.event_id)?.why ?? "",
+      placed_why: placement?.why ?? null,
+      prompts: [input.prompt]
+    });
+  }
+  const measures = [
+    ...shown.map((measure) => ({ name: measure.name, short: measure.short, color: measure.color, definition: measure.definition, old: false })),
+    ...oldMarks.length ? [{ name: OLD_FRICTION, short: "F", color: "old", definition: OLD_FRICTION_DEFINITION, old: true }] : []
+  ];
+  return { measures, marks: [...judgedMarks, ...oldMarks].sort((a, b) => a.at.localeCompare(b.at)) };
+}
+var countsByMeasure = (measures, marks) => measures.flatMap((measure) => {
+  const count = marks.filter((mark) => mark.measure === measure.name).length;
+  return count ? [{ measure: measure.name, count }] : [];
+});
+
 // src/core/drillmasterPage.ts
 var COMPLAINT_GROUPING_REVIEW_KIND = "complaint_grouping";
 var TOOL_REF = /^tool (\S+)$/;
@@ -9669,14 +9752,11 @@ function drillmasterPageView(events, toolNames, at) {
   });
   const latestComplaintOf = (tool) => [...tool.problems.flatMap((problem) => problem.complaints), ...tool.ungrouped].sort(newestFirst)[0];
   tools.sort((a, b) => b.heard - a.heard || newestFirst(latestComplaintOf(a), latestComplaintOf(b)));
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt);
-  const frictionPlacements = frictionPlacementsOf(eventsUntilAt);
-  const uncoveredStepIns = ownerInputsOf(eventsUntilAt).flatMap((input) => {
-    const placement = frictionPlacements.get(input.event_id);
-    if (!input.work_item_id || !frictionJudgements.get(input.event_id)?.friction || !placement || placement.step_guid !== null) return [];
-    return [{ id: input.event_id, at: input.at, source: "your step-in", work_item_id: input.work_item_id, issue: issueOf(input.work_item_id), text: `"${input.prompt}" ${placement.why}` }];
+  const uncovered = (state.workflow ? marksOf(eventsUntilAt, state.workflow).marks : []).filter((mark) => mark.step_guid === null).map((mark, index) => {
+    const said = mark.prompts.map((prompt) => `"${prompt}" `).join("");
+    return mark.measure === OLD_FRICTION ? { id: `uncovered#${index}`, at: mark.at, source: "your step-in", work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${said}${mark.placed_why ?? mark.why}` } : { id: `uncovered#${index}`, at: mark.at, source: "a measure", work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${mark.measure}: ${said}${mark.why}` };
   });
-  return { tools, uncovered: uncoveredStepIns.sort(newestFirst) };
+  return { tools, uncovered: uncovered.sort(newestFirst) };
 }
 function buildComplaintGroupingPrompt(complaintsOfTool) {
   return [
@@ -9722,8 +9802,7 @@ function workflowPageView(events, at) {
     if: stage.if ?? null,
     when: conditionTextInWords(stage.if),
     here_now: [],
-    friction: 0,
-    stepped_in: [],
+    marks: [],
     steps: stage.steps.map((step) => ({
       n: step.n,
       guid: step.guid,
@@ -9758,39 +9837,31 @@ function workflowPageView(events, at) {
     if (stepOnPage) stepOnPage.step.here_now.push(itemRef);
     (stepOnPage?.stage ?? stageOfStep(null, currentPosition.stage))?.here_now.push(itemRef);
   }
-  const frictionOutsideStages = { after_delivery: 0, unplaced: 0, after_delivery_items: [], unplaced_items: [] };
   const workItemRefOf = (workItemId) => ({ work_item_id: workItemId, issue: state.workItems[workItemId]?.issue ?? workItemId });
-  const addRefOnce = (refs, workItemId) => refs.some((ref) => ref.work_item_id === workItemId) || refs.push(workItemRefOf(workItemId));
-  const addFriction = (stage, workItemId) => {
-    if (stage) {
-      stage.friction++;
-      addRefOnce(stage.stepped_in, workItemId);
-    } else {
-      frictionOutsideStages.unplaced++;
-      addRefOnce(frictionOutsideStages.unplaced_items, workItemId);
-    }
+  const addMark = (counts, mark) => {
+    let count = counts.find((candidate) => candidate.measure === mark.measure);
+    if (!count) counts.push(count = { measure: mark.measure, count: 0, items: [] });
+    count.count++;
+    if (!count.items.some((item) => item.work_item_id === mark.work_item_id)) count.items.push(workItemRefOf(mark.work_item_id));
   };
   for (const event of eventsUntilAt) {
-    if (event.type !== "gate_verdict") continue;
+    if (event.type !== "gate_verdict" || event.by !== "drillmaster") continue;
     const stepOnPage = event.step_guid ? stepByGuid.get(event.step_guid) : void 0;
-    if (event.by === "drillmaster" && stepOnPage) stepOnPage.step.reviews[event.accepted ? "passed" : "sent_back"]++;
-    if (event.by === "owner" && !event.accepted) addFriction(stageOfStep(event.step_guid, event.stage), event.work_item_id);
+    if (stepOnPage) stepOnPage.step.reviews[event.accepted ? "passed" : "sent_back"]++;
   }
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt);
-  for (const input of ownerInputsOf(eventsUntilAt)) {
-    if (!input.work_item_id || !isFriction(input, frictionJudgements)) continue;
-    if (input.after_delivery) {
-      frictionOutsideStages.after_delivery++;
-      addRefOnce(frictionOutsideStages.after_delivery_items, input.work_item_id);
-    } else addFriction(stageOfStep(input.step_guid, input.stage), input.work_item_id);
-  }
+  const { measures, marks } = marksOf(eventsUntilAt, workflow);
+  const noStep = [];
+  for (const mark of marks) addMark((mark.step_guid ? stepByGuid.get(mark.step_guid)?.stage.marks : void 0) ?? noStep, mark);
+  const inKeyOrder = (counts) => counts.sort((a, b) => measures.findIndex((measure) => measure.name === a.measure) - measures.findIndex((measure) => measure.name === b.measure));
+  for (const stage of stages) inKeyOrder(stage.marks);
   return {
     at: at ?? eventsUntilAt.at(-1)?.at ?? "",
     workflow_version: workflow.version,
     stages,
     delivered: deliveredCount,
     waiting_to_deliver: waitingToDeliver,
-    friction: frictionOutsideStages
+    measures,
+    no_step: inKeyOrder(noStep)
   };
 }
 
@@ -9826,15 +9897,9 @@ function workItemPageView(events, workItemId, at) {
   const itemEvents = eventsUntilAt.filter((event) => "work_item_id" in event && event.work_item_id === workItemId);
   const currentPosition = item.status === "delivered" || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item));
   const inputValues = inputValuesOf(item);
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt);
-  const frictionPlacements = frictionPlacementsOf(eventsUntilAt);
-  const stepIns = ownerInputsOf(eventsUntilAt).filter((input) => input.work_item_id === workItemId && isFriction(input, frictionJudgements)).map((input) => {
-    const placement = frictionPlacements.get(input.event_id);
-    return {
-      stepIn: { event_id: input.event_id, at: input.at, prompt: input.prompt, after_delivery: input.after_delivery, why: frictionJudgements.get(input.event_id)?.why ?? "", placed_why: placement?.step_guid ? placement.why : null },
-      stepGuid: placement?.step_guid ?? null
-    };
-  });
+  const { measures, marks: allMarks } = marksOf(eventsUntilAt, state.workflow);
+  const marks = allMarks.filter((mark) => mark.work_item_id === workItemId);
+  const itemMark = ({ work_item_id: _workItemId, step_guid: _stepGuid, ...mark }) => mark;
   const submittedStepRefByTraceId = /* @__PURE__ */ new Map();
   for (const event of itemEvents) {
     if (event.type !== "work_trace" || !event.tool || !GATE_TOOL_NAME.test(event.tool) || !event.input) continue;
@@ -9888,11 +9953,11 @@ function workItemPageView(events, workItemId, at) {
           kept_output: itemEvents.filter((event) => event.type === "work_trace" && keptTraceIds.has(event.id)).flatMap((trace) => (trace.captures ?? []).map((capture) => ({ tool: unprefixedToolName(trace.tool ?? ""), name: capture.name, lines: [...new Set(capture.lines)] })))
         },
         calls: calls.map((call) => ({ at: call.at, tool: unprefixedToolName(call.tool ?? ""), did: whatCallDid(call.input, projectDir), failed: call.error === true || call.hook === "PostToolUseFailure" })),
-        step_ins: stepIns.filter(({ stepGuid }) => stepGuid === step.guid).map(({ stepIn }) => stepIn)
+        marks: marks.filter((mark) => mark.step_guid === step.guid).map(itemMark)
       };
     })
   }));
-  const pinnedStepInIds = new Set(stages.flatMap((stage) => stage.steps.flatMap((step) => step.step_ins.map((stepIn) => stepIn.event_id))));
+  const stepGuidsOnRoute = new Set(stages.flatMap((stage) => stage.steps.map((step) => step.guid)));
   const delivery = itemEvents.find((event) => event.type === "work_item_delivered");
   return {
     at: at ?? eventsUntilAt.at(-1)?.at ?? "",
@@ -9909,7 +9974,8 @@ function workItemPageView(events, workItemId, at) {
       added_steps: itemEvents.flatMap((event) => event.type === "work_reported" && event.kind === "added_step" ? [{ at: event.at, text: event.text, why: event.why ?? "" }] : []),
       post_mortems: itemEvents.flatMap((event) => event.type === "post_mortem_written" ? [{ author: event.author, keep: event.keep.map((feedback) => feedback.text), change: event.change.map((feedback) => feedback.text) }] : [])
     } : null,
-    step_ins_unplaced: stepIns.filter(({ stepIn }) => !pinnedStepInIds.has(stepIn.event_id)).map(({ stepIn }) => stepIn)
+    measures,
+    marks_no_step: marks.filter((mark) => !mark.step_guid || !stepGuidsOnRoute.has(mark.step_guid)).map(itemMark)
   };
 }
 var SUMMARY_LENGTH = 90;
@@ -9920,10 +9986,8 @@ var oneLineSummaryOf = (description) => shortened(
 function workItemsListView(events, at) {
   const eventsUntilAt = at ? events.filter((event) => event.at <= at) : events;
   const state = foldState(eventsUntilAt);
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt);
-  const frictionCountByItemId = /* @__PURE__ */ new Map();
-  for (const input of ownerInputsOf(eventsUntilAt)) if (input.work_item_id && isFriction(input, frictionJudgements)) frictionCountByItemId.set(input.work_item_id, (frictionCountByItemId.get(input.work_item_id) ?? 0) + 1);
-  return Object.values(state.workItems).sort((a, b) => b.started_at.localeCompare(a.started_at)).map((item) => {
+  const { measures, marks } = state.workflow ? marksOf(eventsUntilAt, state.workflow) : { measures: [], marks: [] };
+  const items = Object.values(state.workItems).sort((a, b) => b.started_at.localeCompare(a.started_at)).map((item) => {
     const workflow = workflowOfWorkItem(state, item);
     const currentPosition = item.status === "delivered" || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item));
     const currentStep = currentPosition?.stage != null && currentPosition.step != null ? workflow.stages.find((stage) => stage.n === currentPosition.stage)?.steps.find((candidate) => candidate.n === currentPosition.step) : void 0;
@@ -9935,9 +9999,13 @@ function workItemsListView(events, at) {
       status: item.status,
       started_at: item.started_at,
       at_step: currentStep ? currentStep.name : null,
-      friction: frictionCountByItemId.get(item.work_item_id) ?? 0
+      marks: countsByMeasure(
+        measures,
+        marks.filter((mark) => mark.work_item_id === item.work_item_id)
+      )
     };
   });
+  return { measures, items };
 }
 
 // src/app.ts
@@ -9995,6 +10063,7 @@ var RetroArgs = external_exports.discriminatedUnion("action", [
     action: external_exports.literal("setup"),
     objective: external_exports.string().min(1),
     measures: external_exports.array(external_exports.string()).min(1),
+    define_measures: external_exports.array(external_exports.unknown()).optional(),
     drillmaster_repository: external_exports.string().min(1),
     folder: external_exports.string().regex(/^[A-Za-z0-9_-]+$/, "a folder name has letters, digits, _ and - only").optional()
   }).strict(),
@@ -10172,7 +10241,7 @@ var TOOLS = [
     name: "workflow_retrospective",
     description: [
       "The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.",
-      `- setup {objective, measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective, in the Drillmaster repository, and writes .drillmaster in the work folder. measures: ${MEASURE_NAMES.join(", ")}.`,
+      `- setup {objective, measures, define_measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective and its measures, in the Drillmaster repository, and writes .drillmaster in the work folder. A measure is one Drillmaster counts (${Object.keys(COUNTED_MEASURES).join(", ")}) or one in define_measures, which Drillmaster judges for each delivered work item from its definition.`,
       `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's inputs, the measures and the experiments' verdicts. Show them to Owner as they are.`,
       "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline."
     ].join("\n"),
@@ -10181,7 +10250,22 @@ var TOOLS = [
       properties: {
         action: { type: "string", enum: ["setup", "run", "apply"] },
         objective: { type: "string", description: "setup: what Owner wants Drillmaster to achieve with the workflow." },
-        measures: { type: "array", items: { type: "string", enum: [...MEASURE_NAMES] }, description: "setup: the measures of the objective." },
+        measures: { type: "array", items: { type: "string" }, description: "setup: the names of the measures of the objective: counted ones, and ones in define_measures." },
+        define_measures: {
+          type: "array",
+          description: "setup: the measures Drillmaster judges, each counting something that should not happen (lower is better).",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: 'In plain words, e.g. "policy friction".' },
+              short: { type: "string", description: 'What its ring on the viewer says before the count: 1 to 3 capital letters, e.g. "PF".' },
+              color: { type: "string", enum: ["orange", "rose", "violet", "sky"], description: "The colour the viewer draws it in." },
+              definition: { type: "string", description: "What counts as one occurrence, in Owner's words." },
+              show: { type: "boolean", description: "Whether the viewer's pages show where it happened." }
+            },
+            required: ["name", "short", "color", "definition", "show"]
+          }
+        },
         drillmaster_repository: { type: "string", description: "setup: the private git repository (URL or path) that keeps the project's workflow and history: the Drillmaster repository." },
         folder: { type: "string", description: "setup: the project's folder in the Drillmaster repository (default: the work folder's name). One repository can hold several projects." },
         proposal: { type: "integer", minimum: 1, description: "apply: only this proposal from the latest run." }
@@ -10396,9 +10480,10 @@ var Drillmaster = class {
    * Sets a work folder up as a Drillmaster project: the pin and workflow 0.0.0 are pushed to the
    * Drillmaster repository first, then `.drillmaster` names it in the work folder.
    */
-  async init(projectDir, objective, repository) {
-    const parsedObjective = Objective.safeParse(objective);
-    if (!parsedObjective.success) throw new UserError(`Invalid objective: ${external_exports.prettifyError(parsedObjective.error)}`);
+  async init(projectDir, objective, repository, definedMeasures = []) {
+    const parsedWorkflow = parseWorkflowZero(objective, definedMeasures);
+    if (!parsedWorkflow.success) throw new UserError(`Invalid objective: ${external_exports.prettifyError(parsedWorkflow.error)}`);
+    const workflow = parsedWorkflow.data;
     const existing = this.ports.projects.resolve(projectDir);
     const place = { url: repository.url, folder: repository.folder ?? existing?.repository?.folder ?? defaultFolderOf(projectDir) };
     if (existing?.repository && (existing.repository.url !== place.url || existing.repository.folder !== place.folder)) {
@@ -10409,7 +10494,6 @@ var Drillmaster = class {
     }
     const linkProblem = this.ports.projects.linkProblem(projectDir);
     if (linkProblem) throw new UserError(linkProblem, 409);
-    const workflow = workflowZero(parsedObjective.data);
     const candidate = { key: projectKey(place), repository: place };
     const publisher = this.publisherFor(candidate);
     if (publisher) {
@@ -10463,7 +10547,7 @@ var Drillmaster = class {
         case "workflow_retrospective": {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs);
           if (retroArgs.action === "setup") {
-            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures.map(currentMeasureName) }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder });
+            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures.map(currentMeasureName) }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder }, retroArgs.define_measures);
             return jsonResult({
               workflow,
               note: "Workflow 0.0.0 holds only the objective. Agent does its best, Owner steps in where needed, and the workflow grows from that. Commit .drillmaster with the code: it is how Drillmaster knows this folder."
@@ -10489,7 +10573,7 @@ var Drillmaster = class {
     const measures = Object.fromEntries(
       view.objective.measures.map((measure) => [
         measure,
-        { last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure), all: averageMeasure(deliveredItems, measure), delivered: deliveredItems.length }
+        { last_5: averageMeasure(lastItemsWithMeasure(deliveredItems, measure), measure), all: averageMeasure(deliveredItems, measure), delivered: deliveredItems.length }
       ])
     );
     const workflow = findVersion(state, view.version);
@@ -10685,8 +10769,7 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner }) : workResult(m
         const storedEvent = await this.appendEvent(project, newEvent);
         if (storedEvent.type === "gate_submitted" && storedEvent.gate === "drillmaster") gateSubmissionToJudge = storedEvent.id;
         if (storedEvent.type === "work_item_delivered") {
-          this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id));
-          this.runInBackground(this.judgeFriction(projectDir, storedEvent.work_item_id));
+          this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id, "retry at the retrospective"));
         }
       }
       const after = foldState(await this.ports.store.read(projectId));
@@ -10746,55 +10829,6 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
       for (const newEvent of events) await this.appendEvent(project, newEvent);
     });
   }
-  /** The separate friction judge, on each of Owner's inputs on a work item it hasn't judged yet. */
-  async judgeFriction(projectDir, workItemId) {
-    const events = await this.events(projectDir);
-    const item = foldState(events).workItems[workItemId];
-    const judged = frictionJudgementsOf(events);
-    const unjudged = ownerInputsOf(events).filter((input) => input.work_item_id === workItemId && !judged.has(input.event_id));
-    if (unjudged.length === 0) return;
-    let judgements;
-    try {
-      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_REVIEW_KIND, prompt: buildFrictionPrompt(item, unjudged, events) });
-      judgements = readFrictionAnswer(unjudged, answer);
-    } catch {
-      return;
-    }
-    if (judgements.length === 0) return;
-    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: "owner_inputs_judged", work_item_id: workItemId, inputs: judgements }));
-    const frictions = judgements.flatMap((judgement) => judgement.friction ? [{ judgement, input: unjudged.find((input) => input.event_id === judgement.event) }] : []);
-    if (frictions.length > 0) await this.placeFriction(projectDir, workItemId, frictions);
-  }
-  async placeUnplacedFriction(projectDir) {
-    const events = await this.events(projectDir);
-    const frictionJudgements = frictionJudgementsOf(events);
-    const frictionPlacements = frictionPlacementsOf(events);
-    const unplacedFrictionsByItemId = /* @__PURE__ */ new Map();
-    for (const input of ownerInputsOf(events)) {
-      const judgement = frictionJudgements.get(input.event_id);
-      if (!input.work_item_id || !judgement?.friction || frictionPlacements.has(input.event_id)) continue;
-      unplacedFrictionsByItemId.set(input.work_item_id, [...unplacedFrictionsByItemId.get(input.work_item_id) ?? [], { input, judgement }]);
-    }
-    for (const [workItemId, frictions] of unplacedFrictionsByItemId) await this.placeFriction(projectDir, workItemId, frictions);
-  }
-  async placeFriction(projectDir, workItemId, frictions) {
-    const state = foldState(await this.events(projectDir));
-    const item = state.workItems[workItemId];
-    const workflow = workflowOfWorkItem(state, item);
-    let placements;
-    try {
-      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_PLACEMENT_REVIEW_KIND, prompt: buildFrictionPlacementPrompt(workflow, item, frictions) });
-      placements = readFrictionPlacementAnswer(
-        workflow,
-        frictions.map(({ input }) => input.event_id),
-        answer
-      );
-    } catch {
-      return;
-    }
-    if (placements.length === 0) return;
-    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: "friction_placed", work_item_id: workItemId, inputs: placements }));
-  }
   async groupComplaints(projectDir) {
     const events = await this.events(projectDir);
     const complaintsOfTool = complaintsByTool(events, TOOL_NAMES);
@@ -10811,11 +10845,17 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
     if (groups.length === 0) return;
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: "complaints_grouped", groups }));
   }
-  async writeDrillmasterPostMortem(projectDir, workItemId) {
+  /**
+   * Drillmaster's post mortem of a delivered work item, which judges the workflow's measures. When it
+   * fails right after delivery, the retrospective tries again; when it fails there, the failure is
+   * the post mortem, and the measures stay unjudged.
+   */
+  async writeDrillmasterPostMortem(projectDir, workItemId, onFailure) {
     const events = await this.events(projectDir);
     const state = foldState(events);
     const item = state.workItems[workItemId];
     const workflow = workflowOfWorkItem(state, item);
+    const itemEventIds = new Set(events.filter((event) => "work_item_id" in event && event.work_item_id === workItemId).map((event) => event.id));
     let postMortem;
     try {
       const { answer } = await this.ports.reviewer.review({
@@ -10823,8 +10863,9 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
         prompt: buildPostMortemPrompt(item, workflow, events),
         minTimeoutMs: POST_MORTEM_TIMEOUT_MS
       });
-      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES);
+      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES, itemEventIds);
     } catch (error) {
+      if (onFailure === "retry at the retrospective") return;
       const reason = error instanceof Error ? error.message : String(error);
       postMortem = { keep: [], change: [{ refs: [], text: `Drillmaster could not write its post mortem: ${reason}` }], experiment_reflections: [] };
     }
@@ -10834,15 +10875,26 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
       await this.appendEvent(project, { type: "post_mortem_written", work_item_id: workItemId, author: "drillmaster", ...postMortem });
     });
   }
+  /** Judges the measures on what happened to a delivered work item since Drillmaster last judged them. Unjudged, it is tried again at the next retrospective. */
+  async judgeLateMeasures(projectDir, workItemId, unjudged) {
+    const state = foldState(await this.events(projectDir));
+    const item = state.workItems[workItemId];
+    const workflow = workflowOfWorkItem(state, item);
+    let measured;
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: LATE_MEASURES_REVIEW_KIND, prompt: buildLateMeasuresPrompt(item, workflow, unjudged) });
+      measured = readLateMeasuresAnswer(workflow, unjudged, answer);
+    } catch {
+      return;
+    }
+    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: "late_measures_judged", work_item_id: workItemId, through: unjudged.at(-1).id, measured }));
+  }
   async runRetrospective(projectDir) {
     await this.idle();
-    const beforeJudging = await this.events(projectDir);
-    const judged = frictionJudgementsOf(beforeJudging);
-    const deliveredIds = new Set(Object.values(foldState(beforeJudging).workItems).filter((item) => item.status === "delivered").map((item) => item.work_item_id));
-    const itemsToJudge = new Set(ownerInputsOf(beforeJudging).flatMap((input) => input.work_item_id && deliveredIds.has(input.work_item_id) && !judged.has(input.event_id) ? [input.work_item_id] : []));
-    await Promise.all([...itemsToJudge].map((workItemId) => this.judgeFriction(projectDir, workItemId)));
+    const withoutPostMortem = Object.values(foldState(await this.events(projectDir)).workItems).filter((item) => item.status === "delivered" && !item.post_mortems.includes("drillmaster"));
+    await Promise.all(withoutPostMortem.map((item) => this.writeDrillmasterPostMortem(projectDir, item.work_item_id, "record it")));
+    await Promise.all(itemsToJudgeLate(await this.events(projectDir)).map(({ workItemId, unjudged }) => this.judgeLateMeasures(projectDir, workItemId, unjudged)));
     this.runInBackground(this.groupComplaints(projectDir));
-    this.runInBackground(this.placeUnplacedFriction(projectDir));
     const events = await this.events(projectDir);
     const state = foldState(events);
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET);
@@ -11200,7 +11252,7 @@ function createRequestHandler(app, servedProject) {
           const { workflow, project } = await app.init(requireServedProjectDir(body.project), body.objective, {
             url: body.drillmaster_repository,
             ...typeof body.folder === "string" ? { folder: body.folder } : {}
-          });
+          }, body.define_measures ?? []);
           return sendJson(response, 201, { workflow, project: project.key });
         }
         case "GET /tools":
