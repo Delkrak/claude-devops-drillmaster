@@ -92,7 +92,8 @@ Add `docs/plans/round-6.md` and its row in `docs/plans/README.md`.
 - 🟩 A clean-code pass.
 - 🟩 README, DESIGN.md, `.impeccable/design.json` and the skills updated.
 - 🟩 Version 0.4.0, bundle rebuilt (3828312).
-- 🟧 Local CI on Linux in Docker (Windows: green).
+- 🟩 Local CI: Windows, and Linux in Docker on Node 22 and 24 (327 tests each, the bundle check), the
+  browser tests on Linux (23).
 - 🟩 The plans marked built.
 
 ## Verification
@@ -103,8 +104,10 @@ Add `docs/plans/round-6.md` and its row in `docs/plans/README.md`.
 - 🟩 Playwright: the pages show the measures' pills, the no-step row and `friction (old)`.
 - 🟩 The blind read of the built page gets every measure's count right.
 - 🟧 Owner accepts it.
-- 🟧 Manual: the review server on the fixture, every page; a copy of Keeper's project data upgraded,
-  its pages and running experiment still read.
+- 🟩 A copy of Keeper's project data read by 0.4.0: its workflow parses with owner friction defined,
+  its work items keep their friction (7, 16, 8), its six experiments run on the same numbers, and every
+  page renders it as friction (old).
+- 🟧 Manual: the review server on the fixture, every page (started only when Owner asks).
 
 ## Estimates
 
