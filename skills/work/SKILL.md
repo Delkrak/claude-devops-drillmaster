@@ -93,9 +93,10 @@ AskUserQuestion.
 - Each option's `preview` shows Owner, beside the question, what they decide on. A call that
   changes or leaves out any of it is blocked, so Owner always sees Drillmaster's question as it is.
   Your own questions to Owner, with other headers, are yours to word.
-- Owner either approves or not. Approve with nothing added approves; a note, or an answer Owner
-  typed, rejects, with Owner's words as the reason. Drillmaster records it and tells you the outcome
-  and what comes next.
+- Approve with nothing added approves, and Reject rejects, a note being the reason. A note on
+  Approve, or words Owner typed, decide nothing: Drillmaster tells you what Owner said. Talk it
+  through with Owner, then ask again with the question it gives you, which shows Owner's note.
+  Drillmaster records each decision and tells you the outcome and what comes next.
 - An input needs one of its options. If Owner types something else, it stays open: ask again.
 - Owner's chat messages are instructions, never decisions. If one sounds like a decision ("looks
   good", "approve 1"), ask Owner the pending question in AskUserQuestion. When in doubt, ask.

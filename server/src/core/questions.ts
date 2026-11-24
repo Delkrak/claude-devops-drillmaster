@@ -1,6 +1,6 @@
 import type { NewEvent } from './events.js'
 import { resolveRef, stepGuidAt, stepPosition } from './refs.js'
-import type { ProjectState, WorkItemState } from './state.js'
+import { questionKeyOf, type ProjectState, type WorkItemState } from './state.js'
 import { atStep, decideSkip, describeMove, describeUpdate, inputEventsWithMove, moveOn, nextPosition, stepAt, workflowOfWorkItem } from './work.js'
 import { AT_START, findRule, type WorkflowDocument, type WorkItemInput } from './workflow.js'
 
@@ -60,6 +60,10 @@ function ownerGatePreview(workflow: WorkflowDocument, item: WorkItemState, stage
 
 const withPreview = (options: QuestionOption[], preview: string) => options.map((option) => ({ ...option, preview }))
 
+
+/** The preview with what Owner said on the question last time, so Owner sees it when asked again. */
+const withOwnerComment = (preview: string, comment: string | undefined) => (comment ? `${preview}\n\n## Your note last time\n${comment}` : preview)
+
 function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuestion | undefined {
   const gate = item.pending_gate
   if (gate?.gate !== 'owner') return undefined
@@ -74,10 +78,10 @@ function ownerGateQuestion(state: ProjectState, item: WorkItemState): OwnerQuest
     header: 'Owner gate',
     options: withPreview(
       [
-        { label: APPROVE, description: 'This is what you want: the work moves on. A note makes it a rejection.' },
-        { label: REJECT, description: 'It goes back. Say what to change in a note, or type it.' },
+        { label: APPROVE, description: 'This is what you want: the work moves on. With a note, nothing is decided yet: Agent talks it through with you.' },
+        { label: REJECT, description: 'It goes back. Say what to change in a note.' },
       ],
-      ownerGatePreview(workflow, item, gate.stage, gate.step, gate.text),
+      withOwnerComment(ownerGatePreview(workflow, item, gate.stage, gate.step, gate.text), state.ownerComments[questionKeyOf({ kind: 'owner_gate', work_item_id: item.work_item_id, stage: gate.stage, step: gate.step })]),
     ),
     multiSelect: false,
   }
@@ -107,10 +111,10 @@ function stepSkipQuestion(state: ProjectState, item: WorkItemState): OwnerQuesti
     header: 'Skip step',
     options: withPreview(
       [
-        { label: APPROVE, description: 'The step is not needed for this work item: it moves on. A note makes it a rejection.' },
-        { label: REJECT, description: 'Agent does the step. Say why in a note, or type it.' },
+        { label: APPROVE, description: 'The step is not needed for this work item: it moves on. With a note, nothing is decided yet: Agent talks it through with you.' },
+        { label: REJECT, description: 'Agent does the step. Say why in a note.' },
       ],
-      preview,
+      withOwnerComment(preview, state.ownerComments[questionKeyOf({ kind: 'step_skip', work_item_id: item.work_item_id, stage: skip.stage, step: skip.step })]),
     ),
     multiSelect: false,
   }
@@ -130,10 +134,10 @@ function proposalQuestions(state: ProjectState): OwnerQuestion[] {
       header: header(`Proposal ${proposal.id}`),
       options: withPreview(
         [
-          { label: APPROVE, description: 'Apply it as a workflow experiment.' },
-          { label: DECLINE, description: 'Leave the workflow as it is. A note on Approve declines it too.' },
+          { label: APPROVE, description: 'Apply it as a workflow experiment. With a note, nothing is decided yet: Agent talks it through with you.' },
+          { label: DECLINE, description: 'Leave the workflow as it is. Say why in a note.' },
         ],
-        proposalPreview(proposal),
+        withOwnerComment(proposalPreview(proposal), state.ownerComments[questionKeyOf({ kind: 'proposal', retro_id: retro.retro_id, proposal: proposal.id })]),
       ),
       multiSelect: false as const,
     }))
@@ -203,22 +207,43 @@ export interface AnswerOutcome {
   lines: string[]
 }
 
+type Approval = { decision: 'approved' } | { decision: 'rejected'; reason: string } | { decision: 'undecided'; comment: string }
+
 /**
- * Owner approves only by picking Approve and nothing more. A note, or an answer Owner typed, is a
- * rejection (a decline for a proposal), with Owner's words as the reason.
+ * Approve with nothing added approves; Reject or Decline rejects, a note being the reason. Anything
+ * else (a note on Approve, an answer Owner typed, a note alone) decides nothing: Owner has
+ * something to say first.
  */
-function readApproval(ownerAnswer: OwnerAnswer) {
-  const approved = ownerAnswer.answer === APPROVE && !ownerAnswer.notes
-  const reason = [ownerAnswer.answer === APPROVE || ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE ? '' : ownerAnswer.answer, ownerAnswer.notes]
-    .filter(Boolean)
-    .join(' - ')
-  return { approved, reason }
+function readApproval(ownerAnswer: OwnerAnswer): Approval {
+  const notes = ownerAnswer.notes ?? ''
+  if (ownerAnswer.answer === APPROVE && !notes) return { decision: 'approved' }
+  if (ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE) return { decision: 'rejected', reason: notes }
+  return { decision: 'undecided', comment: [ownerAnswer.answer === APPROVE ? '' : ownerAnswer.answer.trim(), notes].filter(Boolean).join(' - ') }
+}
+
+const QUESTION_SUBJECTS: Record<Exclude<OwnerQuestion['kind'], 'owner_input'>, (question: OwnerQuestion) => string> = {
+  owner_gate: (question) => `the Owner gate of step ${'stage' in question ? `${question.stage}.${question.step}` : ''}`,
+  step_skip: (question) => `skipping step ${'stage' in question ? `${question.stage}.${question.step}` : ''}`,
+  proposal: (question) => `proposal ${'proposal' in question ? question.proposal : ''}`,
+}
+
+/** Owner's words on a question Owner did not decide: kept, so the question shows them when asked again. */
+function leftUndecided(question: Exclude<OwnerQuestion, { kind: 'owner_input' }>, comment: string): AnswerOutcome {
+  return {
+    events: [{ type: 'owner_commented', question: questionKeyOf(question), ...('work_item_id' in question ? { work_item_id: question.work_item_id } : {}), comment }],
+    lines: [
+      `Owner did not decide ${QUESTION_SUBJECTS[question.kind](question)} and said: "${quote(comment)}". Talk it through with Owner; once Owner is ready, ask again with the question below, which shows Owner's note.`,
+    ],
+  }
 }
 
 export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion, ownerAnswer: OwnerAnswer): AnswerOutcome {
   switch (question.kind) {
     case 'owner_gate': {
-      const { approved: accepted, reason } = readApproval(ownerAnswer)
+      const approval = readApproval(ownerAnswer)
+      if (approval.decision === 'undecided') return leftUndecided(question, approval.comment)
+      const accepted = approval.decision === 'approved'
+      const reason = approval.decision === 'rejected' ? approval.reason : ''
       const item = state.workItems[question.work_item_id]!
       const workflow = workflowOfWorkItem(state, item)
       const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false }
@@ -248,7 +273,10 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       }
     }
     case 'proposal': {
-      const { approved, reason } = readApproval(ownerAnswer)
+      const approval = readApproval(ownerAnswer)
+      if (approval.decision === 'undecided') return leftUndecided(question, approval.comment)
+      const approved = approval.decision === 'approved'
+      const reason = approval.decision === 'rejected' ? approval.reason : ''
       return {
         events: [
           {
@@ -265,7 +293,10 @@ export function decideOwnerQuestion(state: ProjectState, question: OwnerQuestion
       }
     }
     case 'step_skip': {
-      const { approved: accepted, reason } = readApproval(ownerAnswer)
+      const approval = readApproval(ownerAnswer)
+      if (approval.decision === 'undecided') return leftUndecided(question, approval.comment)
+      const accepted = approval.decision === 'approved'
+      const reason = approval.decision === 'rejected' ? approval.reason : ''
       const item = state.workItems[question.work_item_id]!
       const decided = decideSkip(state, item, { accepted, by: 'owner', via: 'question', why: accepted ? 'Owner approved.' : `Owner rejected${reason ? `: "${quote(reason)}"` : '.'}` })
       const move = decided.answer as MoveAnswer
@@ -306,16 +337,27 @@ const nextLine = (move: Pick<MoveAnswer, 'next' | 'done' | 'session_done' | 'wai
 const updateLine = (update: { from_version: string; to_version: string; kept: string[] }) =>
   `The work item updated from workflow ${update.from_version} to ${update.to_version}, keeping ${update.kept.length ? `step ${update.kept.join(', ')}` : 'no step'} as done.`
 
-export function decideOwnerAnswers(state: ProjectState, answers: Record<string, unknown>, annotations: Record<string, unknown>): AnswerOutcome {
+/**
+ * Decides each question Owner answered, by its text; a note alone, with no option picked, is an
+ * answer too. The questions Owner left undecided come back with Owner's words in their preview.
+ */
+export function decideOwnerAnswers(state: ProjectState, answers: Record<string, unknown>, annotations: Record<string, unknown>): AnswerOutcome & { askAgain?: ReturnType<typeof askUserQuestionInput> } {
   const pending = pendingOwnerQuestions(state)
   const outcome: AnswerOutcome = { events: [], lines: [] }
-  for (const [questionText, answer] of Object.entries(answers)) {
+  const comments: Record<string, string> = {}
+  for (const questionText of new Set([...Object.keys(answers), ...Object.keys(annotations)])) {
     const question = pending.find((candidate) => candidate.question === questionText)
-    if (!question || typeof answer !== 'string') continue
+    const answer = answers[questionText] ?? ''
     const notes = (annotations[questionText] as { notes?: unknown } | undefined)?.notes
-    const decided = decideOwnerQuestion(state, question, { answer, ...(typeof notes === 'string' && notes.trim() ? { notes: notes.trim() } : {}) })
+    const trimmedNotes = typeof notes === 'string' ? notes.trim() : ''
+    if (!question || typeof answer !== 'string' || (!answer.trim() && !trimmedNotes)) continue
+    const decided = decideOwnerQuestion(state, question, { answer, ...(trimmedNotes ? { notes: trimmedNotes } : {}) })
     outcome.events.push(...decided.events)
     outcome.lines.push(...decided.lines)
+    for (const event of decided.events) if (event.type === 'owner_commented') comments[event.question] = event.comment
   }
-  return outcome
+  if (Object.keys(comments).length === 0) return outcome
+  const withComments = { ...state, ownerComments: { ...state.ownerComments, ...comments } }
+  const askAgain = askUserQuestionInput(pendingOwnerQuestions(withComments).filter((question) => question.kind !== 'owner_input' && comments[questionKeyOf(question)] !== undefined))
+  return { ...outcome, askAgain }
 }

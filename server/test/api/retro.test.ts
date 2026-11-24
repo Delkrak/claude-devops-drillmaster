@@ -116,11 +116,13 @@ describe('the improvement loop', () => {
     expect(prompt).toContain('Owner had to ask for the tests')
   })
 
-  it('refuses to apply until Owner approves in AskUserQuestion, and takes a note as a decline', async () => {
+  it('refuses to apply until Owner approves in AskUserQuestion, and asks again after a note', async () => {
     expect((await tool('workflow_retrospective', { action: 'apply', proposal: 1 })).value).toMatch(/has not approved/)
     expect((await hook('UserPromptSubmit', { prompt: 'approve 1' })).output).toBeUndefined()
     const decided = await ownerAnswers(app, PROJECT, (question) => (question.startsWith('Proposal 1') ? 'Approve' : { answer: 'Approve', notes: 'only if it is cheap' }), SESSION)
-    expect(decided).toMatch(/approved proposal 1.*declined proposal 2 \("only if it is cheap"\)/)
+    expect(decided).toMatch(/approved proposal 1.*did not decide proposal 2 and said: "only if it is cheap".*Your note last time\\nonly if it is cheap/)
+    expect((await tool('workflow_retrospective', { action: 'apply', proposal: 2 })).value).toMatch(/has not approved/)
+    expect(await ownerAnswers(app, PROJECT, () => ({ answer: 'Decline', notes: 'too costly' }), SESSION)).toMatch(/declined proposal 2 \("too costly"\)/)
     expect((await tool('workflow_retrospective', { action: 'apply', proposal: 2 })).value).toMatch(/declined/)
   })
 

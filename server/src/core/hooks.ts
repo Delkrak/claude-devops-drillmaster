@@ -248,9 +248,11 @@ function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId
   if (!askedTexts) return { events: [] }
   const response = (payload.tool_response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, unknown> }
   const answersToAsked = Object.fromEntries(Object.entries(response.answers ?? {}).filter(([text]) => askedTexts.includes(text)))
-  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {})
+  const annotationsToAsked = Object.fromEntries(Object.entries(response.annotations ?? {}).filter(([text]) => askedTexts.includes(text)))
+  const decided = decideOwnerAnswers(state, answersToAsked, annotationsToAsked)
   if (decided.lines.length === 0) return { events: [] }
-  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}` } } }
+  const askAgain = decided.askAgain ? ` The question to ask again, as it is: ${JSON.stringify(decided.askAgain)}` : ''
+  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}${askAgain}` } } }
 }
 
 function briefSession(state: ProjectState, item: WorkItemState | undefined, context: HookContext) {

@@ -55,8 +55,9 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
       - **Owner gate:** handed in with no self check, and pending. The result gives the exact
         AskUserQuestion to ask, with what Owner approves beside the options: Agent's report, the
         assumptions Agent reported and the rules. The `PreToolUse` hook blocks a call that changes
-        it. Owner approves or not there: Approve alone approves, and a note or a typed answer
-        rejects, with Owner's words as the reason. The hooks record the answer as the verdict.
+        it. Approve alone approves, and Reject rejects, a note being the reason; a note on
+        Approve or a typed answer decides nothing, and Agent asks again once they have talked it
+        through. The hooks record the answer as the verdict.
         Owner's chat messages never decide: they are Owner inputs.
    4. The result shows the next step in full, or where a rejection sends the work back to.
    5. At the end of each work stage, the work item's events are committed and pushed to its own
@@ -78,8 +79,9 @@ The intended workflow, step by step. Who acts is in **bold**; the tool or hook i
     measures, and where each defined measure happened. It returns findings and at most four proposals,
     each with a hypothesis, a null hypothesis and a target. The server's verdicts on the running
     experiments come with them.
-12. **Owner** decides each proposal in AskUserQuestion: Approve alone approves, and Decline, a note
-    or a typed answer declines. The hooks record the decision.
+12. **Owner** decides each proposal in AskUserQuestion: Approve alone approves, and Decline
+    declines. A note on Approve or a typed answer decides nothing: Agent talks it through with Owner
+    and asks again, with Owner's note beside the proposal. The hooks record the decision.
 13. **Agent** calls `workflow_retrospective(apply)`. The server applies every proposal Owner
     approved, and refuses the rest. Each change makes a new workflow version (major, minor or patch,
     set by what changed) and opens a workflow experiment with its measure's baseline. Open work

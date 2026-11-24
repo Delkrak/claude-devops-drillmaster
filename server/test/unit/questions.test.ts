@@ -88,8 +88,8 @@ describe("Owner's pending questions", () => {
         question: 'Proposal 1 of retro_1: add a lint step. Approve it?',
         header: 'Proposal 1',
         options: [
-          { label: 'Approve', description: 'Apply it as a workflow experiment.', preview: expect.stringContaining('## Why\nOwner fixed lint\n\n## What should happen\nno more lint fixes') },
-          { label: 'Decline', description: 'Leave the workflow as it is. A note on Approve declines it too.', preview: expect.stringContaining('On owner_friction_per_item') },
+          { label: 'Approve', description: 'Apply it as a workflow experiment. With a note, nothing is decided yet: Agent talks it through with you.', preview: expect.stringContaining('## Why\nOwner fixed lint\n\n## What should happen\nno more lint fixes') },
+          { label: 'Decline', description: 'Leave the workflow as it is. Say why in a note.', preview: expect.stringContaining('On owner_friction_per_item') },
         ],
       }),
     ])
@@ -130,9 +130,25 @@ describe('Owner decides through AskUserQuestion', () => {
     expect((outcome.output as any).hookSpecificOutput.additionalContext).toMatch(/Owner approved the Owner gate of step 2.1\. Every work gate has passed/)
   })
 
-  it('takes a note on Approve as a rejection: Owner either approves or not', () => {
+  it('leaves the question undecided after a note on Approve, and asks it again with the note beside it', () => {
     const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Approve' }, { [GATE_QUESTION]: { notes: 'but rename the file' } })
-    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, by: 'owner', why: 'Owner rejected: "but rename the file"', next: { stage: 2, step: 1 } }))
+    expect(outcome.events.filter((event) => event.type === 'gate_verdict')).toEqual([])
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'owner_commented', comment: 'but rename the file' }))
+    const context = (outcome.output as any).hookSpecificOutput.additionalContext as string
+    expect(context).toMatch(/did not decide the Owner gate of step 2\.1 and said: "but rename the file"/)
+    expect(context).toContain('Your note last time\\nbut rename the file')
+    const askedAgain = pendingOwnerQuestions(foldState([...askedEvents, ...asEvents(outcome.events)])).find((question) => question.kind === 'owner_gate')!
+    expect(askedAgain.options[0]!.preview).toMatch(/## Your note last time\nbut rename the file$/)
+  })
+
+  it('rejects with Reject, a note being the reason', () => {
+    const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: 'Reject' }, { [GATE_QUESTION]: { notes: 'rename the file' } })
+    expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, by: 'owner', why: 'Owner rejected: "rename the file"', next: { stage: 2, step: 1 } }))
+  })
+
+  it('takes a note with no option picked as words to talk through, not a decision', () => {
+    const outcome = answered(askedEvents, 'tu_1', {}, { [GATE_QUESTION]: { notes: 'why a header?' } })
+    expect(outcome.events.filter((event) => event.type !== 'work_trace')).toEqual([expect.objectContaining({ type: 'owner_commented', comment: 'why a header?' })])
   })
 
   it('ignores answers to a call PreToolUse never saw: Agent cannot answer for Owner', () => {
@@ -140,10 +156,10 @@ describe('Owner decides through AskUserQuestion', () => {
     expect(outcome.events.filter((event) => event.type === 'gate_verdict')).toEqual([])
   })
 
-  it('takes any answer Owner typed as a rejection, with the words as the reason; no word means yes', () => {
+  it('takes any answer Owner typed as words to talk through, never as a decision', () => {
     for (const typed of ['looks good, ship it', 'what does step 2 cover?']) {
       const outcome = answered(askedEvents, 'tu_1', { [GATE_QUESTION]: typed })
-      expect(outcome.events).toContainEqual(expect.objectContaining({ type: 'gate_verdict', accepted: false, via: 'question', why: `Owner rejected: "${typed}"` }))
+      expect(outcome.events.filter((event) => event.type !== 'work_trace')).toEqual([expect.objectContaining({ type: 'owner_commented', comment: typed })])
     }
   })
 

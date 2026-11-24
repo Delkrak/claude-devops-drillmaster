@@ -321,6 +321,15 @@ export interface LateMeasuresJudged extends EventEnvelope {
   measured: MeasureJudgement[]
 }
 
+/** Owner answered one of Drillmaster's questions with words of their own instead of deciding it. */
+export interface OwnerCommented extends EventEnvelope {
+  type: 'owner_commented'
+  /** Which question: its key (questionKeyOf in state.ts). */
+  question: string
+  work_item_id?: string
+  comment: string
+}
+
 export interface PostMortemWritten extends EventEnvelope {
   type: 'post_mortem_written'
   work_item_id: string
@@ -359,6 +368,7 @@ export type DrillmasterEvent =
   | RetrospectiveRan
   | OwnerDecided
   | OwnerAsked
+  | OwnerCommented
 
 export type NewEvent = DrillmasterEvent extends infer E
   ? E extends DrillmasterEvent
