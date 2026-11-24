@@ -22,7 +22,7 @@ const formatNumber = (value: number | null) => (value === null ? '–' : String(
 const verdictWord = (change: ChangeRow) => change.outcome ?? 'not measured'
 
 function verdictTip(change: ChangeRow) {
-  const baseline = `baseline ${formatNumber(change.before)} ± ${formatNumber(change.before_sd)} (SD)`
+  const baseline = `baseline ${formatNumber(change.before)} ± ${formatNumber(change.before_sd)} (SD)${change.before_items !== null ? `, from ${change.before_items} work item${change.before_items === 1 ? '' : 's'}` : ''}`
   if (change.outcome === 'insufficient data') return `n = ${change.counted} of ${change.judge_after} · ${baseline}`
   if (change.outcome === null) return 'no measure set for this change'
   return `n = ${change.counted} · ${baseline}${change.outcome === 'below target' ? ' · target not met' : ''}`

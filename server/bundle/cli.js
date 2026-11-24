@@ -93,7 +93,7 @@ import {
   workTracesOf,
   workflowForReading,
   writtenBeforeMeasuresWereJudged
-} from "./chunk-UJXALPTD.js";
+} from "./chunk-JCFVGWJP.js";
 import {
   VERSION,
   __commonJS,
@@ -7367,6 +7367,7 @@ function judgeExperiment(experimentAsWritten, deliveredItems, overlapping = [], 
     judge_after: experiment.judge_after,
     baseline: experiment.baseline,
     baseline_sd: experiment.baseline_sd,
+    ...experiment.baseline_items !== void 0 ? { baseline_items: experiment.baseline_items } : {},
     mean,
     target: experiment.target,
     null_rejected: null,
@@ -8971,6 +8972,7 @@ function applyProposal(current, proposal, deliveredItems, today) {
       measure,
       baseline: measureBaseline(deliveredItems, measure),
       baseline_sd: measureBaselineSd(deliveredItems, measure),
+      ...baselineItemsOf(deliveredItems, measure),
       target: proposal.target ?? null,
       judge_after: proposal.judge_after ?? DEFAULT_JUDGE_AFTER,
       affects: next.stages.flatMap((stage) => stage.steps).filter((step) => !stepUnchanged(current, next, step.guid)).map((step) => step.guid),
@@ -9002,7 +9004,7 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
 {"op":"remove_tool_capture","capture":"tests"}
 {"op":"set_objective","text":"...","measures":["gate_rejections_per_item","policy friction"]}   (measures: ones Drillmaster counts, and ones the workflow defines)
-{"op":"add_measure","measure":{"name":"policy friction","short":"PF","color":"orange|rose|violet|sky","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment can use it once ${BASELINE_WINDOW} work items are judged)
+{"op":"add_measure","measure":{"name":"policy friction","short":"PF","color":"orange|rose|violet|sky","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment on it takes its baseline from the work items judged so far, however few)
 {"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show, short, color; work items judged before keep their judgement)
 {"op":"remove_measure","measure":"policy friction"}   (not while the objective or a running experiment uses it)
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`;
@@ -9148,10 +9150,13 @@ function proposalsReliedOn(relies, current, earlier, afterOwnOps, toolNames) {
   }
   return [...dependsOn];
 }
+var baselineItemsOf = (deliveredItems, measure) => {
+  const count = lastItemsWithMeasure(deliveredItems, measure).length;
+  return count < BASELINE_WINDOW ? { baseline_items: count } : {};
+};
 function cannotShowImprovement(measure, target, deliveredItems) {
-  const judgedItems = itemsWithMeasure(deliveredItems, measure).length;
-  if (!isCountedMeasure(measure) && judgedItems < BASELINE_WINDOW)
-    return `It is judged on ${measure}, which Drillmaster has judged on ${judgedItems} delivered work items; it needs ${BASELINE_WINDOW} for a baseline. Judge it on another measure, or wait.`;
+  if (!isCountedMeasure(measure) && deliveredItems.length > 0 && itemsWithMeasure(deliveredItems, measure).length === 0)
+    return `It is judged on ${measure}, which Drillmaster has not judged on any delivered work item yet, so there is nothing to improve on. Judge it on another measure, or wait for a work item judged on it.`;
   if (deliveredItems.length === 0) return void 0;
   const baseline = measureBaseline(deliveredItems, measure);
   if (baseline === 0) return `It is judged on ${measure}, which is 0 over the last ${Math.min(deliveredItems.length, BASELINE_WINDOW)} delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.`;
@@ -9710,6 +9715,7 @@ function changesView(events, at) {
       measure: experiment?.measure ?? null,
       before: verdict?.baseline ?? null,
       before_sd: verdict?.baseline_sd ?? null,
+      before_items: verdict?.baseline_items ?? null,
       after: verdict?.mean ?? null,
       counted: verdict ? Math.min(verdict.counted, verdict.judge_after) : 0,
       judge_after: verdict?.judge_after ?? null,

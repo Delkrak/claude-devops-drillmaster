@@ -14,8 +14,9 @@ Owner's decisions:
 - 🟩 They are **judged in Drillmaster's post mortem** of each delivered work item. Each occurrence is
   assigned to a step and summed for the delivery. Drillmaster reads the item's whole trace.
 - 🟩 They are **added at retrospectives**, with Owner's approval, like any workflow change.
-- 🟩 **No re-judging of history.** A new measure counts from the next delivered item, and its first
-  experiment waits for the baseline window (5 items).
+- 🟩 **No re-judging of history.** A new measure counts from the next delivered item.
+- 🟩 **No wait for a baseline** (changed after the test run, where it blocked every change): an experiment
+  on a measure judged on fewer than 5 work items takes its baseline from those, and says how many.
 - 🟩 **The four counted built-ins stay** (gate rejections, review rounds, minutes, tool calls). Owner
   friction leaves the code: the friction judge and the friction placement are removed.
 - 🟩 **Each measure has a flag to show it on the pages**, so several measures can be shown to pinpoint
@@ -61,7 +62,8 @@ Add `docs/plans/round-6.md` and its row in `docs/plans/README.md`.
 ### 3. 🟩 Retrospectives and setup define measures (c699f73)
 - `add_measure`, `change_measure`, `remove_measure`: a patch, no experiment.
 - Setup takes `define_measures`; naming `owner_friction_per_item` there says it is no longer built in.
-- An experiment on a judged measure waits for 5 judged work items.
+- An experiment on a judged measure takes its baseline from the work items judged so far, saying how
+  many when fewer than 5; it is dropped only when none is judged yet.
 
 ### 4. 🟩 Page data (core) (fdfdf41)
 - `core/marks.ts`: each occurrence of a shown measure, and old friction as `friction (old)`.

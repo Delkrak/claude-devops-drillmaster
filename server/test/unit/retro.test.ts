@@ -111,6 +111,7 @@ describe('applying a proposal', () => {
         measure: 'gate_rejections_per_item',
         baseline: 2,
         baseline_sd: 0.82,
+        baseline_items: 3,
         target: 1,
         judge_after: 2,
         affects: [next.workflow.stages[0]!.steps[0]!.guid],

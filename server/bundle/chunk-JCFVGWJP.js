@@ -20477,6 +20477,8 @@ var WorkflowExperiment = external_exports.object({
   measure: external_exports.string().min(1),
   baseline: external_exports.number(),
   baseline_sd: external_exports.number().nonnegative(),
+  /** How many delivered work items the baseline was taken from, when fewer than the baseline window. */
+  baseline_items: external_exports.number().int().nonnegative().optional(),
   target: external_exports.number().nullable(),
   judge_after: external_exports.number().int().positive(),
   /** GUIDs of the steps the change touched; an experiment counts only the work items that went through one. None: every item counts. */

@@ -8,7 +8,7 @@ import type { DrillmasterEvent, StepSkipRequested } from '../../src/core/events.
 import { judgeExperiment } from '../../src/core/experiments.js'
 import type { ItemMeasures } from '../../src/core/measures.js'
 import { renderSessionOutline } from '../../src/core/render.js'
-import { buildPostMortemPrompt, readRetroAnswer } from '../../src/core/retro.js'
+import { applyProposal, buildPostMortemPrompt, readRetroAnswer } from '../../src/core/retro.js'
 import { buildSkipPrompt } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { EXPERIMENT_1, WORKFLOW_2, WORKFLOW_3 } from '../helpers.js'
@@ -68,10 +68,17 @@ describe('a proposal that could never show an improvement', () => {
     expect(readRetroAnswer(WORKFLOW_2, answer('owner_corrections_per_item', 0), [], fiveJudged).proposals[0]).toMatchObject({ measure: 'owner_friction_per_item' })
   })
 
-  it('is dropped when Drillmaster has judged its measure on too few work items for a baseline', () => {
-    const fourJudged = [1, 2, 3, 4].map((n) => item(n, 2, []))
-    expect(readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item', 0), [], fourJudged).dropped).toEqual([
-      { change: 'add a step', error: 'It is judged on owner_friction_per_item, which Drillmaster has judged on 4 delivered work items; it needs 5 for a baseline. Judge it on another measure, or wait.' },
+  it('is kept on a judged measure with fewer than five judged work items, its baseline saying how many', () => {
+    const oneJudged = [item(1, 2, [])]
+    const read = readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item', 0), [], oneJudged)
+    expect(read.dropped).toEqual([])
+    expect(applyProposal(WORKFLOW_2, read.proposals[0]!, oneJudged, '2026-11-24').workflow.experiments.at(-1)).toMatchObject({ measure: 'owner_friction_per_item', baseline: 2, baseline_items: 1 })
+  })
+
+  it('is dropped on a judged measure no delivered work item was judged on', () => {
+    const unjudged = [{ ...item(1, 2, []), values: { gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 1 } }]
+    expect(readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item', 0), [], unjudged).dropped).toEqual([
+      { change: 'add a step', error: 'It is judged on owner_friction_per_item, which Drillmaster has not judged on any delivered work item yet, so there is nothing to improve on. Judge it on another measure, or wait for a work item judged on it.' },
     ])
   })
 })

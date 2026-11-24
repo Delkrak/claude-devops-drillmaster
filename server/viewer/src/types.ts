@@ -136,6 +136,7 @@ export interface ChangeRow {
   measure: string | null
   before: number | null
   before_sd: number | null
+  before_items: number | null
   after: number | null
   counted: number
   judge_after: number | null

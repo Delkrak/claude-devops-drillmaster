@@ -206,8 +206,9 @@ it, or at none; what Owner says after the post mortem is judged at the next retr
 is never judged on work items delivered before it was defined, so history stays as it was.
 
 A workflow experiment's baseline is its measure's mean over the last 5 delivered work items judged
-on it, with its standard deviation; an experiment on a defined measure waits until 5 work items are
-judged. Every measure is lower-is-better. Once `judge_after` items have run on the
+on it, with its standard deviation. A defined measure judged on fewer items so far gives a baseline
+from those, and the experiment says how many (the changes page shows it), so a new project can change
+its workflow from its first retrospective. Every measure is lower-is-better. Once `judge_after` items have run on the
 experiment's version, the server judges it: the null hypothesis is rejected when the mean beats the
 baseline by more than the standard deviation, and the experiment is kept only if that holds and the
 target is met.

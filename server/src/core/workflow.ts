@@ -91,6 +91,8 @@ export const WorkflowExperiment = z.object({
   measure: z.string().min(1),
   baseline: z.number(),
   baseline_sd: z.number().nonnegative(),
+  /** How many delivered work items the baseline was taken from, when fewer than the baseline window. */
+  baseline_items: z.number().int().nonnegative().optional(),
   target: z.number().nullable(),
   judge_after: z.number().int().positive(),
   /** GUIDs of the steps the change touched; an experiment counts only the work items that went through one. None: every item counts. */

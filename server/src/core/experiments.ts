@@ -11,6 +11,8 @@ export interface ExperimentVerdict {
   judge_after: number
   baseline: number
   baseline_sd: number
+  /** How many work items the baseline was taken from, when fewer than the baseline window. */
+  baseline_items?: number
   mean: number | null
   target: number | null
   null_rejected: boolean | null
@@ -56,6 +58,7 @@ export function judgeExperiment(experimentAsWritten: WorkflowExperiment, deliver
     judge_after: experiment.judge_after,
     baseline: experiment.baseline,
     baseline_sd: experiment.baseline_sd,
+    ...(experiment.baseline_items !== undefined ? { baseline_items: experiment.baseline_items } : {}),
     mean,
     target: experiment.target,
     null_rejected: null,
