@@ -96,6 +96,57 @@ Add `docs/plans/round-6.md` and its row in `docs/plans/README.md`.
   browser tests on Linux (23).
 - 🟩 The plans marked built.
 
+### 9. 🟩 Keeper's retrospective bugs, into 0.4.0
+Dispatcher reported six bugs from Keeper's retrospective (retro_b8766d72, on 0.3.1). Owner put four
+into 0.4.0, before it ships; 2 (the retrospective as plan mode) and 4 (experiments mixing on one
+measure) go to round 7, shaped with Owner after 0.4.0 ships. One commit per bug, tests first.
+
+- 🟩 **Bug 1: a note is never a decision** (proposals, Owner gates and skips: Owner's choice).
+  - `core/questions.ts` `readApproval` gives three outcomes: Approve with nothing added approves;
+    Decline (or Reject) decides no, its note the reason; a note on Approve, a typed answer, or a
+    note alone leaves the question undecided.
+  - Undecided writes a new event `owner_commented` (the question's subject, Owner's words), folded
+    so the question stays pending and its next preview shows "Your note last time: ...".
+  - The hook tells Agent: Owner commented without deciding, with the note; talk it through, then ask
+    again with the `ask_owner` it gives (the pending question as it now is).
+  - The option descriptions, `skills/retrospective/SKILL.md` step 3, `skills/work/SKILL.md`, the
+    README and the simulator's owner rule say so.
+  - Tests: `test/unit/questions.test.ts` (each of the three outcomes for each kind) and
+    `test/api/retro.test.ts` ("takes a note as a decline" becomes "asks again after a note").
+- 🟩 **Bug 3: Owner's discussion reaches the retrospective.** Owner chose that a prompt after delivery
+  stays the delivered item's, as today; the retrospective reads it by time instead.
+  - `core/retro.ts` `buildRetroPrompt` takes every Owner input since the last retrospective, on any
+    work item, not only the items delivered since; plus the inputs of those items, as today.
+  - The hooks keep Owner's AskUserQuestion answers and notes in full on the trace (`answers` on
+    `WorkTrace`, not the cut-off output tail), and the retrospective reads those to questions that
+    were not Drillmaster's own as Owner's answers since the last retrospective.
+  - Tests: `test/unit/retro-due.test.ts`, a discussion over several prompts and answers in a session
+    still bound to an item delivered before the last retrospective all reach the prompt.
+- 🟩 **Bug 5: a stale background service is restarted.**
+  - `projectLocator.ts` `runningProjectServer` also returns the running server's version
+    (`/health`).
+  - `projectServer.ts` `findOrStartProjectServer`: when the running version is not this plugin's, it
+    reads the pin; when this plugin's build serves the pin (`ownBuildServes`) and the running version
+    differs, it stops the server and starts its own. It never stops a server for one it can't start
+    (npm has no Drillmaster package yet), so a project pinned to an older minor keeps its server.
+  - `scripts/hook.mjs`: its fast path goes through `findOrStartProjectServer` when `daemon.json`'s
+    version is not its own.
+  - When no server runs and the pin needs npx, the error says to run `drillmaster upgrade`.
+  - Tests: `test/unit/project-server.test.ts`, a stand-in answering an older version is stopped and
+    replaced; one at a pin this build can't serve is kept.
+- 🟩 **Bug 6: a session isn't told it is on a delivered work item.** The binding stays (Owner's
+  choice above); `core/hooks.ts` `briefSession` says "Your last work item, KEE-53, is delivered; start
+  or resume one with work_start before new work" instead of "You are on work item ..., at no work stage
+  yet". Test in `test/unit/hooks.test.ts`.
+- 🟩 **Then:** bundle rebuilt; a real stale server (0.3.9) replaced by the bundle's 0.4.0 build in a
+  scratch home; local CI on Windows and Linux (Node 22 and 24, browser tests). Keeper's path: plugin
+  update keeps its 0.3.0 server (0.4.0 can't serve a 0.3 pin), `drillmaster upgrade` pins 0.4.0 and
+  stops it, the next session starts 0.4.0.
+- 🟧 Tell Dispatcher, with those steps, once 0.4.0 is pushed.
+
+Estimate: about 4 hours: bug 1 about 1.5 h, bug 3 about 1 h, bug 5 about 1 h, bug 6 about 15 min,
+then 30 min for CI and the Keeper check.
+
 ## Verification
 
 - 🟩 Unit and API tests: two defined measures judged per step; late judgement; unjudged answers;
