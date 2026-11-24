@@ -35,13 +35,23 @@ export default async function setup() {
   // A synthetic project through the real app.
   const reviewer = new ScriptedReviewer({
     gate: [{ accepted: false, rule: 'pr 1.1', why: 'The PR description does not say what changed.', back_to: { stage: 1, step: 1 } }],
-    post_mortem: [{ keep: 'Small PRs', change: 'Ask for CHANGES.md in a rule', experiment_reflections: 'none running', free_text: '' }],
+    post_mortem: [
+      {
+        keep: 'Small PRs',
+        change: 'Ask for CHANGES.md in a rule',
+        experiment_reflections: 'none running',
+        measured: [{ measure: 'missed docs', occurrences: [{ step: '1.2', events: [], why: 'The PR said nothing of CHANGES.md.' }] }],
+        free_text: '',
+      },
+    ],
   })
   const app = new Drillmaster({ store, artifacts: new FileArtifactStore(path.join(home, 'projects')), clock: systemClock, ids: sequentialIds(), reviewer, projects: new FolderResolver() })
-  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'every change is documented', measures: ['owner_friction_per_item'] })
+  const missedDocs = { name: 'missed docs', short: 'MD', color: 'orange', definition: 'Owner had to ask for documentation Agent should have written.', show: true }
+  await app.callTool(DEMO_DIR, 'workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'every change is documented', measures: ['missed docs'], define_measures: [missedDocs] })
   const workflow = {
     version: 1,
-    objective: { text: 'every change is documented', measures: ['owner_friction_per_item'] },
+    objective: { text: 'every change is documented', measures: ['missed docs'] },
+    measures: [missedDocs],
     stages: [
       {
         n: 1,
@@ -82,7 +92,7 @@ export default async function setup() {
         purpose: 'Owner had to ask for tests',
         hypothesis: 'A test step means Owner stops asking for tests',
         null_hypothesis: 'The build stage makes no difference to the corrections',
-        measure: 'owner_friction_per_item',
+        measure: 'missed docs',
         baseline: 1.5,
         baseline_sd: 0.5,
         target: 0.5,

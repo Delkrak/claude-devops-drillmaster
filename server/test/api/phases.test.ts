@@ -60,7 +60,7 @@ describe('a work item in phases, one session each', () => {
 
     ports.reviewer.enqueue('retrospective', {
       findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] },
-      proposals: [{ change: 'email the stakeholders', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'add_step', stage: '1', step: { name: 'send email', instruction: 'Email them.', gate: 'self', rules: [], report: [] } }] }],
+      proposals: [{ change: 'email the stakeholders', purpose: 'p', measure: 'gate_rejections_per_item', ops: [{ op: 'add_step', stage: '1', step: { name: 'send email', instruction: 'Email them.', gate: 'self', rules: [], report: [] } }] }],
     })
     await tool('workflow_retrospective', { action: 'run' })
     await ownerAnswers(app, '/projects/phases-update', () => 'Approve', 'wednesday')

@@ -2,7 +2,7 @@ import type { DrillmasterEvent } from './events.js'
 import { judgeExperiments } from './experiments.js'
 import { feedbackOnDrillmaster } from './feedback.js'
 import { refOfGuid } from './refs.js'
-import { averageMeasure, BASELINE_WINDOW, measureDeliveredItems, splitMeasureByInput, type ItemMeasures } from './measures.js'
+import { averageMeasure, lastItemsWithMeasure, measureDeliveredItems, splitMeasureByInput, type ItemMeasures } from './measures.js'
 import { findVersion, foldState, type ProjectState } from './state.js'
 
 export interface ProjectSummary {
@@ -77,7 +77,7 @@ export function projectView(projectId: string, events: readonly DrillmasterEvent
       })),
     measures: workflow.objective.measures.map((measure) => ({
       name: measure,
-      last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure),
+      last_5: averageMeasure(lastItemsWithMeasure(deliveredItems, measure), measure),
       all: averageMeasure(deliveredItems, measure),
       per_item: deliveredItems.map((item) => ({ work_item_id: item.work_item_id, issue: item.issue, value: item.values[measure] })),
       by_input: workflow.inputs.map((input) => ({ input: input.name, options: splitMeasureByInput(deliveredItems, measure, input.name) })),

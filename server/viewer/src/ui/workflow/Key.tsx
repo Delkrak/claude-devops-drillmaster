@@ -1,6 +1,7 @@
 import * as stylex from '@stylexjs/stylex'
 import type { ReactNode } from 'react'
 import { colors, font, shape, space } from '../../styles/tokens.stylex'
+import type { MeasureTone } from './marks'
 
 const styles = stylex.create({
   key: {
@@ -26,10 +27,19 @@ const styles = stylex.create({
   entry: { display: 'flex', alignItems: 'center', gap: space.sm },
   sand: { color: colors.sand },
   orange: { color: colors.orange },
+  rose: { color: colors.rose },
+  violet: { color: colors.violet },
+  sky: { color: colors.sky },
+  old: { color: colors.dim },
   lineFill: { fill: colors.line },
   lineStroke: { fill: 'none', stroke: colors.line, strokeWidth: '1.6px' },
   sandStroke: { fill: 'none', stroke: colors.sand, strokeWidth: '1.8px' },
   orangeStroke: { fill: 'none', stroke: colors.orange, strokeWidth: '2px' },
+  roseStroke: { fill: 'none', stroke: colors.rose, strokeWidth: '2px' },
+  violetStroke: { fill: 'none', stroke: colors.violet, strokeWidth: '2px' },
+  skyStroke: { fill: 'none', stroke: colors.sky, strokeWidth: '2px' },
+  pillText: { fontFamily: font.sans, fontSize: '9px', fontWeight: font.weightHeavy, fill: 'currentColor' },
+  oldStroke: { fill: 'none', stroke: colors.dim, strokeWidth: '2px', strokeDasharray: '2.5 2.5' },
   dimFill: { fill: colors.dim },
   dimDotted: { stroke: colors.dim, strokeWidth: '2px', strokeDasharray: '2 4' },
   glyph: { fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy, fill: colors.line },
@@ -38,10 +48,12 @@ const styles = stylex.create({
   notReachedLine: { stroke: colors.notReached, strokeWidth: '3px' },
 })
 
-function KeyEntry({ swatch, word, tone }: { swatch: ReactNode; word: string; tone?: 'sand' | 'orange' }) {
+type KeyTone = 'sand' | MeasureTone
+
+function KeyEntry({ swatch, word, tone, tip, swatchWidth = 18 }: { swatch: ReactNode; word: string; tone?: KeyTone; tip?: string; swatchWidth?: number }) {
   return (
-    <span {...stylex.props(styles.entry, tone === 'sand' && styles.sand, tone === 'orange' && styles.orange)}>
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+    <span data-tip={tip} {...stylex.props(styles.entry, tone && styles[tone])}>
+      <svg width={swatchWidth} height="18" viewBox={`0 0 ${swatchWidth} 18`} aria-hidden>
         {swatch}
       </svg>
       {word}
@@ -49,9 +61,9 @@ function KeyEntry({ swatch, word, tone }: { swatch: ReactNode; word: string; ton
   )
 }
 
-export type KeyMark = 'always' | 'if' | 'approve' | 'review' | 'passed' | 'sentBack' | 'skipped' | 'ahead' | 'workItem' | 'here' | 'friction' | 'delivered' | 'afterDelivery'
+export type KeyMark = 'always' | 'if' | 'approve' | 'review' | 'passed' | 'sentBack' | 'skipped' | 'ahead' | 'workItem' | 'here' | 'delivered' | 'afterDelivery'
 
-const KEY_ENTRIES: Record<KeyMark, { swatch: ReactNode; word: string; tone?: 'sand' | 'orange' }> = {
+const KEY_ENTRIES: Record<KeyMark, { swatch: ReactNode; word: string; tone?: KeyTone }> = {
   always: { swatch: <rect x="4" y="4" width="10" height="10" rx="2.5" {...stylex.props(styles.lineFill)} />, word: 'always' },
   if: { swatch: <rect x="4" y="4" width="10" height="10" rx="2.5" {...stylex.props(styles.lineStroke)} />, word: 'if' },
   approve: { swatch: <path d="M9 2 L16 9 L9 16 L2 9 Z" {...stylex.props(styles.sandStroke)} />, word: 'you approve', tone: 'sand' },
@@ -70,22 +82,48 @@ const KEY_ENTRIES: Record<KeyMark, { swatch: ReactNode; word: string; tone?: 'sa
   ahead: { swatch: <path d="M9 1 V17" {...stylex.props(styles.notReachedLine)} />, word: 'not reached yet' },
   workItem: { swatch: <circle cx="9" cy="9" r="4.5" {...stylex.props(styles.lineFill)} />, word: 'work item' },
   here: { swatch: <circle cx="9" cy="9" r="4.5" {...stylex.props(styles.lineFill)} />, word: 'where it is now' },
-  friction: { swatch: <circle cx="9" cy="9" r="6.5" {...stylex.props(styles.orangeStroke)} />, word: 'you stepped in', tone: 'orange' },
   delivered: { swatch: <rect x="3" y="8" width="12" height="3" rx="1.5" {...stylex.props(styles.dimFill)} />, word: 'delivered' },
   afterDelivery: { swatch: <path d="M9 1 V17" {...stylex.props(styles.dimDotted)} />, word: 'after delivery' },
 }
 
-const WORKFLOW_MARKS: KeyMark[] = ['always', 'if', 'approve', 'review', 'passed', 'sentBack', 'workItem', 'friction', 'delivered', 'afterDelivery']
+const PILL_STROKES: Record<MeasureTone, stylex.StyleXStyles> = { orange: styles.orangeStroke, rose: styles.roseStroke, violet: styles.violetStroke, sky: styles.skyStroke, old: styles.oldStroke }
+const KEY_PILL_WIDTH = 30
 
-export function Key({ marks = WORKFLOW_MARKS }: { marks?: readonly KeyMark[] }) {
-  const shownMarks = new Set(marks)
+const WORKFLOW_MARKS: KeyMark[] = ['always', 'if', 'approve', 'review', 'passed', 'sentBack', 'workItem', 'delivered', 'afterDelivery']
+/** The measures' rings come after the marks of the work and before delivery. */
+const MARKS_BEFORE_MEASURES = new Set<KeyMark>(['always', 'if', 'approve', 'review', 'passed', 'sentBack', 'skipped', 'ahead', 'workItem', 'here'])
+
+export interface KeyMeasure {
+  name: string
+  short: string
+  definition: string
+  tone: MeasureTone
+}
+
+export function Key({ marks = WORKFLOW_MARKS, measures = [] }: { marks?: readonly KeyMark[]; measures?: readonly KeyMeasure[] }) {
+  const shownMarks = (Object.keys(KEY_ENTRIES) as KeyMark[]).filter((mark) => marks.includes(mark))
+  const entryOf = (mark: KeyMark) => <KeyEntry key={mark} {...KEY_ENTRIES[mark]} />
   return (
     <aside aria-label="key" data-testid="key" {...stylex.props(styles.key)}>
-      {(Object.keys(KEY_ENTRIES) as KeyMark[])
-        .filter((mark) => shownMarks.has(mark))
-        .map((mark) => (
-          <KeyEntry key={mark} {...KEY_ENTRIES[mark]} />
-        ))}
+      {shownMarks.filter((mark) => MARKS_BEFORE_MEASURES.has(mark)).map(entryOf)}
+      {measures.map((measure) => (
+        <KeyEntry
+          key={`measure-${measure.name}`}
+          swatchWidth={KEY_PILL_WIDTH}
+          swatch={
+            <>
+              <rect x="1" y="2" width={KEY_PILL_WIDTH - 2} height="14" rx="7" {...stylex.props(PILL_STROKES[measure.tone])} />
+              <text x={KEY_PILL_WIDTH / 2} y="12.5" textAnchor="middle" {...stylex.props(styles.pillText)}>
+                {measure.short}
+              </text>
+            </>
+          }
+          word={measure.name}
+          tone={measure.tone}
+          tip={`${measure.name}: ${measure.definition}`}
+        />
+      ))}
+      {shownMarks.filter((mark) => !MARKS_BEFORE_MEASURES.has(mark)).map(entryOf)}
     </aside>
   )
 }

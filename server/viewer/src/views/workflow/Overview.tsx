@@ -1,11 +1,12 @@
 import type { WorkflowPage } from '../../types'
-import { FRICTION_COLUMN, ITEM_COLUMN, itemBoxWidth, OVERVIEW_ROW } from '../../ui/workflow/geometry'
+import { MEASURE_COLUMN, ITEM_COLUMN, itemBoxWidth, OVERVIEW_ROW } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
-import { AfterDeliveryLine, DeliveryBar, FrictionRing, ItemBox, Jump, Line, StageLabel, StageRule, StageTick } from '../../ui/workflow/marks'
-import { describeItems, stageAnchorId, unplacedTip, type OpenItems } from './describe'
+import { AfterDeliveryLine, DeliveryBar, ItemBox, Jump, Line, MeasurePills, RowName, StageLabel, StageRule, StageTick } from '../../ui/workflow/marks'
+import { describeItems, IN_THIS_STAGE, NO_STEP_COVERS, NO_STEP_ROW_NAME, pillsOf, stageAnchorId, type OpenItems } from './describe'
 
 export function Overview({ page, openItems, openDelivered }: { page: WorkflowPage; openItems: OpenItems; openDelivered: () => void }) {
-  const deliveryY = page.stages.length * OVERVIEW_ROW
+  const noStepY = page.stages.length * OVERVIEW_ROW
+  const deliveryY = noStepY + (page.no_step.length > 0 ? OVERVIEW_ROW : 0)
   const afterDeliveryY = deliveryY + OVERVIEW_ROW
   return (
     <Drawing height={afterDeliveryY + OVERVIEW_ROW} testId="workflow-overview" label="overview of the pipeline">
@@ -20,16 +21,23 @@ export function Overview({ page, openItems, openDelivered }: { page: WorkflowPag
             <Line from={top} to={top + OVERVIEW_ROW} />
             <StageTick y={middle} />
             {stage.here_now.length > 0 && <ItemBox dotX={ITEM_COLUMN} y={middle} boxText={stage.here_now.length} tip={describeItems(stage.here_now, 'here now')} onOpen={(point) => openItems('here now', stage.here_now, point)} />}
-            {stage.friction > 0 && <FrictionRing x={FRICTION_COLUMN} y={middle} count={stage.friction} tip={`you stepped in ${stage.friction} times in this stage`} onOpen={(point) => openItems('you stepped in on', stage.stepped_in, point)} />}
+            <MeasurePills x={MEASURE_COLUMN} y={middle} pills={pillsOf(page.measures, stage.marks, IN_THIS_STAGE, openItems)} />
             </g>
           </Jump>
         )
       })}
+      {page.no_step.length > 0 && (
+        <g data-testid="no-step-row">
+          <StageRule y={noStepY} />
+          <RowName y={noStepY + 34}>{NO_STEP_ROW_NAME}</RowName>
+          <Line from={noStepY} to={deliveryY} />
+          <MeasurePills x={MEASURE_COLUMN} y={noStepY + OVERVIEW_ROW / 2} pills={pillsOf(page.measures, page.no_step, NO_STEP_COVERS, openItems)} />
+        </g>
+      )}
       <StageRule y={deliveryY} />
       <Line from={deliveryY} to={deliveryY + OVERVIEW_ROW / 2} />
       <DeliveryBar y={deliveryY + OVERVIEW_ROW / 2} />
       {page.delivered > 0 && <ItemBox dotX={ITEM_COLUMN} y={deliveryY + OVERVIEW_ROW / 2} boxText={page.delivered} tip={`${page.delivered} work items delivered`} testId="delivered" onOpen={openDelivered} />}
-      {page.friction.unplaced > 0 && <FrictionRing x={FRICTION_COLUMN} y={deliveryY + OVERVIEW_ROW / 2} count={page.friction.unplaced} tip={unplacedTip(page.friction.unplaced)} onOpen={(point) => openItems('you stepped in on', page.friction.unplaced_items, point)} />}
       {page.waiting_to_deliver.length > 0 && (
         <ItemBox
           dotX={ITEM_COLUMN - itemBoxWidth(page.delivered) - 16}
@@ -41,9 +49,6 @@ export function Overview({ page, openItems, openDelivered }: { page: WorkflowPag
       )}
       <StageRule y={afterDeliveryY} dotted />
       <AfterDeliveryLine from={afterDeliveryY - OVERVIEW_ROW / 2 + 4} to={afterDeliveryY + OVERVIEW_ROW} />
-      {page.friction.after_delivery > 0 && (
-        <FrictionRing x={FRICTION_COLUMN} y={afterDeliveryY + OVERVIEW_ROW / 2} count={page.friction.after_delivery} tip={`you stepped in ${page.friction.after_delivery} times after delivery`} onOpen={(point) => openItems('you stepped in after delivery on', page.friction.after_delivery_items, point)} />
-      )}
     </Drawing>
   )
 }

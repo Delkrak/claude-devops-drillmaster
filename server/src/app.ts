@@ -5,14 +5,12 @@ import { ACCEPTED_ARTIFACTS, InvalidArtifact, MAX_ARTIFACT_BYTES, readArtifactFr
 import { defaultFolderOf, projectKey } from './adapters/projects.js'
 import { RepositoryConflict, RepositoryPublisher } from './adapters/repositoryPublisher.js'
 import { isPublishMoment } from './core/repositoryLayout.js'
-import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type InputAnswer, type NewEvent, type StepSkipRequested } from './core/events.js'
+import { REPORT_KINDS, type DrillmasterEvent, type GateSubmitted, type InputAnswer, type MeasureJudgement, type NewEvent, type StepSkipRequested } from './core/events.js'
 import { judgeExperiments } from './core/experiments.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resolveFeedback } from './core/feedback.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
-import { averageMeasure, BASELINE_WINDOW, currentMeasureName, MEASURE_NAMES, measureDeliveredItems } from './core/measures.js'
-import { buildFrictionPrompt, FRICTION_REVIEW_KIND, readFrictionAnswer } from './core/friction.js'
-import { buildFrictionPlacementPrompt, FRICTION_PLACEMENT_REVIEW_KIND, frictionPlacementsOf, readFrictionPlacementAnswer } from './core/frictionPlacement.js'
-import { frictionJudgementsOf, ownerInputsOf } from './core/ownerInputs.js'
+import { buildLateMeasuresPrompt, itemsToJudgeLate, LATE_MEASURES_REVIEW_KIND, readLateMeasuresAnswer } from './core/judgedMeasures.js'
+import { averageMeasure, COUNTED_MEASURES, currentMeasureName, eventsOfWorkItem, lastItemsWithMeasure, measureDeliveredItems, OWNER_FRICTION } from './core/measures.js'
 import {
   applyProposal,
   buildPostMortemPrompt,
@@ -60,7 +58,7 @@ import { buildComplaintGroupingPrompt, COMPLAINT_GROUPING_REVIEW_KIND, complaint
 import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
-import { AT_START, Objective, toSemver, workflowZero, type WorkflowDocument } from './core/workflow.js'
+import { AT_START, MEASURE_COLORS, parseWorkflowZero, toSemver, type WorkflowDocument } from './core/workflow.js'
 import type { Ports, ProjectRef } from './ports.js'
 import { VERSION } from './version.js'
 
@@ -156,6 +154,7 @@ const RetroArgs = z.discriminatedUnion('action', [
       action: z.literal('setup'),
       objective: z.string().min(1),
       measures: z.array(z.string()).min(1),
+      define_measures: z.array(z.unknown()).optional(),
       drillmaster_repository: z.string().min(1),
       folder: z.string().regex(/^[A-Za-z0-9_-]+$/, 'a folder name has letters, digits, _ and - only').optional(),
     })
@@ -346,7 +345,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'workflow_retrospective',
     description: [
       'The only place the workflow changes. Owner calls for it, and Drillmaster carries it out.',
-      `- setup {objective, measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective, in the Drillmaster repository, and writes .drillmaster in the work folder. measures: ${MEASURE_NAMES.join(', ')}.`,
+      `- setup {objective, measures, define_measures, drillmaster_repository, folder}: once per project, when Owner sets the objective. Creates workflow 0.0.0, which holds only the objective and its measures, in the Drillmaster repository, and writes .drillmaster in the work folder. A measure is one Drillmaster counts (${Object.keys(COUNTED_MEASURES).join(', ')}) or one in define_measures, which Drillmaster judges for each delivered work item from its definition.`,
       `- run: Drillmaster's findings (should, did, why, and keep and improve as lists that name what each is about) and at most ${MAX_PROPOSALS} numbered proposals, from the post mortems, work reports, Owner's inputs, the measures and the experiments' verdicts. Show them to Owner as they are.`,
       "- apply: applies every proposal Owner approved, in order (or only `proposal`). Each makes the next workflow version and opens a workflow experiment with its measure's baseline.",
     ].join('\n'),
@@ -355,7 +354,22 @@ export const TOOLS: ToolDefinition[] = [
       properties: {
         action: { type: 'string', enum: ['setup', 'run', 'apply'] },
         objective: { type: 'string', description: 'setup: what Owner wants Drillmaster to achieve with the workflow.' },
-        measures: { type: 'array', items: { type: 'string', enum: [...MEASURE_NAMES] }, description: 'setup: the measures of the objective.' },
+        measures: { type: 'array', items: { type: 'string' }, description: 'setup: the names of the measures of the objective: counted ones, and ones in define_measures.' },
+        define_measures: {
+          type: 'array',
+          description: 'setup: the measures Drillmaster judges, each counting something that should not happen (lower is better).',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'In plain words, e.g. "policy friction".' },
+              short: { type: 'string', description: 'What its ring on the viewer says before the count: 1 to 3 capital letters, e.g. "PF".' },
+              color: { type: 'string', enum: [...MEASURE_COLORS], description: 'The colour the viewer draws it in.' },
+              definition: { type: 'string', description: "What counts as one occurrence, in Owner's words." },
+              show: { type: 'boolean', description: "Whether the viewer's pages show where it happened." },
+            },
+            required: ['name', 'short', 'color', 'definition', 'show'],
+          },
+        },
         drillmaster_repository: { type: 'string', description: "setup: the private git repository (URL or path) that keeps the project's workflow and history: the Drillmaster repository." },
         folder: { type: 'string', description: "setup: the project's folder in the Drillmaster repository (default: the work folder's name). One repository can hold several projects." },
         proposal: { type: 'integer', minimum: 1, description: 'apply: only this proposal from the latest run.' },
@@ -600,9 +614,14 @@ export class Drillmaster {
    * Sets a work folder up as a Drillmaster project: the pin and workflow 0.0.0 are pushed to the
    * Drillmaster repository first, then `.drillmaster` names it in the work folder.
    */
-  async init(projectDir: string, objective: unknown, repository: { url: string; folder?: string }) {
-    const parsedObjective = Objective.safeParse(objective)
-    if (!parsedObjective.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedObjective.error)}`)
+  async init(projectDir: string, objective: unknown, repository: { url: string; folder?: string }, definedMeasures: unknown = []) {
+    const parsedWorkflow = parseWorkflowZero(objective, definedMeasures)
+    if (!parsedWorkflow.success) {
+      const namesOwnerFriction = JSON.stringify(objective).includes(`"${OWNER_FRICTION.name}"`)
+      const hint = namesOwnerFriction ? ` ${OWNER_FRICTION.name} is no longer built in: define it, or measures of your own, in define_measures.` : ''
+      throw new UserError(`Invalid objective: ${z.prettifyError(parsedWorkflow.error)}${hint}`)
+    }
+    const workflow = parsedWorkflow.data
     const existing = this.ports.projects.resolve(projectDir)
     const place = { url: repository.url, folder: repository.folder ?? existing?.repository?.folder ?? defaultFolderOf(projectDir) }
     if (existing?.repository && (existing.repository.url !== place.url || existing.repository.folder !== place.folder)) {
@@ -614,7 +633,6 @@ export class Drillmaster {
     // Checked before anything is pushed, so a folder that can't be linked leaves no half-set-up project behind.
     const linkProblem = this.ports.projects.linkProblem(projectDir)
     if (linkProblem) throw new UserError(linkProblem, 409)
-    const workflow = workflowZero(parsedObjective.data)
     const candidate: ProjectRef = { key: projectKey(place), repository: place }
     const publisher = this.publisherFor(candidate)
     if (publisher) {
@@ -672,7 +690,7 @@ export class Drillmaster {
         case 'workflow_retrospective': {
           const retroArgs = parseToolArgs(RetroArgs, toolArgs)
           if (retroArgs.action === 'setup') {
-            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures.map(currentMeasureName) }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder })
+            const { workflow } = await this.init(projectDir, { text: retroArgs.objective, measures: retroArgs.measures.map(currentMeasureName) }, { url: retroArgs.drillmaster_repository, folder: retroArgs.folder }, retroArgs.define_measures)
             return jsonResult({
               workflow,
               note: 'Workflow 0.0.0 holds only the objective. Agent does its best, Owner steps in where needed, and the workflow grows from that. Commit .drillmaster with the code: it is how Drillmaster knows this folder.',
@@ -706,7 +724,7 @@ export class Drillmaster {
     const measures = Object.fromEntries(
       view.objective.measures.map((measure) => [
         measure,
-        { last_5: averageMeasure(deliveredItems.slice(-BASELINE_WINDOW), measure), all: averageMeasure(deliveredItems, measure), delivered: deliveredItems.length },
+        { last_5: averageMeasure(lastItemsWithMeasure(deliveredItems, measure), measure), all: averageMeasure(deliveredItems, measure), delivered: deliveredItems.length },
       ]),
     )
     const workflow = findVersion(state, view.version)!
@@ -904,8 +922,7 @@ export class Drillmaster {
         const storedEvent = await this.appendEvent(project, newEvent)
         if (storedEvent.type === 'gate_submitted' && storedEvent.gate === 'drillmaster') gateSubmissionToJudge = storedEvent.id
         if (storedEvent.type === 'work_item_delivered') {
-          this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id))
-          this.runInBackground(this.judgeFriction(projectDir, storedEvent.work_item_id))
+          this.runInBackground(this.writeDrillmasterPostMortem(projectDir, storedEvent.work_item_id, 'retry at the retrospective'))
         }
       }
       const after = foldState(await this.ports.store.read(projectId))
@@ -968,60 +985,6 @@ export class Drillmaster {
     })
   }
 
-  /** The separate friction judge, on each of Owner's inputs on a work item it hasn't judged yet. */
-  private async judgeFriction(projectDir: string, workItemId: string) {
-    const events = await this.events(projectDir)
-    const item = foldState(events).workItems[workItemId]!
-    const judged = frictionJudgementsOf(events)
-    const unjudged = ownerInputsOf(events).filter((input) => input.work_item_id === workItemId && !judged.has(input.event_id))
-    if (unjudged.length === 0) return
-    let judgements
-    try {
-      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_REVIEW_KIND, prompt: buildFrictionPrompt(item, unjudged, events) })
-      judgements = readFrictionAnswer(unjudged, answer)
-    } catch {
-      // Until the judge has judged, an input counts by what it led to.
-      return
-    }
-    if (judgements.length === 0) return
-    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'owner_inputs_judged', work_item_id: workItemId, inputs: judgements }))
-    const frictions = judgements.flatMap((judgement) => (judgement.friction ? [{ judgement, input: unjudged.find((input) => input.event_id === judgement.event)! }] : []))
-    if (frictions.length > 0) await this.placeFriction(projectDir, workItemId, frictions)
-  }
-
-  private async placeUnplacedFriction(projectDir: string) {
-    const events = await this.events(projectDir)
-    const frictionJudgements = frictionJudgementsOf(events)
-    const frictionPlacements = frictionPlacementsOf(events)
-    const unplacedFrictionsByItemId = new Map<string, Parameters<typeof buildFrictionPlacementPrompt>[2][number][]>()
-    for (const input of ownerInputsOf(events)) {
-      const judgement = frictionJudgements.get(input.event_id)
-      if (!input.work_item_id || !judgement?.friction || frictionPlacements.has(input.event_id)) continue
-      unplacedFrictionsByItemId.set(input.work_item_id, [...(unplacedFrictionsByItemId.get(input.work_item_id) ?? []), { input, judgement }])
-    }
-    for (const [workItemId, frictions] of unplacedFrictionsByItemId) await this.placeFriction(projectDir, workItemId, frictions)
-  }
-
-  private async placeFriction(projectDir: string, workItemId: string, frictions: Parameters<typeof buildFrictionPlacementPrompt>[2]) {
-    const state = foldState(await this.events(projectDir))
-    const item = state.workItems[workItemId]!
-    const workflow = work.workflowOfWorkItem(state, item)
-    let placements
-    try {
-      const { answer } = await this.ports.reviewer.review({ kind: FRICTION_PLACEMENT_REVIEW_KIND, prompt: buildFrictionPlacementPrompt(workflow, item, frictions) })
-      placements = readFrictionPlacementAnswer(
-        workflow,
-        frictions.map(({ input }) => input.event_id),
-        answer,
-      )
-    } catch {
-      // An unplaced step-in still counts; it shows where it happened.
-      return
-    }
-    if (placements.length === 0) return
-    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'friction_placed', work_item_id: workItemId, inputs: placements }))
-  }
-
   private async groupComplaints(projectDir: string) {
     const events = await this.events(projectDir)
     const complaintsOfTool = complaintsByTool(events, TOOL_NAMES)
@@ -1040,20 +1003,28 @@ export class Drillmaster {
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'complaints_grouped', groups }))
   }
 
-  private async writeDrillmasterPostMortem(projectDir: string, workItemId: string) {
+  /**
+   * Drillmaster's post mortem of a delivered work item, which judges the workflow's measures. When it
+   * fails right after delivery, the retrospective tries again; when it fails there, the failure is
+   * the post mortem, and the measures stay unjudged.
+   */
+  private async writeDrillmasterPostMortem(projectDir: string, workItemId: string, onFailure: 'retry at the retrospective' | 'record it') {
     const events = await this.events(projectDir)
     const state = foldState(events)
     const item = state.workItems[workItemId]!
     const workflow = work.workflowOfWorkItem(state, item)
-    let postMortem: work.PostMortemArgs
+    const itemEvents = eventsOfWorkItem(events, workItemId)
+    let postMortem: work.PostMortemArgs & { measured?: MeasureJudgement[]; judged_through?: string }
     try {
       const { answer } = await this.ports.reviewer.review({
         kind: POST_MORTEM_REVIEW_KIND,
         prompt: buildPostMortemPrompt(item, workflow, events),
         minTimeoutMs: POST_MORTEM_TIMEOUT_MS,
       })
-      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES)
+      const read = readPostMortemAnswer(answer, workflow, TOOL_NAMES, new Set(itemEvents.map((event) => event.id)))
+      postMortem = read.measured ? { ...read, judged_through: itemEvents.at(-1)!.id } : read
     } catch (error) {
+      if (onFailure === 'retry at the retrospective') return
       const reason = error instanceof Error ? error.message : String(error)
       postMortem = { keep: [], change: [{ refs: [], text: `Drillmaster could not write its post mortem: ${reason}` }], experiment_reflections: [] }
     }
@@ -1064,16 +1035,29 @@ export class Drillmaster {
     })
   }
 
+  /** Judges the measures on what happened to a delivered work item since Drillmaster last judged them. Unjudged, it is tried again at the next retrospective. */
+  private async judgeLateMeasures(projectDir: string, workItemId: string, unjudged: readonly DrillmasterEvent[]) {
+    const state = foldState(await this.events(projectDir))
+    const item = state.workItems[workItemId]!
+    const workflow = work.workflowOfWorkItem(state, item)
+    let measured: MeasureJudgement[] | undefined
+    try {
+      const { answer } = await this.ports.reviewer.review({ kind: LATE_MEASURES_REVIEW_KIND, prompt: buildLateMeasuresPrompt(item, workflow, unjudged) })
+      measured = readLateMeasuresAnswer(workflow, unjudged, answer)
+    } catch {
+      return
+    }
+    if (!measured) return
+    await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'late_measures_judged', work_item_id: workItemId, through: unjudged.at(-1)!.id, measured }))
+  }
+
   private async runRetrospective(projectDir: string) {
-    // Drillmaster's own post mortems and the friction judgements are made in the background; the retrospective needs them.
+    // Drillmaster's own post mortems are written in the background; the retrospective needs them, and the measures they judge.
     await this.idle()
-    const beforeJudging = await this.events(projectDir)
-    const judged = frictionJudgementsOf(beforeJudging)
-    const deliveredIds = new Set(Object.values(foldState(beforeJudging).workItems).filter((item) => item.status === 'delivered').map((item) => item.work_item_id))
-    const itemsToJudge = new Set(ownerInputsOf(beforeJudging).flatMap((input) => (input.work_item_id && deliveredIds.has(input.work_item_id) && !judged.has(input.event_id) ? [input.work_item_id] : [])))
-    await Promise.all([...itemsToJudge].map((workItemId) => this.judgeFriction(projectDir, workItemId)))
+    const withoutPostMortem = Object.values(foldState(await this.events(projectDir)).workItems).filter((item) => item.status === 'delivered' && !item.post_mortems.includes('drillmaster'))
+    await Promise.all(withoutPostMortem.map((item) => this.writeDrillmasterPostMortem(projectDir, item.work_item_id, 'record it')))
+    await Promise.all(itemsToJudgeLate(await this.events(projectDir)).map(({ workItemId, unjudged }) => this.judgeLateMeasures(projectDir, workItemId, unjudged)))
     this.runInBackground(this.groupComplaints(projectDir))
-    this.runInBackground(this.placeUnplacedFriction(projectDir))
     const events = await this.events(projectDir)
     const state = foldState(events)
     if (!state.workflow) throw new UserError(NO_WORKFLOW_YET)

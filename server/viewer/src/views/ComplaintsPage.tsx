@@ -14,6 +14,7 @@ const SOURCE_IN_WORDS: Record<Complaint['source'], string> = {
   'drillmaster post mortem': "Drillmaster's post mortem",
   'agent impediment': 'Agent, while working',
   'your step-in': 'you stepped in',
+  'a measure': 'a measure Drillmaster judged',
 }
 
 const UNCOVERED_GROUP_NAME = 'no step covers it'

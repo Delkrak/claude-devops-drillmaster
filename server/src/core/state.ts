@@ -2,6 +2,10 @@ import type { Artifact, DrillmasterEvent, Proposal, WorkTrace } from './events.j
 import { stepGuidAt } from './refs.js'
 import { findRule, migrateWorkflow, toSemver, type WorkflowDocument } from './workflow.js'
 
+/** A question of Drillmaster's to Owner by its key, the same each time it is asked, for Owner's words on it. */
+export const questionKeyOf = (question: { kind: string } & Partial<{ work_item_id: string; stage: number | null; step: number | null; retro_id: string; proposal: number }>) =>
+  question.kind === 'proposal' ? `proposal ${question.retro_id} ${question.proposal}` : `${question.kind} ${question.work_item_id} ${question.stage}.${question.step}`
+
 export interface WorkItemState {
   work_item_id: string
   issue: string
@@ -61,6 +65,8 @@ export interface ProjectState {
   sessions: Record<string, SessionState>
   workItems: Record<string, WorkItemState>
   ownerAsked: Record<string, string[]>
+  /** Owner's last words on a question Owner left undecided, by the question's key. */
+  ownerComments: Record<string, string>
   traceCount: number
   eventCount: number
 }
@@ -74,6 +80,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
     sessions: {},
     workItems: {},
     ownerAsked: {},
+    ownerComments: {},
     traceCount: 0,
     eventCount: 0,
   }
@@ -106,6 +113,9 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         }
         break
       }
+      case 'owner_commented':
+        state.ownerComments[event.question] = event.comment
+        break
       case 'owner_asked':
         state.ownerAsked[event.tool_use_id] = event.questions
         break
@@ -161,6 +171,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       }
       case 'gate_verdict': {
+        delete state.ownerComments[questionKeyOf({ kind: 'owner_gate', work_item_id: event.work_item_id, stage: event.stage, step: event.step })]
         const item = state.workItems[event.work_item_id]
         if (item) {
           item.pending_gate = null
@@ -217,6 +228,7 @@ export function foldState(events: readonly DrillmasterEvent[]): ProjectState {
         break
       }
       case 'step_skip_decided': {
+        delete state.ownerComments[questionKeyOf({ kind: 'step_skip', work_item_id: event.work_item_id, stage: event.stage, step: event.step })]
         const item = state.workItems[event.work_item_id]
         if (item) {
           item.pending_skip = null

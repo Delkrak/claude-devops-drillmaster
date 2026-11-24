@@ -118,7 +118,7 @@ describe('steps and stages that apply by the work item inputs', () => {
     const { token, item } = await start([{ name: 'kind', value: 'feature' }])
     await gate(token, '1.1', [{ name: 'user_visible', value: 'no' }])
     await gate(token, '2.1')
-    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'features too', purpose: 'p', measure: 'owner_friction_per_item', ops: [{ op: 'change_step', step: '3.1', if: '' }] }] })
+    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'features too', purpose: 'p', measure: 'gate_rejections_per_item', ops: [{ op: 'change_step', step: '3.1', if: '' }] }] })
     await app.callTool('/projects/if-update', 'workflow_retrospective', { action: 'run' })
     await ownerAnswers(app, '/projects/if-update', () => 'Approve')
     expect((await app.callTool('/projects/if-update', 'workflow_retrospective', { action: 'apply' })).structuredContent).toMatchObject({ workflow_version: '2.0.0' })

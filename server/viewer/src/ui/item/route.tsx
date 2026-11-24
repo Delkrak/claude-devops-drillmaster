@@ -4,7 +4,7 @@
 import * as stylex from '@stylexjs/stylex'
 import type { ReactNode } from 'react'
 import { colors, font, shape, space } from '../../styles/tokens.stylex'
-import type { LineTone } from '../workflow/marks'
+import type { LineTone, MeasureTone } from '../workflow/marks'
 
 const lineThrough = (color: string) => ({
   backgroundImage: `linear-gradient(${color}, ${color})`,
@@ -32,6 +32,10 @@ const styles = stylex.create({
   label: { display: 'block', marginTop: space.sm, marginBottom: '2px', color: colors.dim, fontSize: '11.5px', fontWeight: font.weightHeavy, letterSpacing: '0.08em', textTransform: 'uppercase' },
   sand: { color: colors.sand },
   orange: { color: colors.orange },
+  rose: { color: colors.rose },
+  violet: { color: colors.violet },
+  sky: { color: colors.sky },
+  old: { color: colors.dim },
   para: { marginTop: 0, marginBottom: '6px' },
   quiet: { color: colors.dim },
   quote: { fontWeight: font.weightBold },
@@ -72,7 +76,7 @@ export const UnderStep = ({ testId, children }: { testId?: string; children: Rea
 
 export const Level = ({ deeper = false, children }: { deeper?: boolean; children: ReactNode }) => <div {...stylex.props(styles.level, deeper && styles.nextLevel)}>{children}</div>
 
-export const Label = ({ tone, children }: { tone?: 'sand' | 'orange'; children: ReactNode }) => <span {...stylex.props(styles.label, tone === 'sand' && styles.sand, tone === 'orange' && styles.orange)}>{children}</span>
+export const Label = ({ tone, children }: { tone?: 'sand' | MeasureTone; children: ReactNode }) => <span {...stylex.props(styles.label, tone && styles[tone])}>{children}</span>
 export const Para = ({ quiet = false, children }: { quiet?: boolean; children: ReactNode }) => <p {...stylex.props(styles.para, quiet && styles.quiet)}>{children}</p>
 export const Quote = ({ children }: { children: ReactNode }) => <p {...stylex.props(styles.para, styles.quote)}>“{children}”</p>
 export const KeptOutput = ({ lines }: { lines: readonly string[] }) => <pre {...stylex.props(styles.kept)}>{lines.join('\n')}</pre>

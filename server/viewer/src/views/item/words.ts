@@ -1,4 +1,4 @@
-import type { StepIn, WorkItemPageStep } from '../../types'
+import type { ItemMark, WorkItemPageStep } from '../../types'
 
 const DECIDER_IN_WORDS: Record<string, string> = { drillmaster: 'Drillmaster', owner: 'you', agent: "Agent's own check" }
 export const whoDecided = (by: string) => DECIDER_IN_WORDS[by] ?? by
@@ -11,7 +11,7 @@ export function stepNoteOf(step: WorkItemPageStep) {
   return 'Agent is working here'
 }
 
-export const stepInLabel = (stepIn: StepIn) => `you stepped in${stepIn.after_delivery ? ' after delivery' : ''}`
+export const markLabel = (mark: ItemMark) => `${mark.measure}${mark.after_delivery ? ' after delivery' : ''}`
 
 export const keptOutputName = (captureName: string) => (captureName === 'tests' ? 'test totals' : captureName === 'failures' ? 'failing tests' : captureName)
 

@@ -6,7 +6,7 @@ import { RepositoryPublisher } from './adapters/repositoryPublisher.js'
 import { compareVersions, SEMVER } from './core/workflow.js'
 import { repositoryOptionsFromEnv } from './env.js'
 import type { DrillmasterRepositoryPlace } from './ports.js'
-import { projectServerInfoFile, projectToServe, readProjectServerInfo, runningProjectServer, type ProjectToServe } from './projectLocator.js'
+import { projectServerInfoFile, projectToServe, readProjectServerInfo, runningProjectServer, runningProjectServerOf, type ProjectToServe } from './projectLocator.js'
 import { VERSION } from './version.js'
 
 const START_POLL_MS = 150
@@ -48,13 +48,23 @@ async function pinnedVersion(key: string, place: DrillmasterRepositoryPlace, env
 }
 
 /**
+ * Whether a running server of another Drillmaster version than this plugin's stays: it is replaced
+ * only by this plugin's own build, when that serves the pin, never by one that may not start.
+ */
+export const keepsRunningServer = (runningVersion: string, pinned: string) => runningVersion === VERSION || !ownBuildServes(pinned)
+
+/**
  * The URL of the project's server. When none runs, it starts one at the version pinned in the
- * project's Drillmaster repository: this plugin's own build when that is the pin, npx otherwise.
+ * project's Drillmaster repository: this plugin's own build when that is the pin, npx otherwise. A
+ * running server of an older build this plugin replaces, such as 0.3.0 after an update to 0.3.1,
+ * is stopped and started again.
  */
 export async function findOrStartProjectServer(project: ProjectToServe, env: NodeJS.ProcessEnv = process.env): Promise<string> {
-  const running = await runningProjectServer(project.key, env)
-  if (running) return running
+  const running = await runningProjectServerOf(project.key, env)
+  if (running?.version === VERSION) return running.url
   const version = await pinnedVersion(project.key, project.place, env)
+  if (running && keepsRunningServer(running.version, version)) return running.url
+  if (running) await stopProjectServer(project.key, env)
   const { command, args, timeoutMs, shell } = serverCommandFor(version, project.key)
   const server = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true, env, shell })
   let startError: Error | undefined
@@ -63,12 +73,15 @@ export async function findOrStartProjectServer(project: ProjectToServe, env: Nod
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS))
-    if (startError) throw new CannotServeProject(`Drillmaster ${version}, pinned for this project, could not start (${[command, ...args].join(' ')}): ${startError.message}`)
+    if (startError) throw new CannotServeProject(`Drillmaster ${version}, pinned for this project, could not start (${[command, ...args].join(' ')}): ${startError.message}${upgradeHint(version)}`)
     const started = await runningProjectServer(project.key, env)
     if (started) return started
   }
-  throw new CannotServeProject(`Drillmaster ${version}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1000}s (${[command, ...args].join(' ')}).`)
+  throw new CannotServeProject(`Drillmaster ${version}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1000}s (${[command, ...args].join(' ')}).${upgradeHint(version)}`)
 }
+
+/** What to do when a pin needs npx: move the project to this plugin's version. */
+const upgradeHint = (pinned: string) => (ownBuildServes(pinned) ? '' : ` To run this plugin's Drillmaster ${VERSION} instead, run \`drillmaster upgrade\` in the work folder.`)
 
 /**
  * Stops the project's running server, so the next session starts the pinned version. Only a

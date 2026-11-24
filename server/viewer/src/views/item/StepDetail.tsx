@@ -1,37 +1,40 @@
 import { Fragment } from 'react'
 import { timeOfDay } from '../../time'
-import type { StepIn, WorkItemPage, WorkItemPageStep } from '../../types'
+import type { ItemMark, ShownMeasure, WorkItemPage, WorkItemPageStep } from '../../types'
 import { CallLine, DeeperButton, KeptOutput, Label, Level, Para, Quote, UnderStep } from '../../ui/item/route'
-import { asSentence, hasEvidence, keptOutputName, stepInLabel, whoDecided } from './words'
+import { toneOfMeasure } from '../measures'
+import { asSentence, hasEvidence, keptOutputName, markLabel, whoDecided } from './words'
 
 export type DetailDepth = 1 | 2 | 3
 
-function StepInText({ stepIn }: { stepIn: StepIn }) {
+function MarkText({ mark, measures, placed }: { mark: ItemMark; measures: readonly ShownMeasure[]; placed: boolean }) {
   return (
     <>
-      <Label tone="orange">
-        {stepInLabel(stepIn)} · {timeOfDay(stepIn.at)}
+      <Label tone={toneOfMeasure(measures, mark.measure)}>
+        {markLabel(mark)} · {timeOfDay(mark.at)}
       </Label>
-      <Quote>{stepIn.prompt}</Quote>
-      <Label>why it counts as friction</Label>
-      <Para>{stepIn.why}</Para>
-      {stepIn.placed_why && (
+      {mark.prompts.map((prompt) => (
+        <Quote key={prompt}>{prompt}</Quote>
+      ))}
+      <Label>why it counts</Label>
+      <Para>{mark.why}</Para>
+      {mark.placed_why && (
         <>
-          <Label>why this step should have caught it</Label>
-          <Para>{stepIn.placed_why}</Para>
+          <Label>{placed ? 'why this step should have caught it' : 'why no step covers it'}</Label>
+          <Para>{mark.placed_why}</Para>
         </>
       )}
     </>
   )
 }
 
-function WhatHappened({ step }: { step: WorkItemPageStep }) {
+function WhatHappened({ step, measures }: { step: WorkItemPageStep; measures: readonly ShownMeasure[] }) {
   const { happened } = step
-  const nothingHappened = !happened.skip && happened.verdicts.length === 0 && !happened.submitted && happened.reports.length === 0 && step.step_ins.length === 0
+  const nothingHappened = !happened.skip && happened.verdicts.length === 0 && !happened.submitted && happened.reports.length === 0 && step.marks.length === 0
   return (
     <>
-      {step.step_ins.map((stepIn) => (
-        <StepInText key={stepIn.event_id} stepIn={stepIn} />
+      {step.marks.map((mark, index) => (
+        <MarkText key={index} mark={mark} measures={measures} placed />
       ))}
       {happened.skip && (
         <>
@@ -88,7 +91,7 @@ function Evidence({ step }: { step: WorkItemPageStep }) {
   )
 }
 
-export function StepDetail({ step, depth, onOpenDeeper }: { step: WorkItemPageStep; depth: DetailDepth; onOpenDeeper: (depth: DetailDepth) => void }) {
+export function StepDetail({ step, measures, depth, onOpenDeeper }: { step: WorkItemPageStep; measures: readonly ShownMeasure[]; depth: DetailDepth; onOpenDeeper: (depth: DetailDepth) => void }) {
   const isReached = step.status === 'passed' || step.status === 'here'
   const showsEvidence = isReached && hasEvidence(step)
   const callsDepth: DetailDepth = showsEvidence ? 3 : 2
@@ -100,7 +103,7 @@ export function StepDetail({ step, depth, onOpenDeeper }: { step: WorkItemPageSt
   return (
     <UnderStep testId="step-detail">
       <Level>
-        <WhatHappened step={step} />
+        <WhatHappened step={step} measures={measures} />
         {depth === 1 && deeperButton()}
       </Level>
       {showsEvidence && depth >= 2 && (
@@ -152,11 +155,11 @@ export function DeliveryDetail({ delivered }: { delivered: NonNullable<WorkItemP
   )
 }
 
-export const UnplacedStepInsDetail = ({ stepIns }: { stepIns: readonly StepIn[] }) => (
-  <UnderStep testId="step-ins-detail">
+export const NoStepMarksDetail = ({ marks, measures }: { marks: readonly ItemMark[]; measures: readonly ShownMeasure[] }) => (
+  <UnderStep testId="no-step-detail">
     <Level>
-      {stepIns.map((stepIn) => (
-        <StepInText key={stepIn.event_id} stepIn={stepIn} />
+      {marks.map((mark, index) => (
+        <MarkText key={index} mark={mark} measures={measures} placed={false} />
       ))}
     </Level>
   </UnderStep>

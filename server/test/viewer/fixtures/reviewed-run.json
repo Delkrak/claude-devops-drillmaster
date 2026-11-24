@@ -243,7 +243,30 @@
           "owner_friction_per_item",
           "gate_rejections_per_item"
         ]
-      }
+      },
+      "measures": [
+        {
+          "name": "owner_friction_per_item",
+          "short": "OF",
+          "color": "orange",
+          "definition": "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
+          "show": false
+        },
+        {
+          "name": "policy friction",
+          "short": "PF",
+          "color": "orange",
+          "definition": "Owner caught what a rule should have caught.",
+          "show": true
+        },
+        {
+          "name": "process friction",
+          "short": "PC",
+          "color": "rose",
+          "definition": "Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.",
+          "show": true
+        }
+      ]
     }
   },
   {
@@ -2187,7 +2210,47 @@
         "refs": []
       }
     ],
-    "experiment_reflections": []
+    "experiment_reflections": [],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": [
+          {
+            "step_guid": "c08f611b-53f9-5af9-8b0f-346a83c1ab41",
+            "events": [
+              "ev_42a8f15b",
+              "ev_e9057f20"
+            ],
+            "why": "After delivery, Owner had to add to the work by asking for the missing CHANGES.md line, which is a correction rather than an approval or an answer."
+          }
+        ]
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": [
+          {
+            "step_guid": "c08f611b-53f9-5af9-8b0f-346a83c1ab41",
+            "events": [
+              "ev_42a8f15b"
+            ],
+            "why": "Owner caught a missing CHANGES.md entry that their standing 'every change needs one' rule requires, but the workflow has no rule for it, so no gate could catch it."
+          }
+        ]
+      },
+      {
+        "measure": "process friction",
+        "occurrences": [
+          {
+            "step_guid": "c08f611b-53f9-5af9-8b0f-346a83c1ab41",
+            "events": [
+              "ev_42a8f15b",
+              "ev_a4ed6d5d"
+            ],
+            "why": "The delivered item lacked the CHANGES.md line Owner expects on every change, so the delivery was not what Owner wanted."
+          }
+        ]
+      }
+    ]
   },
   {
     "id": "ev_d3b719f6",
@@ -4151,7 +4214,50 @@
         ]
       }
     ],
-    "experiment_reflections": []
+    "experiment_reflections": [],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": [
+          {
+            "step_guid": "ad562b64-78a4-5410-bfb4-448b67c51526",
+            "events": [
+              "ev_60a3cb77",
+              "ev_b4b945f0",
+              "ev_6a5c98dc"
+            ],
+            "why": "After delivery, Owner had to demand the actual failing test output that the expected result required and that Agent had only claimed."
+          }
+        ]
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": [
+          {
+            "step_guid": "ad562b64-78a4-5410-bfb4-448b67c51526",
+            "events": [
+              "ev_60a3cb77",
+              "ev_688596a9",
+              "ev_6ccfe97f"
+            ],
+            "why": "Rule test 1.2 is verified by the failing run before the fix, yet it passed on Agent's prose claim, and Owner, not the rule, caught that the failing output was never shown."
+          }
+        ]
+      },
+      {
+        "measure": "process friction",
+        "occurrences": [
+          {
+            "step_guid": null,
+            "events": [
+              "ev_60a3cb77",
+              "ev_0edb4389"
+            ],
+            "why": "The delivery asserted that the test failed before the fix without including that output, so it was not what Owner wanted, and no step requires the evidence to be part of the delivery."
+          }
+        ]
+      }
+    ]
   },
   {
     "id": "ev_8a136605",
@@ -7256,6 +7362,29 @@
           "version": "2.0.0",
           "started": "2026-11-20"
         }
+      ],
+      "measures": [
+        {
+          "name": "owner_friction_per_item",
+          "short": "OF",
+          "color": "orange",
+          "definition": "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
+          "show": false
+        },
+        {
+          "name": "policy friction",
+          "short": "PF",
+          "color": "orange",
+          "definition": "Owner caught what a rule should have caught.",
+          "show": true
+        },
+        {
+          "name": "process friction",
+          "short": "PC",
+          "color": "rose",
+          "definition": "Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.",
+          "show": true
+        }
       ]
     },
     "reason": "Add a 'changes' policy and an unconditional build step that writes the CHANGES.md line, checked again in review.",
@@ -7598,6 +7727,29 @@
           ],
           "version": "2.1.0",
           "started": "2026-11-20"
+        }
+      ],
+      "measures": [
+        {
+          "name": "owner_friction_per_item",
+          "short": "OF",
+          "color": "orange",
+          "definition": "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
+          "show": false
+        },
+        {
+          "name": "policy friction",
+          "short": "PF",
+          "color": "orange",
+          "definition": "Owner caught what a rule should have caught.",
+          "show": true
+        },
+        {
+          "name": "process friction",
+          "short": "PC",
+          "color": "rose",
+          "definition": "Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.",
+          "show": true
         }
       ]
     },
@@ -11820,6 +11972,20 @@
         "experiment": 2,
         "text": "Item 2 of 3, but this was a feature, so the steps the hypothesis is about did not run. Steps 3.1 and 4.3 were skipped by condition, and test 1.2 never applied. The parts of the change that did run worked. The failures capture at 3.2 kept the stub failures, the 4.1 run was captured, and the delivery summary showed red, then green without being asked. Owner friction was 0. This item is at most indirect evidence for the hypothesis. If the third item is also a feature, the judgement should say the experiment was not tested on a bug fix rather than call it confirmed; consider extending it until at least one bug item has run."
       }
+    ],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": []
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": []
+      },
+      {
+        "measure": "process friction",
+        "occurrences": []
+      }
     ]
   },
   {
@@ -13739,6 +13905,20 @@
         "experiment": 2,
         "text": "Item 3 of 3, so the experiment is due for judgement. Every part of the change was followed. The 3.1 report quoted the failing line, expected vs actual (3.75 !== 5) and the totals, matching capture ev_85552642. The 4.3 report put red beside green and added the naive-fix NaN failure. The work_deliver summary repeated both. Owner made no follow-up, so this item contributes 0 to owner_friction_per_item, against a baseline of 0.67 and a target of 0.33. The only friction was the 'exactly as printed' wording, which conflicted with filtering out stack lines; see the change for step 3.1."
       }
+    ],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": []
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": []
+      },
+      {
+        "measure": "process friction",
+        "occurrences": []
+      }
     ]
   },
   {
@@ -14525,6 +14705,29 @@
           ],
           "version": "3.0.0",
           "started": "2026-11-20"
+        }
+      ],
+      "measures": [
+        {
+          "name": "owner_friction_per_item",
+          "short": "OF",
+          "color": "orange",
+          "definition": "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
+          "show": false
+        },
+        {
+          "name": "policy friction",
+          "short": "PF",
+          "color": "orange",
+          "definition": "Owner caught what a rule should have caught.",
+          "show": true
+        },
+        {
+          "name": "process friction",
+          "short": "PC",
+          "color": "rose",
+          "definition": "Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.",
+          "show": true
         }
       ]
     },
@@ -16670,6 +16873,20 @@
         "experiment": 3,
         "text": "Item 1 of 3. The hand-over step worked as designed. The summary held the evidence, all three assumptions with what was chosen, and two proposed issues, and Owner raised nothing after the single spec approval, so owner_friction_per_item stands at 0 for now. Two cautions. First, this was a feature: its assumptions already reached Owner at the 2.2 gate, so the part of the hypothesis about bugs (open choices with no Owner gate) is not tested yet. Second, the 'post mortem is written' mention comes in Agent's closing message after this post mortem, so it cannot be confirmed from the record yet. Too early to judge; the next two items, ideally including a bug, will decide it."
       }
+    ],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": []
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": []
+      },
+      {
+        "measure": "process friction",
+        "occurrences": []
+      }
     ]
   },
   {
@@ -18726,6 +18943,20 @@
       {
         "experiment": 3,
         "text": "Work item 2 of 3. Up to delivery there is no Owner correction or question in the record, and no gate rejections. The summary carried the evidence, every assumption, the decision and five proposed issues, which is the content the hypothesis predicts removes post-delivery questions. The stage also earned its place by surfacing a behaviour change (non-number input now throws) that review had missed. Two things limit the judgement. First, the record ends at work_item_delivered, so it cannot yet show whether Owner asks anything afterwards. Second, the 'post mortem is written' part of the handover is not recorded at all (see the step 5.1 change). Count owner_friction for this item as 0 only if nothing from Owner arrives after delivery."
+      }
+    ],
+    "measured": [
+      {
+        "measure": "owner_friction_per_item",
+        "occurrences": []
+      },
+      {
+        "measure": "policy friction",
+        "occurrences": []
+      },
+      {
+        "measure": "process friction",
+        "occurrences": []
       }
     ]
   },

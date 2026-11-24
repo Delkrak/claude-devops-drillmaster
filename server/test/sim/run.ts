@@ -160,7 +160,7 @@ async function runOnce(scenario: Scenario, ownerMode: 'scripted' | 'llm', runDir
           'Agent asks you these questions in a form (AskUserQuestion):',
           JSON.stringify(questions.map(({ question, options }) => ({ question, options: options.map((option) => option.label), ...(options[0]?.preview ? { shown_beside_the_options: options[0].preview } : {}) })), null, 2),
           'Decide each one as Owner. When it is about the work, check the project files against your rules first.',
-          'Approve alone approves. Any note or words of your own reject (or decline), and say why, so add them only when you reject.',
+          'Approve alone approves. Reject (or Decline) with a note saying why rejects. A note on Approve, or words of your own, decide nothing: Agent will talk it through with you and ask again.',
           'Reply with JSON only: {"answers": {"<question>": "<an option label, or your own words>"}, "notes": {"<question>": "<an optional note>"}}',
         ].join('\n'),
         currentIssue,

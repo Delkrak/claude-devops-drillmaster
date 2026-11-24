@@ -34,7 +34,7 @@ test('the Workflow page at the mock moment @screens', async ({ page }) => {
 test('the work item page @screens', async ({ page }) => {
   mkdirSync(SCREENS, { recursive: true })
   const { project } = (await (await page.request.get(`${RUN_VIEWER}/api/served`)).json()) as { project: string }
-  const items = (await (await page.request.get(`${RUN_VIEWER}/api/projects/${project}/work-items`)).json()) as { issue: string; work_item_id: string }[]
+  const items = ((await (await page.request.get(`${RUN_VIEWER}/api/projects/${project}/work-items`)).json()) as { items: { issue: string; work_item_id: string }[] }).items
   const idOf = (issue: string) => items.find((item) => item.issue === issue)!.work_item_id
   await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${idOf('#2')}`)
   await page.getByTestId('item-state').waitFor()
@@ -79,4 +79,31 @@ test('the complaints page @screens', async ({ page }) => {
   await page.screenshot({ path: path.join(SCREENS, 'complaints-0-list.png') })
   await page.getByTestId('complaint-group').first().getByRole('button').click()
   await page.screenshot({ path: path.join(SCREENS, 'complaints-1-opened.png') })
+})
+
+// The measures as Owner chose to tell them apart: a pill per measure in its own colour, its short name
+// and count. At the end of the run, where #1 and #2 have judged measures and #4 old friction.
+test('the measures @screens', async ({ page }) => {
+  mkdirSync(SCREENS, { recursive: true })
+  const { project } = (await (await page.request.get(`${RUN_VIEWER}/api/served`)).json()) as { project: string }
+  const items = ((await (await page.request.get(`${RUN_VIEWER}/api/projects/${project}/work-items`)).json()) as { items: { issue: string; work_item_id: string }[] }).items
+  const idOf = (issue: string) => items.find((item) => item.issue === issue)!.work_item_id
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/workflow`)
+  await page.getByTestId('workflow-overview').waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(SCREENS, 'measures-0-workflow.png') })
+  await page.locator('#stage-3').evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 60))
+  await page.screenshot({ path: path.join(SCREENS, 'measures-1-stage-3.png') })
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items/${idOf('#2')}`)
+  await page.getByTestId('item-state').waitFor()
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await page.screenshot({ path: path.join(SCREENS, 'measures-2-item.png') })
+  const failingTest = page.getByRole('button', { name: '3.1 reproduce the bug with a failing test', exact: true })
+  await failingTest.click()
+  await page.mouse.move(0, 0)
+  await failingTest.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 140))
+  await page.screenshot({ path: path.join(SCREENS, 'measures-3-step.png') })
+  await page.goto(`${RUN_VIEWER}/#/p/${project}/items`)
+  await page.getByTestId('item-row').first().waitFor()
+  await page.screenshot({ path: path.join(SCREENS, 'measures-4-list.png') })
 })

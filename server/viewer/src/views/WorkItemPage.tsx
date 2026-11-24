@@ -12,6 +12,7 @@ import { stopKindOf } from '../ui/workflow/marks'
 import { Tip } from '../ui/workflow/Tip'
 import { Route, type OpenedDepths } from './item/Route'
 import type { DetailDepth } from './item/StepDetail'
+import { keyMeasuresOf } from './measures'
 import { ProjectNav } from './ProjectNav'
 
 function ItemState({ page }: { page: Page }) {
@@ -46,7 +47,6 @@ function keyMarksOf(page: Page): KeyMark[] {
     ahead: steps.some((step) => step.status === 'ahead' || step.status === 'here'),
     workItem: false,
     here: steps.some((step) => step.status === 'here'),
-    friction: steps.some((step) => step.step_ins.length > 0) || page.step_ins_unplaced.length > 0,
     delivered: page.delivered !== null,
     afterDelivery: page.delivered !== null,
   }
@@ -77,7 +77,7 @@ export function WorkItemPage({ projectId, workItemId, at }: { projectId: string;
           </RouteColumn>
         )}
       </Loading>
-      {page && <Key marks={keyMarksOf(page)} />}
+      {page && <Key marks={keyMarksOf(page)} measures={keyMeasuresOf(page.measures, new Set([...page.stages.flatMap((stage) => stage.steps.flatMap((step) => step.marks)), ...page.marks_no_step].map((mark) => mark.measure)))} />}
       <Tip />
     </Shell>
   )

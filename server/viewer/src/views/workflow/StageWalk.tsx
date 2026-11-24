@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import type { WorkflowPageStage, WorkflowPageStep } from '../../types'
-import { AFTER_SPLIT, AXIS, BRANCH_OFFSET, FRICTION_COLUMN, ITEM_COLUMN, itemBoxWidth, SPLIT_HEIGHT, splitAlternatives, STAGE_HEADER, STEP_ROW } from '../../ui/workflow/geometry'
+import type { ShownMeasure, WorkflowPageStage, WorkflowPageStep } from '../../types'
+import { AFTER_SPLIT, AXIS, BRANCH_OFFSET, MEASURE_COLUMN, ITEM_COLUMN, itemBoxWidth, SPLIT_HEIGHT, splitAlternatives, STAGE_HEADER, STEP_ROW } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
-import { Branch, FrictionRing, ItemBox, Line, ReviewMarks, StageLabel, StageRule, Stop, StepLabel, stopKindOf } from '../../ui/workflow/marks'
-import { describeItems, estimatedLabelWidth, stageAnchorId, type OpenItems } from './describe'
+import { Branch, ItemBox, Line, MeasurePills, ReviewMarks, StageLabel, StageRule, Stop, StepLabel, stopKindOf } from '../../ui/workflow/marks'
+import { describeItems, estimatedLabelWidth, IN_THIS_STAGE, pillsOf, stageAnchorId, type OpenItems } from './describe'
 
 const STEP_NAME_FONT_SIZE = 17
 
@@ -27,7 +27,7 @@ function DrawnStep({ step, x, y, side, onBranch, openItems }: { step: WorkflowPa
   )
 }
 
-export function StageWalk({ stage, openItems }: { stage: WorkflowPageStage; openItems: OpenItems }) {
+export function StageWalk({ stage, measures, openItems }: { stage: WorkflowPageStage; measures: readonly ShownMeasure[]; openItems: OpenItems }) {
   const drawnParts: ReactNode[] = []
   let y = STAGE_HEADER
   let straightLineFrom = 0
@@ -55,7 +55,7 @@ export function StageWalk({ stage, openItems }: { stage: WorkflowPageStage; open
       <StageLabel x={44} y={30} n={stage.n} name={stage.name} />
       <Line from={straightLineFrom} to={height} />
       {drawnParts}
-      {stage.friction > 0 && <FrictionRing x={FRICTION_COLUMN} y={26} count={stage.friction} tip={`you stepped in ${stage.friction} times in this stage`} onOpen={(point) => openItems('you stepped in on', stage.stepped_in, point)} />}
+      <MeasurePills x={MEASURE_COLUMN} y={26} pills={pillsOf(measures, stage.marks, IN_THIS_STAGE, openItems)} />
     </Drawing>
   )
 }

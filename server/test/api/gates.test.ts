@@ -73,7 +73,9 @@ describe('a work item through a Drillmaster gate and an Owner gate', () => {
     const chat = await hook('UserPromptSubmit', { prompt: 'looks good, ship it' })
     expect(chat.output).toBeUndefined()
     expect(await tool('work_status', { token })).toMatchObject({ pending_gate: { gate: 'owner' } })
-    expect(await ownerAnswers(app, PROJECT, () => 'the header row is missing', SESSION)).toMatch(/rejected.*"the header row is missing"/)
+    expect(await ownerAnswers(app, PROJECT, () => 'the header row is missing', SESSION)).toMatch(/did not decide the Owner gate of step 2\.1 and said: "the header row is missing"/)
+    expect(await tool('work_status', { token })).toMatchObject({ pending_gate: { gate: 'owner' } })
+    expect(await ownerAnswers(app, PROJECT, () => ({ answer: 'Reject', notes: 'the header row is missing' }), SESSION)).toMatch(/rejected.*"the header row is missing"/)
 
     expect(await r({ action: 'gate', step: '2.1', text: 'PR #40' })).toMatchObject({ verdict: 'pending' })
     expect(await ownerAnswers(app, PROJECT, () => 'Approve', SESSION)).toMatch(/approved.*deliver/)

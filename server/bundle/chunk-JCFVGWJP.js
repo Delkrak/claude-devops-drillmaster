@@ -1,13 +1,15 @@
 import { createRequire as __drillmasterRequire } from 'node:module'; const require = __drillmasterRequire(import.meta.url);
 import {
   DotDrillmasterResolver,
+  VERSION,
   __export,
   drillmasterHome,
   projectServerInfoFile,
   projectToServe,
   readProjectServerInfo,
-  runningProjectServer
-} from "./chunk-NOJDCKZL.js";
+  runningProjectServer,
+  runningProjectServerOf
+} from "./chunk-V4S4BLH3.js";
 
 // src/projectServer.ts
 import { execFile as execFile3, spawn as spawn2 } from "node:child_process";
@@ -20249,6 +20251,11 @@ function frictionJudgementsOf(events) {
   for (const event of events) if (event.type === "owner_inputs_judged") for (const judgement of event.inputs) judgements.set(judgement.event, judgement);
   return judgements;
 }
+function frictionPlacementsOf(events) {
+  const placementByEventId = /* @__PURE__ */ new Map();
+  for (const event of events) if (event.type === "friction_placed") for (const placement of event.inputs) placementByEventId.set(placement.event, placement);
+  return placementByEventId;
+}
 
 // src/core/versions.ts
 var toSemver = (version2) => typeof version2 === "number" ? `${version2}.0.0` : String(version2);
@@ -20269,29 +20276,52 @@ function compareVersions(a, b) {
 }
 
 // src/core/measures.ts
-var MEASURES = {
-  owner_friction_per_item: "Owner's inputs on a work item that the friction judge called friction (until it has judged: every input but the one that started or resumed it, and after delivery only one Agent then changed the work for), plus Owner gates Owner rejected",
+var COUNTED_MEASURES = {
   gate_rejections_per_item: "Work gate rejections per work item",
   review_rounds_per_item: "Drillmaster and Owner gate hand-ins per work item",
   minutes_per_item: "Minutes from start to delivery",
   tool_calls_per_item: "Tool calls per work item"
 };
-var MEASURE_NAMES = Object.keys(MEASURES);
-var OLD_MEASURE_NAMES = { owner_corrections_per_item: "owner_friction_per_item" };
+var COUNTED_MEASURE_NAMES = Object.keys(COUNTED_MEASURES);
+var isCountedMeasure = (name) => Object.hasOwn(COUNTED_MEASURES, name);
+var OWNER_FRICTION = {
+  name: "owner_friction_per_item",
+  short: "OF",
+  color: "orange",
+  definition: "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
+  show: true
+};
+var FIRST_VERSION_JUDGING_MEASURES = "0.4.0";
+var OLD_MEASURE_NAMES = { owner_corrections_per_item: OWNER_FRICTION.name };
 var currentMeasureName = (name) => OLD_MEASURE_NAMES[name] ?? name;
 var isOldMeasureName = (name) => name in OLD_MEASURE_NAMES;
-var zeroMeasures = () => ({
-  owner_friction_per_item: 0,
+var zeroCounts = () => ({
   gate_rejections_per_item: 0,
   review_rounds_per_item: 0,
   minutes_per_item: 0,
   tool_calls_per_item: 0
 });
+var judgedValues = (judgements) => Object.fromEntries(judgements.map((judgement) => [judgement.measure, judgement.occurrences.length]));
+var writtenBeforeMeasuresWereJudged = (drillmasterVersion) => drillmasterVersion === void 0 || compareVersions(drillmasterVersion, FIRST_VERSION_JUDGING_MEASURES) < 0;
+var eventsOfWorkItem = (events, workItemId) => events.filter((event) => "work_item_id" in event && event.work_item_id === workItemId);
+function judgedMeasuresOf(events) {
+  const judgementsByItemId = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (event.type === "post_mortem_written" && event.author === "drillmaster" && event.measured) judgementsByItemId.set(event.work_item_id, event.measured);
+    if (event.type !== "late_measures_judged") continue;
+    const judgements = judgementsByItemId.get(event.work_item_id);
+    if (!judgements) continue;
+    const merged = judgements.map((judgement) => ({ ...judgement, occurrences: [...judgement.occurrences, ...event.measured.find((late) => late.measure === judgement.measure)?.occurrences ?? []] }));
+    const newlyJudged = event.measured.filter((late) => !judgements.some((judgement) => judgement.measure === late.measure));
+    judgementsByItemId.set(event.work_item_id, [...merged, ...newlyJudged]);
+  }
+  return judgementsByItemId;
+}
 function measureDeliveredItems(events) {
   const items = /* @__PURE__ */ new Map();
   for (const event of events) {
     if (event.type === "work_item_started") {
-      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, values: zeroMeasures(), inputs: {}, passedSteps: [], rejectionsByRule: {} });
+      items.set(event.work_item_id, { issue: event.issue, workflowVersion: toSemver(event.workflow_version), startedAt: event.at, counts: zeroCounts(), oldFriction: 0, inputs: {}, passedSteps: [], rejectionsByRule: {} });
       continue;
     }
     if (event.type === "work_item_updated") {
@@ -20310,34 +20340,40 @@ function measureDeliveredItems(events) {
     if (item.deliveredAt) continue;
     switch (event.type) {
       case "work_trace":
-        if (event.hook === "PostToolUse" || event.hook === "PostToolUseFailure") item.values.tool_calls_per_item++;
+        if (event.hook === "PostToolUse" || event.hook === "PostToolUseFailure") item.counts.tool_calls_per_item++;
         break;
       case "gate_submitted":
-        if (event.gate !== "self") item.values.review_rounds_per_item++;
+        if (event.gate !== "self") item.counts.review_rounds_per_item++;
         break;
       case "gate_verdict":
         if (event.accepted && event.step_guid) item.passedSteps.push(event.step_guid);
-        if (!event.accepted) item.values.gate_rejections_per_item++;
+        if (!event.accepted) item.counts.gate_rejections_per_item++;
         if (!event.accepted && event.rule) for (const rule of event.rule.split(", ")) item.rejectionsByRule[rule] = (item.rejectionsByRule[rule] ?? 0) + 1;
-        if (event.by === "owner" && !event.accepted) item.values.owner_friction_per_item++;
+        if (event.by === "owner" && !event.accepted) item.oldFriction++;
         break;
       case "work_item_delivered":
         item.deliveredAt = event.at;
-        item.values.minutes_per_item = Math.round((Date.parse(event.at) - Date.parse(item.startedAt)) / 6e4 * 10) / 10;
+        item.deliveredBy = event.drillmaster_version;
+        item.counts.minutes_per_item = Math.round((Date.parse(event.at) - Date.parse(item.startedAt)) / 6e4 * 10) / 10;
         break;
     }
   }
-  const judgements = frictionJudgementsOf(events);
+  const judgedByItemId = judgedMeasuresOf(events);
+  const frictionJudgements = frictionJudgementsOf(events);
   for (const input2 of ownerInputsOf(events)) {
     const item = input2.work_item_id ? items.get(input2.work_item_id) : void 0;
-    if (item && isFriction(input2, judgements)) item.values.owner_friction_per_item++;
+    if (item && isFriction(input2, frictionJudgements)) item.oldFriction++;
   }
   return [...items.entries()].filter(([, item]) => item.deliveredAt).map(([workItemId, item]) => ({
     work_item_id: workItemId,
     issue: item.issue,
     workflow_version: item.workflowVersion,
     delivered_at: item.deliveredAt,
-    values: item.values,
+    values: {
+      ...!judgedByItemId.has(workItemId) && writtenBeforeMeasuresWereJudged(item.deliveredBy) ? { [OWNER_FRICTION.name]: item.oldFriction } : {},
+      ...judgedValues(judgedByItemId.get(workItemId) ?? []),
+      ...item.counts
+    },
     inputs: item.inputs,
     passed_step_guids: item.passedSteps,
     rejections_by_rule: item.rejectionsByRule
@@ -20348,22 +20384,25 @@ function rejectionsByRule(items) {
   for (const item of items) for (const [rule, count] of Object.entries(item.rejections_by_rule)) counts[rule] = (counts[rule] ?? 0) + count;
   return counts;
 }
+var itemsWithMeasure = (items, measure) => items.filter((item) => item.values[measure] !== void 0);
 function averageMeasure(items, measure) {
-  if (items.length === 0) return null;
-  return Math.round(items.reduce((sum, item) => sum + item.values[measure], 0) / items.length * 100) / 100;
+  const values = itemsWithMeasure(items, measure).map((item) => item.values[measure]);
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 100) / 100;
 }
 var BASELINE_WINDOW = 5;
-var measureBaseline = (items, measure) => averageMeasure(items.slice(-BASELINE_WINDOW), measure) ?? 0;
+var lastItemsWithMeasure = (items, measure) => itemsWithMeasure(items, measure).slice(-BASELINE_WINDOW);
+var measureBaseline = (items, measure) => averageMeasure(lastItemsWithMeasure(items, measure), measure) ?? 0;
 function standardDeviation(values) {
   if (values.length === 0) return 0;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
   return Math.round(Math.sqrt(variance) * 100) / 100;
 }
-var measureBaselineSd = (items, measure) => standardDeviation(items.slice(-BASELINE_WINDOW).map((item) => item.values[measure]));
+var measureBaselineSd = (items, measure) => standardDeviation(lastItemsWithMeasure(items, measure).map((item) => item.values[measure]));
 function splitMeasureByInput(items, measure, inputName) {
   const itemsByOption = /* @__PURE__ */ new Map();
-  for (const item of items) {
+  for (const item of itemsWithMeasure(items, measure)) {
     const option = item.inputs[inputName] ?? "not set";
     itemsByOption.set(option, [...itemsByOption.get(option) ?? [], item]);
   }
@@ -20435,9 +20474,11 @@ var WorkflowExperiment = external_exports.object({
   purpose: external_exports.string().min(1),
   hypothesis: external_exports.string(),
   null_hypothesis: external_exports.string(),
-  measure: external_exports.enum(MEASURE_NAMES),
+  measure: external_exports.string().min(1),
   baseline: external_exports.number(),
   baseline_sd: external_exports.number().nonnegative(),
+  /** How many delivered work items the baseline was taken from, when fewer than the baseline window. */
+  baseline_items: external_exports.number().int().nonnegative().optional(),
   target: external_exports.number().nullable(),
   judge_after: external_exports.number().int().positive(),
   /** GUIDs of the steps the change touched; an experiment counts only the work items that went through one. None: every item counts. */
@@ -20452,7 +20493,18 @@ var WorkflowExperiment = external_exports.object({
 });
 var Objective = external_exports.object({
   text: external_exports.string().min(1),
-  measures: external_exports.array(external_exports.enum(MEASURE_NAMES)).min(1)
+  measures: external_exports.array(external_exports.string().min(1)).min(1)
+});
+var MEASURE_COLORS = ["orange", "rose", "violet", "sky"];
+var JudgedMeasure = external_exports.object({
+  name: external_exports.string().regex(/^\S(.*\S)?$/, "a measure name does not start or end with a space"),
+  /** What its ring on the viewer's pages says before the count, e.g. "PF". */
+  short: external_exports.string().regex(/^[A-Z0-9]{1,3}$/, 'a short name is 1 to 3 capital letters or digits, e.g. "PF"'),
+  color: external_exports.enum(MEASURE_COLORS),
+  /** What counts as one occurrence; every measure counts what should not happen, so lower is better. */
+  definition: external_exports.string().min(1),
+  /** Whether the viewer's pages show where it happened. */
+  show: external_exports.boolean()
 });
 var WorkflowDocument = external_exports.object({
   version: WorkflowVersion,
@@ -20461,6 +20513,7 @@ var WorkflowDocument = external_exports.object({
   policies: external_exports.array(WorkPolicy),
   inputs: external_exports.array(WorkItemInput),
   tool_captures: external_exports.array(ToolCapture),
+  measures: external_exports.array(JudgedMeasure).default([]),
   experiments: external_exports.array(WorkflowExperiment)
 }).superRefine((workflow, refinement) => {
   const issue2 = (message) => refinement.addIssue({ code: "custom", message });
@@ -20507,6 +20560,14 @@ var WorkflowDocument = external_exports.object({
       issue2(`tool capture "${capture.name}": ${error62.message}`);
     }
   }
+  const measureNames = /* @__PURE__ */ new Set();
+  for (const measure of workflow.measures) {
+    if (isCountedMeasure(measure.name)) issue2(`measure "${measure.name}" is one Drillmaster counts, so the workflow cannot define it`);
+    if (measureNames.has(measure.name)) issue2(`measure "${measure.name}" is defined twice`);
+    measureNames.add(measure.name);
+  }
+  for (const name of workflow.objective.measures) if (!isMeasureOf(workflow, name)) issue2(`the objective's measure "${name}" is neither counted by Drillmaster nor defined by the workflow`);
+  for (const experiment of workflow.experiments) if (!isMeasureOf(workflow, experiment.measure)) issue2(`workflow experiment ${experiment.id} measures "${experiment.measure}", which is neither counted by Drillmaster nor defined by the workflow`);
   const guids = guidsOf(workflow);
   const repeated = guids.find((guid3, index) => guids.indexOf(guid3) !== index);
   if (repeated) issue2(`GUID ${repeated} is used twice`);
@@ -20536,13 +20597,17 @@ var guidsOf = (workflow) => [
   ...workflow.tool_captures.map((capture) => capture.guid)
 ];
 var FIRST_VERSION = "0.0.0";
-var workflowZero = (objective) => WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] });
+var emptyWorkflow = (objective, measures) => ({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], tool_captures: [], measures, experiments: [] });
+var parseWorkflowZero = (objective, measures) => WorkflowDocument.safeParse(emptyWorkflow(objective, measures));
+var isMeasureOf = (workflow, name) => isCountedMeasure(name) || workflow.measures.some((measure) => measure.name === name);
+var workflowForReading = (workflow) => JSON.stringify(workflow, (key, value) => key === "guid" ? void 0 : value, 2);
 function findRule(workflow, ruleRef) {
   const [policyName, ruleId] = ruleRef.split(" ");
   const policy = workflow.policies.find((candidate) => candidate.name === policyName);
   const rule = policy?.rules.find((candidate) => candidate.id === ruleId);
   return rule ? { ref: ruleRef, policy: policyName, ...rule } : void 0;
 }
+var shortNameOf = (name) => name.split(/[\s_]+/).filter((word) => word && word !== "per").map((word) => word[0].toUpperCase()).join("").replace(/[^A-Z0-9]/g, "").slice(0, 3) || "M";
 function migrateWorkflow(raw, previous) {
   const { storage: _storage, metrics: oldMetrics, ...document } = structuredClone(raw);
   const version2 = toSemver(document.version);
@@ -20556,10 +20621,18 @@ function migrateWorkflow(raw, previous) {
   const earlierStage = (name) => previous?.stages.find((stage) => stage.name === name);
   const earlierStep = (stageName, name) => earlierStage(stageName)?.steps.find((step) => step.name === name) ?? previous?.stages.flatMap((stage) => stage.steps).find((step) => step.name === name);
   const earlierPolicy = (name) => previous?.policies.find((policy) => policy.name === name);
+  const objectiveMeasures = (document.objective?.measures ?? []).map(currentMeasureName);
+  const measures = document.measures ?? [];
+  const namesOwnerFriction = [...objectiveMeasures, ...(document.experiments ?? []).map((experiment) => currentMeasureName(experiment.measure))].includes(OWNER_FRICTION.name);
   return {
     ...document,
     version: version2,
-    ...document.objective ? { objective: { ...document.objective, measures: (document.objective.measures ?? []).map(currentMeasureName) } } : {},
+    ...document.objective ? { objective: { ...document.objective, measures: objectiveMeasures } } : {},
+    measures: (namesOwnerFriction && !measures.some((measure) => measure.name === OWNER_FRICTION.name) ? [...measures, { ...OWNER_FRICTION }] : measures).map((measure, index) => ({
+      short: shortNameOf(measure.name),
+      color: MEASURE_COLORS[index % MEASURE_COLORS.length],
+      ...measure
+    })),
     stages: (document.stages ?? []).map((stage) => ({
       ...stage,
       guid: guidFor(stage.guid, earlierStage(stage.name)?.guid, `stage:${stage.name}`),
@@ -20605,6 +20678,7 @@ function migrateWorkflow(raw, previous) {
 }
 
 // src/core/state.ts
+var questionKeyOf = (question) => question.kind === "proposal" ? `proposal ${question.retro_id} ${question.proposal}` : `${question.kind} ${question.work_item_id} ${question.stage}.${question.step}`;
 function foldState(events) {
   const state = {
     initialized: false,
@@ -20614,6 +20688,7 @@ function foldState(events) {
     sessions: {},
     workItems: {},
     ownerAsked: {},
+    ownerComments: {},
     traceCount: 0,
     eventCount: 0
   };
@@ -20646,6 +20721,9 @@ function foldState(events) {
         }
         break;
       }
+      case "owner_commented":
+        state.ownerComments[event.question] = event.comment;
+        break;
       case "owner_asked":
         state.ownerAsked[event.tool_use_id] = event.questions;
         break;
@@ -20701,6 +20779,7 @@ function foldState(events) {
         break;
       }
       case "gate_verdict": {
+        delete state.ownerComments[questionKeyOf({ kind: "owner_gate", work_item_id: event.work_item_id, stage: event.stage, step: event.step })];
         const item = state.workItems[event.work_item_id];
         if (item) {
           item.pending_gate = null;
@@ -20757,6 +20836,7 @@ function foldState(events) {
         break;
       }
       case "step_skip_decided": {
+        delete state.ownerComments[questionKeyOf({ kind: "step_skip", work_item_id: event.work_item_id, stage: event.stage, step: event.step })];
         const item = state.workItems[event.work_item_id];
         if (item) {
           item.pending_skip = null;
@@ -21421,9 +21501,6 @@ function portsFromEnv(env = process.env) {
   };
 }
 
-// src/version.ts
-var VERSION = "0.3.1";
-
 // src/projectServer.ts
 var START_POLL_MS = 150;
 var OWN_BUILD_START_TIMEOUT_MS = 15e3;
@@ -21455,10 +21532,13 @@ async function pinnedVersion(key, place, env) {
   const { writer, projectsRoot } = repositoryOptionsFromEnv(env);
   return await RepositoryPublisher.forProject(projectsRoot, key, place, writer).readPin() ?? VERSION;
 }
+var keepsRunningServer = (runningVersion, pinned) => runningVersion === VERSION || !ownBuildServes(pinned);
 async function findOrStartProjectServer(project, env = process.env) {
-  const running = await runningProjectServer(project.key, env);
-  if (running) return running;
+  const running = await runningProjectServerOf(project.key, env);
+  if (running?.version === VERSION) return running.url;
   const version2 = await pinnedVersion(project.key, project.place, env);
+  if (running && keepsRunningServer(running.version, version2)) return running.url;
+  if (running) await stopProjectServer(project.key, env);
   const { command, args, timeoutMs, shell } = serverCommandFor(version2, project.key);
   const server = spawn2(command, args, { detached: true, stdio: "ignore", windowsHide: true, env, shell });
   let startError;
@@ -21467,12 +21547,13 @@ async function findOrStartProjectServer(project, env = process.env) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
-    if (startError) throw new CannotServeProject(`Drillmaster ${version2}, pinned for this project, could not start (${[command, ...args].join(" ")}): ${startError.message}`);
+    if (startError) throw new CannotServeProject(`Drillmaster ${version2}, pinned for this project, could not start (${[command, ...args].join(" ")}): ${startError.message}${upgradeHint(version2)}`);
     const started = await runningProjectServer(project.key, env);
     if (started) return started;
   }
-  throw new CannotServeProject(`Drillmaster ${version2}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1e3}s (${[command, ...args].join(" ")}).`);
+  throw new CannotServeProject(`Drillmaster ${version2}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1e3}s (${[command, ...args].join(" ")}).${upgradeHint(version2)}`);
 }
+var upgradeHint = (pinned) => ownBuildServes(pinned) ? "" : ` To run this plugin's Drillmaster ${VERSION} instead, run \`drillmaster upgrade\` in the work folder.`;
 async function stopProjectServer(projectKeyOfServer, env = process.env) {
   const info = await readProjectServerInfo(projectKeyOfServer, env);
   if (!info) return false;
@@ -21551,15 +21632,23 @@ export {
   ownerInputsOf,
   isFriction,
   frictionJudgementsOf,
+  frictionPlacementsOf,
   toSemver,
   bumpVersion,
   compareVersions,
-  MEASURE_NAMES,
+  COUNTED_MEASURES,
+  isCountedMeasure,
+  OWNER_FRICTION,
   currentMeasureName,
+  writtenBeforeMeasuresWereJudged,
+  eventsOfWorkItem,
+  judgedMeasuresOf,
   measureDeliveredItems,
   rejectionsByRule,
+  itemsWithMeasure,
   averageMeasure,
   BASELINE_WINDOW,
+  lastItemsWithMeasure,
   measureBaseline,
   measureBaselineSd,
   splitMeasureByInput,
@@ -21572,10 +21661,14 @@ export {
   InputOption,
   WorkItemInput,
   ToolCapture,
-  Objective,
+  MEASURE_COLORS,
+  JudgedMeasure,
   WorkflowDocument,
-  workflowZero,
+  parseWorkflowZero,
+  isMeasureOf,
+  workflowForReading,
   findRule,
+  questionKeyOf,
   foldState,
   findWorkItemByTokenHash,
   workReportsOf,
@@ -21585,7 +21678,6 @@ export {
   viewWorkflow,
   RepositoryConflict,
   RepositoryPublisher,
-  VERSION,
   repositoryOptionsFromEnv,
   portsFromEnv,
   FIRST_PROJECT_SERVER_VERSION,
@@ -21593,6 +21685,7 @@ export {
   CannotServeProject,
   ownBuildServes,
   serverCommandFor,
+  keepsRunningServer,
   findOrStartProjectServer,
   stopProjectServer,
   upgradeProject

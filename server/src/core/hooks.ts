@@ -171,6 +171,10 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     }
   }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
+  if (hookEvent === 'PostToolUse' && payload.tool_name === ASK_USER_QUESTION) {
+    const answers = ownerAnswersOf(payload.tool_response)
+    if (answers.length) trace.answers = answers
+  }
   if (recordRaw) trace.raw = redactTokens(payload)
   if (typeof payload.tool_use_id === 'string') trace.tool_use_id = payload.tool_use_id
   events.push(trace)
@@ -184,6 +188,18 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
 }
 
 const ASK_USER_QUESTION = 'AskUserQuestion'
+const MAX_ANSWER_LENGTH = 2000
+
+/** Owner's answers and notes in an AskUserQuestion result, kept whole, unlike a tool's output. */
+function ownerAnswersOf(response: unknown) {
+  const { answers = {}, annotations = {} } = (response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, { notes?: unknown } | undefined> }
+  return [...new Set([...Object.keys(answers), ...Object.keys(annotations)])].flatMap((question) => {
+    const answer = typeof answers[question] === 'string' ? (redactTokens(answers[question]) as string).slice(0, MAX_ANSWER_LENGTH) : ''
+    const notes = annotations[question]?.notes
+    const note = typeof notes === 'string' && notes.trim() ? (redactTokens(notes.trim()) as string).slice(0, MAX_ANSWER_LENGTH) : undefined
+    return answer || note ? [{ question, answer, ...(note ? { notes: note } : {}) }] : []
+  })
+}
 
 interface AskUserQuestionInput {
   questions?: { question?: unknown; header?: unknown; options?: { label?: unknown; description?: unknown; preview?: unknown }[] }[]
@@ -248,9 +264,11 @@ function handleAskUserQuestion(state: ProjectState, hookEvent: string, sessionId
   if (!askedTexts) return { events: [] }
   const response = (payload.tool_response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, unknown> }
   const answersToAsked = Object.fromEntries(Object.entries(response.answers ?? {}).filter(([text]) => askedTexts.includes(text)))
-  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {})
+  const annotationsToAsked = Object.fromEntries(Object.entries(response.annotations ?? {}).filter(([text]) => askedTexts.includes(text)))
+  const decided = decideOwnerAnswers(state, answersToAsked, annotationsToAsked)
   if (decided.lines.length === 0) return { events: [] }
-  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}` } } }
+  const askAgain = decided.askAgain ? ` The question to ask again, as it is: ${JSON.stringify(decided.askAgain)}` : ''
+  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: `Drillmaster: ${decided.lines.join(' ')}${askAgain}` } } }
 }
 
 function briefSession(state: ProjectState, item: WorkItemState | undefined, context: HookContext) {
@@ -258,9 +276,11 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
   const lines = [
     `Drillmaster runs this project (workflow version ${workflow.version}). Owner's objective: "${workflow.objective.text}".`,
     'Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.',
-    item
-      ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
-      : 'Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
+    item?.status === 'delivered'
+      ? `Your last work item, ${item.work_item_id} (${item.issue}), is delivered. What Owner asks for on it still counts on it; start new work with work_start, or take up one from an earlier session with work_resume.`
+      : item
+        ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
+        : 'Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
   ]
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)

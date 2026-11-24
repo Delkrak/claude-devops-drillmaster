@@ -13,8 +13,11 @@ export const colors = stylex.defineVars({
   sand: '#e3c97e',
   /** A change that helped, and nothing else. */
   helped: '#a3c27a',
-  /** Friction, and nothing else. */
+  /** The measures the pages show, in the key's order: what the workflow counts as going wrong, and nothing else. */
   orange: '#ff7a1a',
+  rose: '#ff6f91',
+  violet: '#a993ff',
+  sky: '#6cc4f0',
   keyGround: 'rgb(20 26 22 / 0.92)',
   tipGround: '#e9ede6',
   tipText: '#111111',

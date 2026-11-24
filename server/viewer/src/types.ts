@@ -24,9 +24,24 @@ export interface WorkflowPageStage {
   if: string | null
   when: string | null
   here_now: WorkItemRef[]
-  friction: number
-  stepped_in: WorkItemRef[]
+  marks: MarkCount[]
   steps: WorkflowPageStep[]
+}
+
+/** A measure the pages show; old is the friction Drillmaster judged before workflows defined measures. */
+export interface ShownMeasure {
+  name: string
+  short: string
+  color: string
+  definition: string
+  old: boolean
+}
+
+/** How often a shown measure happened in one place, and on which work items. */
+export interface MarkCount {
+  measure: string
+  count: number
+  items: WorkItemRef[]
 }
 
 export interface WorkflowPage {
@@ -35,16 +50,18 @@ export interface WorkflowPage {
   stages: WorkflowPageStage[]
   delivered: number
   waiting_to_deliver: WorkItemRef[]
-  friction: { after_delivery: number; unplaced: number; after_delivery_items: WorkItemRef[]; unplaced_items: WorkItemRef[] }
+  measures: ShownMeasure[]
+  no_step: MarkCount[]
 }
 
-export interface StepIn {
-  event_id: string
+/** One occurrence of a shown measure on a work item. */
+export interface ItemMark {
+  measure: string
   at: string
-  prompt: string
   after_delivery: boolean
   why: string
   placed_why: string | null
+  prompts: string[]
 }
 
 export interface WorkItemPageStep {
@@ -68,7 +85,7 @@ export interface WorkItemPageStep {
     kept_output: { tool: string; name: string; lines: string[] }[]
   }
   calls: { at: string; tool: string; did: string; failed: boolean }[]
-  step_ins: StepIn[]
+  marks: ItemMark[]
 }
 
 export interface WorkItemPage {
@@ -81,7 +98,13 @@ export interface WorkItemPage {
   workflow_version: string
   stages: { n: number; guid: string; name: string; steps: WorkItemPageStep[] }[]
   delivered: { at: string; summary: string | null; added_steps: { at: string; text: string; why: string }[]; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
-  step_ins_unplaced: StepIn[]
+  measures: ShownMeasure[]
+  marks_no_step: ItemMark[]
+}
+
+export interface WorkItemsList {
+  measures: ShownMeasure[]
+  items: WorkItemsEntry[]
 }
 
 export interface WorkItemsEntry {
@@ -92,7 +115,7 @@ export interface WorkItemsEntry {
   status: 'active' | 'delivered'
   started_at: string
   at_step: string | null
-  friction: number
+  marks: { measure: string; count: number }[]
 }
 
 export interface WorkflowEdit {
@@ -113,6 +136,7 @@ export interface ChangeRow {
   measure: string | null
   before: number | null
   before_sd: number | null
+  before_items: number | null
   after: number | null
   counted: number
   judge_after: number | null
@@ -123,7 +147,7 @@ export interface ChangeRow {
 export interface Complaint {
   id: string
   at: string
-  source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in'
+  source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in' | 'a measure'
   work_item_id: string
   issue: string
   text: string

@@ -25,6 +25,8 @@ export interface ChangeRow {
   measure: string | null
   before: number | null
   before_sd: number | null
+  /** How many work items the baseline came from, when fewer than five: a weak baseline. */
+  before_items: number | null
   after: number | null
   counted: number
   judge_after: number | null
@@ -85,6 +87,7 @@ export function changesView(events: readonly DrillmasterEvent[], at?: string): C
         measure: experiment?.measure ?? null,
         before: verdict?.baseline ?? null,
         before_sd: verdict?.baseline_sd ?? null,
+        before_items: verdict?.baseline_items ?? null,
         after: verdict?.mean ?? null,
         counted: verdict ? Math.min(verdict.counted, verdict.judge_after) : 0,
         judge_after: verdict?.judge_after ?? null,

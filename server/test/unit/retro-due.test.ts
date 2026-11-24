@@ -59,8 +59,51 @@ describe('what a retrospective reads', () => {
     const events = [init, grown, ...open]
     const prompt = buildRetroPrompt(foldState(events), events, [])
     expect(prompt).toContain('Open work items, partly done (their reports and Owner\'s words below count too): wi_open (#9) at step 1.1')
-    expect(prompt).toContain('- wi_open, input: "tell the stakeholders" (not judged yet)')
+    expect(prompt).toContain('- wi_open, input: "tell the stakeholders"\n')
     expect(prompt).toContain('stakeholders were not told')
+  })
+})
+
+describe("Owner's discussion before a retrospective", () => {
+  it("reaches the retrospective, also in a session still on a work item delivered before the last one, with Owner's answers to Agent's questions", () => {
+    // wi_1 was delivered before retro_1; the session stays on it, and Owner talks the next retrospective through there.
+    const discussion: DrillmasterEvent[] = [
+      { id: 'b1', at: at(1), type: 'session_bound', session_id: 'sd', work_item_id: 'wi_1' },
+      { id: 'p1', at: at(5), type: 'work_trace', session_id: 'sd', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'the gates ask too much of small changes' },
+      { id: 'p2', at: at(6), type: 'work_trace', session_id: 'sd', work_item_id: 'wi_1', stage: null, step: null, hook: 'UserPromptSubmit', prompt: 'and nobody reads the PR text' },
+      {
+        id: 'a1',
+        at: at(7),
+        type: 'work_trace',
+        session_id: 'sd',
+        work_item_id: 'wi_1',
+        stage: null,
+        step: null,
+        hook: 'PostToolUse',
+        tool: 'AskUserQuestion',
+        answers: [{ question: 'Which gate should go first?', answer: 'the PR gate', notes: 'keep the tests' }],
+      },
+    ]
+    const events = [init, ...delivered(1).map((event) => ({ ...event, at: at(0) })), grown, retro, decided, ...discussion]
+    const prompt = buildRetroPrompt(foldState(events), events, [])
+    expect(prompt).toContain('- wi_1, input, after delivery: "the gates ask too much of small changes"')
+    expect(prompt).toContain('- wi_1, input, after delivery: "and nobody reads the PR text"')
+    expect(prompt).toContain('- "Which gate should go first?": the PR gate (note: keep the tests)')
+  })
+
+  it("keeps Owner's answers in full on the trace, notes included, and leaves out Drillmaster's own questions", () => {
+    const outcome = handleHook(foldState([init, grown]), 'PostToolUse', {
+      session_id: 's1',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'tu_own',
+      tool_input: { questions: [{ question: 'Which gate should go first?' }] },
+      tool_response: { answers: { 'Which gate should go first?': 'the PR gate' }, annotations: { 'Which gate should go first?': { notes: 'keep the tests' } } },
+    }, false)
+    expect(outcome.events.find((event) => event.type === 'work_trace')).toMatchObject({ answers: [{ question: 'Which gate should go first?', answer: 'the PR gate', notes: 'keep the tests' }] })
+    const asked: DrillmasterEvent = { id: 'q', at: at(8), type: 'owner_asked', session_id: 's1', tool_use_id: 'tu_dm', questions: ['Proposal 2 of retro_1: time it. Approve it?'] }
+    const answeredDrillmaster: DrillmasterEvent = { id: 'a2', at: at(9), type: 'work_trace', session_id: 's1', work_item_id: null, stage: null, step: null, hook: 'PostToolUse', tool: 'AskUserQuestion', answers: [{ question: 'Proposal 2 of retro_1: time it. Approve it?', answer: 'Approve' }] }
+    const events = [init, grown, retro, decided, asked, answeredDrillmaster]
+    expect(buildRetroPrompt(foldState(events), events, [])).not.toContain('"Proposal 2 of retro_1: time it. Approve it?": Approve')
   })
 })
 

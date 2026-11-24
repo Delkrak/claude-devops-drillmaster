@@ -6,6 +6,7 @@ import { ItemList, ItemRow } from '../ui/item/List'
 import { Loading } from '../ui/Loading'
 import { Shell } from '../ui/Shell'
 import { Tip } from '../ui/workflow/Tip'
+import { shortOfMeasure, timesWord, toneOfMeasure } from './measures'
 import { ProjectNav } from './ProjectNav'
 
 export function WorkItemsPage({ projectId, at }: { projectId: string; at: string | null }) {
@@ -13,7 +14,7 @@ export function WorkItemsPage({ projectId, at }: { projectId: string; at: string
   return (
     <Shell title="Work items" aside={<ProjectNav projectId={projectId} at={at} nowHref={href.workItems(projectId)} currentPage="workItems" />}>
       <Loading loaded={loaded}>
-        {(items) =>
+        {({ measures, items }) =>
           items.length === 0 ? (
             <Empty>No work items yet.</Empty>
           ) : (
@@ -27,7 +28,13 @@ export function WorkItemsPage({ projectId, at }: { projectId: string; at: string
                   summary={item.summary}
                   where={item.status === 'delivered' ? 'delivered' : item.at_step ? `at ${item.at_step}` : `started ${dayAndTime(item.started_at)}`}
                   delivered={item.status === 'delivered'}
-                  frictionCount={item.friction}
+                  pills={item.marks.map((mark) => ({
+                    measure: mark.measure,
+                    short: shortOfMeasure(measures, mark.measure),
+                    count: mark.count,
+                    tone: toneOfMeasure(measures, mark.measure),
+                    tip: `${mark.measure} ${timesWord(mark.count)}`,
+                  }))}
                 />
               ))}
             </ItemList>

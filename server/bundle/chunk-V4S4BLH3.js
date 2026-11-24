@@ -107,6 +107,9 @@ async function requestJson(url, method, route, body) {
   return json;
 }
 
+// src/version.ts
+var VERSION = "0.4.0";
+
 // src/projectLocator.ts
 var drillmasterHome = (env = process.env) => path2.resolve(env.DRILLMASTER_HOME ?? path2.join(os.homedir(), ".drillmaster"));
 var projectServerInfoFile = (projectKeyOfServer, env = process.env) => path2.join(drillmasterHome(env), "projects", projectKeyOfServer, "daemon.json");
@@ -117,11 +120,12 @@ async function readProjectServerInfo(projectKeyOfServer, env = process.env) {
     return void 0;
   }
 }
-async function runningProjectServer(projectKeyOfServer, env = process.env) {
+async function runningProjectServerOf(projectKeyOfServer, env = process.env) {
   const info = await readProjectServerInfo(projectKeyOfServer, env);
   const health = info && await drillmasterServerAt(info.url);
-  return health?.project === projectKeyOfServer && health.pid === info.pid ? info.url : void 0;
+  return health?.project === projectKeyOfServer && health.pid === info.pid ? { url: info.url, version: health.version } : void 0;
 }
+var runningProjectServer = async (projectKeyOfServer, env = process.env) => (await runningProjectServerOf(projectKeyOfServer, env))?.url;
 function projectToServe(projectDir, setupPlace) {
   const linked = new DotDrillmasterResolver().resolve(projectDir);
   if (linked?.repository) return { key: linked.key, place: linked.repository };
@@ -137,9 +141,11 @@ export {
   defaultFolderOf,
   DotDrillmasterResolver,
   requestJson,
+  VERSION,
   drillmasterHome,
   projectServerInfoFile,
   readProjectServerInfo,
+  runningProjectServerOf,
   runningProjectServer,
   projectToServe
 };

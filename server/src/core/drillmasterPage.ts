@@ -1,6 +1,5 @@
 import type { ComplaintsGrouped, DrillmasterEvent, PostMortemWritten, WorkReported } from './events.js'
-import { frictionPlacementsOf } from './frictionPlacement.js'
-import { frictionJudgementsOf, ownerInputsOf } from './ownerInputs.js'
+import { marksOf, OLD_FRICTION } from './marks.js'
 import { extractFirstJsonObject } from './review.js'
 import { foldState } from './state.js'
 
@@ -9,7 +8,8 @@ export const COMPLAINT_GROUPING_REVIEW_KIND = 'complaint_grouping'
 export interface Complaint {
   id: string
   at: string
-  source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in'
+  /** Where it came from: a post mortem, Agent's report of an impediment, or a measure the viewer shows. */
+  source: 'agent post mortem' | 'drillmaster post mortem' | 'agent impediment' | 'your step-in' | 'a measure'
   work_item_id: string
   issue: string
   text: string
@@ -79,14 +79,16 @@ export function drillmasterPageView(events: readonly DrillmasterEvent[], toolNam
   const latestComplaintOf = (tool: ToolComplaints) => [...tool.problems.flatMap((problem) => problem.complaints), ...tool.ungrouped].sort(newestFirst)[0]!
   tools.sort((a, b) => b.heard - a.heard || newestFirst(latestComplaintOf(a), latestComplaintOf(b)))
 
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt)
-  const frictionPlacements = frictionPlacementsOf(eventsUntilAt)
-  const uncoveredStepIns = ownerInputsOf(eventsUntilAt).flatMap((input): Complaint[] => {
-    const placement = frictionPlacements.get(input.event_id)
-    if (!input.work_item_id || !frictionJudgements.get(input.event_id)?.friction || !placement || placement.step_guid !== null) return []
-    return [{ id: input.event_id, at: input.at, source: 'your step-in', work_item_id: input.work_item_id, issue: issueOf(input.work_item_id), text: `"${input.prompt}" ${placement.why}` }]
-  })
-  return { tools, uncovered: uncoveredStepIns.sort(newestFirst) }
+  const uncovered = (state.workflow ? marksOf(eventsUntilAt, state.workflow).marks : [])
+    // Old friction is uncovered only where Drillmaster placed it at no step, not where it was never placed.
+    .filter((mark) => mark.step_guid === null && (mark.measure !== OLD_FRICTION || mark.placed_why !== null))
+    .map((mark, index): Complaint => {
+      const said = mark.prompts.map((prompt) => `"${prompt}" `).join('')
+      return mark.measure === OLD_FRICTION
+        ? { id: `uncovered#${index}`, at: mark.at, source: 'your step-in', work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${said}${mark.placed_why ?? mark.why}` }
+        : { id: `uncovered#${index}`, at: mark.at, source: 'a measure', work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${mark.measure}: ${said}${mark.why}` }
+    })
+  return { tools, uncovered: uncovered.sort(newestFirst) }
 }
 
 export function buildComplaintGroupingPrompt(complaintsOfTool: ReadonlyMap<string, readonly Complaint[]>) {

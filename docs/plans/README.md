@@ -10,3 +10,4 @@ phase's commit when the phase is done, and the status below follows.
 | 3 | [round-3.md](round-3.md): what reviewing round 2 decided | built, local | d733b35..42d2693 |
 | 4 | [round-4.md](round-4.md): what the round-3 feedback decided | built, local; the viewer for people is left for a later round | e393637..957a20b |
 | 5 | [round-5.md](round-5.md): a viewer built from stories, checked by blind agents | built, local | |
+| 6 | [round-6.md](round-6.md): custom measures, judged in Drillmaster's post mortem | building | |

@@ -11,8 +11,28 @@ describe('workflow document', () => {
       policies: [],
       inputs: [],
       tool_captures: [],
+      measures: [],
       experiments: [],
     })
+  })
+
+  it('takes the measures the workflow defines, and refuses an objective or experiment on a measure it does not define', () => {
+    const policyFriction = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
+    expect(workflowZero({ text: 'x', measures: ['policy friction', 'minutes_per_item'] }, [policyFriction]).measures).toEqual([policyFriction])
+    expect(() => workflowZero({ text: 'x', measures: ['policy friction'] })).toThrow(/neither counted by Drillmaster nor defined by the workflow/)
+    expect(() => workflowZero({ text: 'x', measures: ['minutes_per_item'] }, [{ ...policyFriction, name: 'minutes_per_item' }])).toThrow(/one Drillmaster counts/)
+    expect(() => workflowZero({ text: 'x', measures: ['minutes_per_item'] }, [policyFriction, policyFriction])).toThrow(/defined twice/)
+    expect(() => WorkflowDocument.parse({ ...WORKFLOW_2, experiments: [{ ...WORKFLOW_2.experiments[0] ?? {}, id: 1, change: 'c', purpose: 'p', hypothesis: '', null_hypothesis: '', measure: 'policy friction', baseline: 1, baseline_sd: 0, target: null, judge_after: 3, version: '2.0.0', started: '2026-11-01' }] })).toThrow(/workflow experiment 1 measures .*policy friction/)
+  })
+
+  it('keeps owner friction, which Drillmaster once judged on its own, as a measure an old workflow defines', () => {
+    const old = migrateWorkflow({ version: '1.0.0', objective: { text: 'x', measures: ['owner_corrections_per_item'] }, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] })
+    expect(old.objective.measures).toEqual(['owner_friction_per_item'])
+    expect(old.measures).toEqual([expect.objectContaining({ name: 'owner_friction_per_item', show: true })])
+    expect(WorkflowDocument.parse(old).measures).toHaveLength(1)
+    const withoutShortName = migrateWorkflow({ version: '1.0.0', objective: { text: 'x', measures: ['minutes_per_item'] }, stages: [], policies: [], inputs: [], tool_captures: [], measures: [{ name: 'policy friction', definition: 'd', show: true }], experiments: [] })
+    expect(withoutShortName.measures).toEqual([{ name: 'policy friction', short: 'PF', color: 'orange', definition: 'd', show: true }])
+    expect(migrateWorkflow({ version: '1.0.0', objective: { text: 'x', measures: ['minutes_per_item'] }, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] }).measures).toEqual([])
   })
 
   it('accepts a valid grown workflow', () => {

@@ -202,7 +202,7 @@
       },
       "count": {
         "displayName": "Count",
-        "purpose": "Numbers in work-item boxes and friction rings."
+        "purpose": "Numbers in work-item boxes and measure pills."
       }
     },
     "shadows": [],
@@ -226,8 +226,8 @@
     {
       "name": "Friction ring",
       "kind": "custom",
-      "refersTo": "friction-ring",
-      "description": "Where Owner had to step in, with the count; the only orange in the system.",
+      "refersTo": "measure-pill",
+      "description": "A measure the workflow defines, with its short name and count, in the measure's colour; the measure colours mean nothing else.",
       "html": "<svg class=\"ds-mark\" width=\"40\" height=\"40\" viewBox=\"0 0 40 40\"><circle cx=\"20\" cy=\"20\" r=\"14\" fill=\"#0F1311\" stroke=\"#FF7A1A\" stroke-width=\"2.5\"/><text x=\"20\" y=\"25\" text-anchor=\"middle\" fill=\"#FF7A1A\" font-size=\"13\" font-weight=\"700\">2</text></svg>",
       "css": ".ds-mark { background: #0F1311; font-family: Barlow, ui-sans-serif, system-ui, sans-serif; }"
     },
@@ -251,7 +251,7 @@
       "kind": "custom",
       "refersTo": "key",
       "description": "One word per symbol the page draws, floating in the corner.",
-      "html": "<aside class=\"ds-key\"><span><svg width=\"18\" height=\"18\"><rect x=\"4\" y=\"4\" width=\"10\" height=\"10\" rx=\"2.5\" fill=\"#D9DED6\"/></svg>always</span><span class=\"ds-key-sand\"><svg width=\"18\" height=\"18\"><path d=\"M9 2 L16 9 L9 16 L2 9 Z\" fill=\"none\" stroke=\"#E3C97E\" stroke-width=\"1.8\"/></svg>you approve</span><span class=\"ds-key-orange\"><svg width=\"18\" height=\"18\"><circle cx=\"9\" cy=\"9\" r=\"6.5\" fill=\"none\" stroke=\"#FF7A1A\" stroke-width=\"2\"/></svg>you stepped in</span></aside>",
+      "html": "<aside class=\"ds-key\"><span><svg width=\"18\" height=\"18\"><rect x=\"4\" y=\"4\" width=\"10\" height=\"10\" rx=\"2.5\" fill=\"#D9DED6\"/></svg>always</span><span class=\"ds-key-sand\"><svg width=\"18\" height=\"18\"><path d=\"M9 2 L16 9 L9 16 L2 9 Z\" fill=\"none\" stroke=\"#E3C97E\" stroke-width=\"1.8\"/></svg>you approve</span><span class=\"ds-key-orange\"><svg width=\"18\" height=\"18\"><rect x=\"1\" y=\"2\" width=\"16\" height=\"14\" rx=\"7\" fill=\"none\" stroke=\"#FF7A1A\" stroke-width=\"2\"/></svg>policy friction</span></aside>",
       "css": ".ds-key { display: inline-flex; flex-direction: column; gap: 7px; padding: 12px 16px; border-radius: 12px; border: 1px solid #232A25; background: rgb(20 26 22 / 0.92); color: #8E998F; font-family: Barlow, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 600; } .ds-key span { display: flex; align-items: center; gap: 8px; } .ds-key-sand { color: #E3C97E; } .ds-key-orange { color: #FF7A1A; }"
     },
     {
@@ -281,18 +281,18 @@
   ],
   "narrative": {
     "northStar": "The route card",
-    "overview": "Drillmaster's viewer reads like a route card for a disciplined operation: one line that every work\nitem travels, stops where something happens, and marks where it needed Owner. It is smooth and\ntechnical, with hints of military in the palette, the ground and the brand's stencil, never in\ncostume. Owner is easily overloaded, so each screen answers one question and says it with symbols\nbefore words.\n\nDensity is low and calm. A page opens on its answer and lets Owner drill in: by scrolling on the\nWorkflow page, by clicking a step, a row or a mark everywhere else, one level at a time. It never\nzooms, snaps or animates for show. Every claim on screen traces back to the events it came from.\n\nFive pages share the header and the language: the Workflow (the pipeline, where the work items are,\nwhere the friction is), a work item's route, the work items, the changes to the workflow, and the\ncomplaints about Drillmaster itself.",
+    "overview": "Drillmaster's viewer reads like a route card for a disciplined operation: one line that every work\nitem travels, stops where something happens, and marks where it needed Owner. It is smooth and\ntechnical, with hints of military in the palette, the ground and the brand's stencil, never in\ncostume. Owner is easily overloaded, so each screen answers one question and says it with symbols\nbefore words.\n\nDensity is low and calm. A page opens on its answer and lets Owner drill in: by scrolling on the\nWorkflow page, by clicking a step, a row or a mark everywhere else, one level at a time. It never\nzooms, snaps or animates for show. Every claim on screen traces back to the events it came from.\n\nFive pages share the header and the language: the Workflow (the pipeline, where the work items are,\nwhere the measures say it went wrong), a work item's route, the work items, the changes to the workflow, and the\ncomplaints about Drillmaster itself.",
     "keyCharacteristics": [
       "One line through the work: stages and steps on it, splits only where steps are alternatives.",
       "Work items always left of the line, problems always right of it.",
       "Symbols first, a small key and short explanations behind them; text only where a symbol cannot do.",
       "Detail opens one level at a time, under what was clicked; the line runs on beside it.",
-      "Orange means friction, and nothing else."
+      "The measure colours mean what the workflow measures, and nothing else."
     ],
     "rules": [
       {
         "name": "The One Alarm Rule",
-        "body": "Safety orange marks friction and nothing else: not links, not selection, not the active page. If orange appears, Owner had to step in there.",
+        "body": "The measure colours mark what a measure counted and nothing else: not links, not selection, not the active page. If one appears, something the workflow counts as going wrong happened there.",
         "section": "colors"
       },
       {
@@ -319,7 +319,7 @@
       "Don't zoom, snap, or drive animation from the scroll; Owner found it janky.",
       "Don't repeat the overview at the end of the page.",
       "Don't add a status sentence or other text where a symbol already says it (Owner: \"present less\").",
-      "Don't use orange for anything but friction.",
+      "Don't use a measure colour for anything but a measure.",
       "Don't dress the screen in military costume: no camouflage, badges or stencil beyond the brand."
     ]
   }

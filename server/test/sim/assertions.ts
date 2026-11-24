@@ -32,8 +32,8 @@ export interface RunFacts {
     condition_skip?: boolean
     /** A tool capture of this name kept output that a gate links. */
     capture?: string
-    /** The friction judge judged Owner's inputs on delivered work items. */
-    friction?: boolean
+    /** Drillmaster's post mortems judged the workflow's measures. */
+    measures_judged?: boolean
   }
 }
 
@@ -146,10 +146,10 @@ export function checkRun(events: readonly DrillmasterEvent[], facts: RunFacts): 
     checks.push({ name: `the tool capture "${name}" kept output`, ok: captured.length > 0, detail: `${captured.length} traces` })
     checks.push({ name: 'gates link the captures at their step', ok: linked.length > 0, detail: `${linked.length} gates` })
   }
-  if (facts.expects?.friction) {
-    const judged = events.filter((event) => event.type === 'owner_inputs_judged')
-    const friction = judged.flatMap((event) => (event.type === 'owner_inputs_judged' ? event.inputs.filter((input) => input.friction) : []))
-    checks.push({ name: "the friction judge judged Owner's inputs", ok: judged.length > 0, detail: `${judged.length} work items judged, ${friction.length} inputs called friction` })
+  if (facts.expects?.measures_judged) {
+    const judged = events.filter((event) => event.type === 'post_mortem_written' && event.author === 'drillmaster' && event.measured)
+    const occurrences = judged.flatMap((event) => (event.type === 'post_mortem_written' ? (event.measured ?? []).flatMap((judgement) => judgement.occurrences) : []))
+    checks.push({ name: "Drillmaster's post mortems judged the measures", ok: judged.length > 0, detail: `${judged.length} work items judged, ${occurrences.length} occurrences` })
   }
   if (facts.ownerGates?.asked) {
     checks.push({ name: 'Owner gates showed what Owner approves beside the question', ok: facts.ownerGates.withPreview === facts.ownerGates.asked, detail: `${facts.ownerGates.withPreview} of ${facts.ownerGates.asked}` })

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { projectKey } from '../../src/adapters/projects.js'
 import { Drillmaster } from '../../src/app.js'
 import { listen, type RunningServer } from '../../src/daemon/http.js'
+import { VERSION } from '../../src/version.js'
 import { OBJECTIVE, TEST_REPOSITORY, tempDir, testPorts } from '../helpers.js'
 
 const HOOK = path.resolve(import.meta.dirname, '../../../scripts/hook.mjs')
@@ -36,7 +37,7 @@ beforeAll(async () => {
   const place = { url: TEST_REPOSITORY, folder: 'hooks' }
   await writeFile(path.join(project.dir, '.drillmaster'), JSON.stringify({ drillmaster_repository: place.url, folder: place.folder }))
   await mkdir(path.join(home.dir, 'projects', projectKey(place)), { recursive: true })
-  await writeFile(path.join(home.dir, 'projects', projectKey(place), 'daemon.json'), JSON.stringify({ port: server.port, pid: process.pid, url: server.url }))
+  await writeFile(path.join(home.dir, 'projects', projectKey(place), 'daemon.json'), JSON.stringify({ port: server.port, pid: process.pid, url: server.url, version: VERSION }))
   await fetch(`${server.url}/projects/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

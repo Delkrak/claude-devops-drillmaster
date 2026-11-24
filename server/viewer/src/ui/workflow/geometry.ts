@@ -9,7 +9,7 @@ export const STEP_ROW = 80
 export const SPLIT_HEIGHT = 2 * BRANCH_OFFSET + 40
 export const AFTER_SPLIT = 30
 export const ITEM_COLUMN = AXIS - 70
-export const FRICTION_COLUMN = AXIS + 44
+export const MEASURE_COLUMN = AXIS + 44
 
 export function branchPath(leaveY: number, joinY: number, x: number) {
   const curveHeight = 34

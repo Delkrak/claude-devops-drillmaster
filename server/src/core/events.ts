@@ -171,6 +171,8 @@ export interface WorkTrace extends EventEnvelope {
   capture_found_nothing?: string[]
   output_may_be_shortened?: boolean
   prompt?: string
+  /** What Owner answered in AskUserQuestion, each question in full, with Owner's note. */
+  answers?: { question: string; answer: string; notes?: string }[]
   raw?: unknown
 }
 
@@ -279,7 +281,7 @@ export interface Artifact {
   bytes: number
 }
 
-/** The friction judge's verdict on each of Owner's inputs on a work item. */
+/** The friction judge's verdict on each of Owner's inputs on a work item. Drillmaster 0.3 wrote it. */
 export interface OwnerInputsJudged extends EventEnvelope {
   type: 'owner_inputs_judged'
   work_item_id: string
@@ -292,10 +294,42 @@ export interface ComplaintsGrouped extends EventEnvelope {
   groups: { tool: string; summary: string; complaints: string[] }[]
 }
 
+/** Drillmaster 0.3 wrote it. */
 export interface FrictionPlaced extends EventEnvelope {
   type: 'friction_placed'
   work_item_id: string
   inputs: { event: string; step_guid: string | null; why: string }[]
+}
+
+/** Where a judged measure happened on a work item: at a step, or where no step should have caught it. */
+export interface MeasureOccurrence {
+  step_guid: string | null
+  /** The ids of the events it is about. */
+  events: string[]
+  why: string
+}
+
+export interface MeasureJudgement {
+  measure: string
+  occurrences: MeasureOccurrence[]
+}
+
+/** Drillmaster's judgement of the measures on what happened to a work item after its post mortem, such as Owner's corrections after delivery. */
+export interface LateMeasuresJudged extends EventEnvelope {
+  type: 'late_measures_judged'
+  work_item_id: string
+  /** The last event of the work item it judged. */
+  through: string
+  measured: MeasureJudgement[]
+}
+
+/** Owner answered one of Drillmaster's questions with words of their own instead of deciding it. */
+export interface OwnerCommented extends EventEnvelope {
+  type: 'owner_commented'
+  /** Which question: its key (questionKeyOf in state.ts). */
+  question: string
+  work_item_id?: string
+  comment: string
 }
 
 export interface PostMortemWritten extends EventEnvelope {
@@ -305,6 +339,10 @@ export interface PostMortemWritten extends EventEnvelope {
   keep: Feedback[]
   change: Feedback[]
   experiment_reflections: ExperimentReflection[]
+  /** Drillmaster's judgement of each measure the workflow defines; missing when it could not judge them. */
+  measured?: MeasureJudgement[]
+  /** The last event of the work item the judgement read; what came after is judged later. */
+  judged_through?: string
 }
 
 export type DrillmasterEvent =
@@ -325,12 +363,14 @@ export type DrillmasterEvent =
   | InputSet
   | WorkItemDelivered
   | PostMortemWritten
+  | LateMeasuresJudged
   | OwnerInputsJudged
   | FrictionPlaced
   | ComplaintsGrouped
   | RetrospectiveRan
   | OwnerDecided
   | OwnerAsked
+  | OwnerCommented
 
 export type NewEvent = DrillmasterEvent extends infer E
   ? E extends DrillmasterEvent

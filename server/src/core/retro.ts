@@ -1,15 +1,16 @@
 import { z } from 'zod'
-import type { DrillmasterEvent, Proposal, RetroFindings, RetrospectiveRan } from './events.js'
+import type { DrillmasterEvent, MeasureJudgement, Proposal, RetroFindings, RetrospectiveRan } from './events.js'
+import { eventLine, MEASURED_ANSWER_EXAMPLE, measuresToJudge, readMeasuredAnswer } from './judgedMeasures.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, ReflectionInput, resolveFeedback } from './feedback.js'
 import { itemsCountedFor, judgeExperiments } from './experiments.js'
 import { stepUnchanged } from './updates.js'
-import { averageMeasure, BASELINE_WINDOW, currentMeasureName, measureBaseline, measureBaselineSd, MEASURE_NAMES, measureDeliveredItems, rejectionsByRule, type ItemMeasures, type MeasureName } from './measures.js'
+import { averageMeasure, BASELINE_WINDOW, currentMeasureName, eventsOfWorkItem, isCountedMeasure, itemsWithMeasure, judgedMeasuresOf, lastItemsWithMeasure, measureBaseline, measureBaselineSd, measureDeliveredItems, rejectionsByRule, type ItemMeasures } from './measures.js'
 import { frictionJudgementsOf, ownerInputsOf, type OwnerInput } from './ownerInputs.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
 import type { ProjectState, WorkItemState } from './state.js'
 import type { PostMortemArgs } from './work.js'
-import { AT_START, bumpVersion, GateKind, InputOption, InputSetter, PolicyRule, ToolCapture, SkipDecider, UpdateLevel, WorkflowDocument, WorkItemInput, type VersionLevel } from './workflow.js'
+import { AT_START, bumpVersion, GateKind, InputOption, InputSetter, isMeasureOf, JudgedMeasure, PolicyRule, ToolCapture, SkipDecider, UpdateLevel, WorkflowDocument, workflowForReading, WorkItemInput, type VersionLevel } from './workflow.js'
 
 export const RETRO_REVIEW_KIND = 'retrospective'
 export const POST_MORTEM_REVIEW_KIND = 'post_mortem'
@@ -132,7 +133,10 @@ export const WorkflowOp = z.preprocess(
     z.object({ op: z.literal('add_tool_capture'), capture: NewToolCapture }).strict(),
     z.object({ op: z.literal('change_tool_capture'), capture: Ref, command: z.string().min(1).optional(), keep: z.string().min(1).optional() }).strict(),
     z.object({ op: z.literal('remove_tool_capture'), capture: Ref }).strict(),
-    z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.enum(MEASURE_NAMES)).min(1).optional() }).strict(),
+    z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.string().min(1)).min(1).optional() }).strict(),
+    z.object({ op: z.literal('add_measure'), measure: JudgedMeasure }).strict(),
+    z.object({ op: z.literal('change_measure'), measure: z.string().min(1), definition: z.string().min(1).optional(), show: z.boolean().optional(), short: JudgedMeasure.shape.short.optional(), color: JudgedMeasure.shape.color.optional() }).strict(),
+    z.object({ op: z.literal('remove_measure'), measure: z.string().min(1) }).strict(),
     z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
   ]),
 )
@@ -159,13 +163,17 @@ export function levelOfOp(op: WorkflowOp): VersionLevel {
     case 'change_stage':
       return op.if !== undefined ? 'major' : 'minor'
     case 'end_experiment':
+    case 'add_measure':
+    case 'change_measure':
+    case 'remove_measure':
       return 'patch'
     default:
       return 'minor'
   }
 }
 
-export const opensWorkflowExperiment = (ops: readonly WorkflowOp[]) => ops.some((op) => op.op !== 'end_experiment')
+/** A change to what Agent does opens an experiment; ending one, or changing what is measured, doesn't. */
+export const opensWorkflowExperiment = (ops: readonly WorkflowOp[]) => ops.some((op) => !['end_experiment', 'add_measure', 'change_measure', 'remove_measure'].includes(op.op))
 
 export function levelOfOps(ops: readonly WorkflowOp[]): VersionLevel {
   const highest = ops.map(levelOfOp).reduce<VersionLevel>((level, opLevel) => (LEVEL_RANK[opLevel] > LEVEL_RANK[level] ? opLevel : level), 'patch')
@@ -209,6 +217,12 @@ function requireRule(workflow: WorkflowDocument, ruleRef: string) {
 function requireToolCapture(workflow: WorkflowDocument, captureRef: string) {
   const { guid } = resolveForChange(workflow, captureRef, 'capture')
   return workflow.tool_captures.find((capture) => capture.guid === guid)!
+}
+
+function requireMeasure(workflow: WorkflowDocument, name: string) {
+  const measure = workflow.measures.find((candidate) => candidate.name === name)
+  if (!measure) throw new InvalidChange(`The workflow defines no measure "${name}"; it defines ${workflow.measures.map((candidate) => `"${candidate.name}"`).join(', ') || 'none'}.`)
+  return measure
 }
 
 function requireInput(workflow: WorkflowDocument, inputRef: string) {
@@ -350,6 +364,20 @@ export function applyWorkflowOps(current: WorkflowDocument, ops: readonly Workfl
       case 'set_objective':
         workflow.objective = { text: op.text ?? workflow.objective.text, measures: op.measures ?? workflow.objective.measures }
         break
+      case 'add_measure':
+        if (workflow.measures.some((measure) => measure.name === op.measure.name)) throw new InvalidChange(`Measure "${op.measure.name}" already exists; change it instead.`)
+        workflow.measures.push(op.measure)
+        break
+      case 'change_measure': {
+        const { op: _op, measure: measureName, ...measureChanges } = op
+        Object.assign(requireMeasure(workflow, measureName), withoutUndefined(measureChanges))
+        break
+      }
+      case 'remove_measure': {
+        const removed = requireMeasure(workflow, op.measure)
+        workflow.measures = workflow.measures.filter((measure) => measure !== removed)
+        break
+      }
       case 'end_experiment':
         if (!workflow.experiments.some((experiment) => experiment.id === op.id)) throw new InvalidChange(`There is no running workflow experiment ${op.id}.`)
         workflow.experiments = workflow.experiments.filter((experiment) => experiment.id !== op.id)
@@ -374,7 +402,7 @@ export function applyProposal(current: WorkflowDocument, proposal: Proposal, del
   const next = applyWorkflowOps(current, ops)
   if (opensWorkflowExperiment(ops)) {
     const named = currentMeasureName(proposal.measure)
-    const measure: MeasureName = (MEASURE_NAMES as readonly string[]).includes(named) ? (named as MeasureName) : (current.objective.measures[0] ?? 'owner_friction_per_item')
+    const measure = isMeasureOf(next, named) ? named : current.objective.measures[0]!
     const experimentId = Math.max(0, ...current.experiments.map((experiment) => experiment.id), ...next.experiments.map((experiment) => experiment.id)) + 1
     next.experiments.push({
       id: experimentId,
@@ -385,6 +413,7 @@ export function applyProposal(current: WorkflowDocument, proposal: Proposal, del
       measure,
       baseline: measureBaseline(deliveredItems, measure),
       baseline_sd: measureBaselineSd(deliveredItems, measure),
+      ...baselineItemsOf(deliveredItems, measure),
       target: proposal.target ?? null,
       judge_after: proposal.judge_after ?? DEFAULT_JUDGE_AFTER,
       affects: next.stages.flatMap((stage) => stage.steps).filter((step) => !stepUnchanged(current, next, step.guid)).map((step) => step.guid),
@@ -395,8 +424,6 @@ export function applyProposal(current: WorkflowDocument, proposal: Proposal, del
   return { workflow: WorkflowDocument.parse(next), level: levelOfOps(ops) }
 }
 
-/** The workflow as JSON for a reader: GUIDs are Drillmaster's bookkeeping, references are what readers use. */
-export const workflowForReading = (workflow: WorkflowDocument) => JSON.stringify(workflow, (key, value) => (key === 'guid' ? undefined : value), 2)
 
 const noDifference = (change: string, measure: string) => `"${change}" makes no difference to ${measure}.`
 
@@ -420,7 +447,10 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"add_tool_capture","capture":{"name":"tests","command":"npm (run )?test","keep":"|~ \`^# (tests|pass|fail) \` | pattern \`# <what> <count>\`"}}   (what the trace of a Bash or PowerShell call keeps of a matching command's output, instead of its last 20 lines: command is a regular expression found anywhere in the command line (Agent often runs "cd <folder> && npm test", so don't anchor it with ^), keep a pipeline in LogQL's syntax (https://grafana.com/docs/loki/latest/logql/): line filters |= != |~ !~, | json, | logfmt, | pattern, | regexp, field filters like | count > 0, and | line_format. Add one when a gate's claim about a command's output could not be checked)
 {"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
 {"op":"remove_tool_capture","capture":"tests"}
-{"op":"set_objective","text":"...","measures":["owner_friction_per_item"]}
+{"op":"set_objective","text":"...","measures":["gate_rejections_per_item","policy friction"]}   (measures: ones Drillmaster counts, and ones the workflow defines)
+{"op":"add_measure","measure":{"name":"policy friction","short":"PF","color":"orange|rose|violet|sky","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment on it takes its baseline from the work items judged so far, however few)
+{"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show, short, color; work items judged before keep their judgement)
+{"op":"remove_measure","measure":"policy friction"}   (not while the objective or a running experiment uses it)
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 
 export function deliveredSinceLastRetro(state: ProjectState, events: readonly DrillmasterEvent[]) {
@@ -466,16 +496,30 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   const recentItemIds = new Set([...recentDelivered.map((item) => item.work_item_id), ...openItems.map((item) => item.work_item_id)])
   const recentItemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id && recentItemIds.has(event.work_item_id))
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId]!.at : ''
-  const judgements = frictionJudgementsOf(events)
+  const frictionJudgements = frictionJudgementsOf(events)
+  // What Owner said since the last retrospective counts on any work item: a discussion before this one is often in a session still on a delivered one.
   const ownerInputLines = ownerInputsOf(events)
-    .filter((input) => (input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt))
-    .map((input) => ownerInputLine(input, judgements.get(input.event_id)))
+    .filter((input) => input.at > lastRetroAt || (input.work_item_id !== null && recentItemIds.has(input.work_item_id)))
+    .map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)))
+  const drillmasterQuestions = new Set(Object.values(state.ownerAsked).flat())
+  const ownerAnswerLines = events.flatMap((event) =>
+    event.type === 'work_trace' && event.at > lastRetroAt
+      ? (event.answers ?? []).filter((answer) => !drillmasterQuestions.has(answer.question)).map((answer) => `- "${answer.question}": ${answer.answer || '(no option picked)'}${answer.notes ? ` (note: ${answer.notes})` : ''}`)
+      : [],
+  )
+  const judgedMeasures = judgedMeasuresOf(events)
+  const occurrenceLines = [...recentItemIds].flatMap((workItemId) =>
+    (judgedMeasures.get(workItemId) ?? []).flatMap((judgement) =>
+      judgement.occurrences.map((occurrence) => `- ${workItemId} (${state.workItems[workItemId]!.issue}), ${judgement.measure}, ${occurrence.step_guid ? `step ${refOfGuid(workflow, occurrence.step_guid)?.name ?? 'no longer in the workflow'}` : 'no step covers it'}: ${occurrence.why}`),
+    ),
+  )
+  const definedMeasureLines = workflow.measures.map((measure) => `- "${measure.name}" (judged): ${measure.definition}`)
   const reportLines = recentItemEvents
     .filter((event) => ['work_reported', 'gate_verdict', 'review_failed', 'post_mortem_written'].includes(event.type))
     .map((event) => `- ${JSON.stringify(event)}`)
   const measureLines = workflow.objective.measures.map(
     (measure) =>
-      `- ${measure}: last ${recentDelivered.length} items ${averageMeasure(recentDelivered, measure) ?? 'n/a'}; all ${allDelivered.length} items ${averageMeasure(allDelivered, measure) ?? 'n/a'}`,
+      `- ${measure}: last ${itemsWithMeasure(recentDelivered, measure).length} items ${averageMeasure(recentDelivered, measure) ?? 'n/a'}; all ${itemsWithMeasure(allDelivered, measure).length} items ${averageMeasure(allDelivered, measure) ?? 'n/a'}`,
   )
   const experimentLines = judgeExperiments(workflow, allDelivered).map((verdict) => {
     const experiment = workflow.experiments.find((candidate) => candidate.id === verdict.id)!
@@ -493,7 +537,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   return [
     'You are Drillmaster, carrying out a workflow retrospective that Owner called for. The workflow retrospective is the only place the workflow changes.',
     "Open by judging the last retrospective's actions (findings.opening): for each change it applied, did it do what it was meant to, judged by its experiment's verdict and what happened since? Say plainly which ones did not.",
-    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all those a separate judge called friction: where Owner had to step in.",
+    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all the occurrences of the measures Drillmaster judged: what the workflow counts as going wrong, at the step that should have caught it.",
     'Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.',
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
@@ -508,8 +552,10 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     `Current workflow (version ${workflow.version}):`,
     workflowForReading(workflow),
     '',
-    `Measures (Owner's objective: "${workflow.objective.text}"):`,
+    `Measures (Owner's objective: "${workflow.objective.text}"). A judged measure counts only the work items Drillmaster judged it on:`,
     ...measureLines,
+    'The measures the workflow defines, which Drillmaster judges:',
+    ...(definedMeasureLines.length ? definedMeasureLines : ['- none']),
     `Gate rejections per rule, over the work items delivered since the last retrospective: ${Object.entries(rejectionsByRule(recentDelivered)).map(([rule, count]) => `${rule}: ${count}`).join(', ') || 'none'}`,
     '',
     "The last retrospective's actions:",
@@ -521,8 +567,14 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     `Delivered work items since the last retrospective: ${recentDelivered.map((item) => `${item.work_item_id} (${item.issue})`).join(', ') || 'none'}`,
     `Open work items, partly done (their reports and Owner's words below count too): ${openItems.map((item) => `${item.work_item_id} (${item.issue}) at ${item.stage === null ? 'delivery' : `step ${item.stage}.${item.step}`}`).join(', ') || 'none'}`,
     '',
-    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs, with the friction judge's verdict. Owner decides only in AskUserQuestion; an input is a prompt:",
+    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs. Owner decides only in AskUserQuestion; an input is a prompt:",
     ...(ownerInputLines.length ? ownerInputLines : ['- none']),
+    '',
+    "Owner's answers to Agent's own questions in AskUserQuestion since the last retrospective:",
+    ...(ownerAnswerLines.length ? ownerAnswerLines : ['- none']),
+    '',
+    'Occurrences of the judged measures on those work items, each at the step that should have caught it:',
+    ...(occurrenceLines.length ? occurrenceLines : ['- none']),
     '',
     'Work reports, verdicts and post mortems:',
     ...(reportLines.length ? reportLines : ['- none']),
@@ -537,10 +589,11 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
 
 const ROLE_LABELS: Record<OwnerInput['role'], string> = { start: 'started it', resume: 'took it up again', retrospective: 'called a retrospective', input: 'input' }
 
-function ownerInputLine(input: OwnerInput, judgement: { friction: boolean; why: string } | undefined) {
+/** An input with the verdict of the friction judge Drillmaster 0.3 had, when it judged it. */
+function ownerInputLine(input: OwnerInput, frictionJudgement: { friction: boolean; why: string } | undefined) {
   const where = input.work_item_id ? `${input.work_item_id}, ${ROLE_LABELS[input.role]}${input.after_delivery ? ', after delivery' : ''}` : ROLE_LABELS[input.role]
-  const verdict = judgement ? `${judgement.friction ? 'friction' : 'no friction'}: ${judgement.why}` : 'not judged yet'
-  return `- ${where}: "${input.prompt}" (${verdict})`
+  const verdict = frictionJudgement ? ` (${frictionJudgement.friction ? 'friction' : 'no friction'}: ${frictionJudgement.why})` : ''
+  return `- ${where}: "${input.prompt}"${verdict}`
 }
 
 /** Feedback as Drillmaster wrote it: a list of entries, or plain text, which becomes one entry about nothing in particular. */
@@ -580,8 +633,16 @@ function proposalsReliedOn(relies: readonly string[], current: WorkflowDocument,
   return [...dependsOn]
 }
 
+/** How many work items a baseline was taken from, said only when fewer than the baseline window. */
+const baselineItemsOf = (deliveredItems: readonly ItemMeasures[], measure: string) => {
+  const count = lastItemsWithMeasure(deliveredItems, measure).length
+  return count < BASELINE_WINDOW ? { baseline_items: count } : {}
+}
+
 /** Why an experiment on this measure and target could never show an improvement, if it couldn't. */
-function cannotShowImprovement(measure: MeasureName, target: unknown, deliveredItems: readonly ItemMeasures[]) {
+function cannotShowImprovement(measure: string, target: unknown, deliveredItems: readonly ItemMeasures[]) {
+  if (!isCountedMeasure(measure) && deliveredItems.length > 0 && itemsWithMeasure(deliveredItems, measure).length === 0)
+    return `It is judged on ${measure}, which Drillmaster has not judged on any delivered work item yet, so there is nothing to improve on. Judge it on another measure, or wait for a work item judged on it.`
   if (deliveredItems.length === 0) return undefined
   const baseline = measureBaseline(deliveredItems, measure)
   if (baseline === 0) return `It is judged on ${measure}, which is 0 over the last ${Math.min(deliveredItems.length, BASELINE_WINDOW)} delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.`
@@ -613,7 +674,7 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, too
     try {
       const ops = z.array(WorkflowOp).min(1).parse(candidate.ops)
       const named = typeof candidate.measure === 'string' ? currentMeasureName(candidate.measure) : ''
-      const measure = ((MEASURE_NAMES as readonly string[]).includes(named) ? named : workflow.objective.measures[0]!) as MeasureName
+      const measure = isMeasureOf(workflowAfterEarlierProposals, named) ? named : workflow.objective.measures[0]!
       const noImprovement = opensWorkflowExperiment(ops) ? cannotShowImprovement(measure, candidate.target, deliveredItems) : undefined
       if (noImprovement) {
         dropped.push({ change, error: noImprovement })
@@ -652,12 +713,8 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, too
 }
 
 export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDocument, events: readonly DrillmasterEvent[]) {
-  const itemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)
-  const eventLines = itemEvents.map((event) =>
-    event.type === 'work_trace'
-      ? `- ${event.hook}${event.tool ? ` ${event.tool}` : ''}${event.input ? ` ${event.input}` : ''}${event.prompt ? ` Owner: "${event.prompt}"` : ''}`
-      : `- ${JSON.stringify(event)}`,
-  )
+  const itemEvents = eventsOfWorkItem(events, item.work_item_id)
+  const eventLines = itemEvents.map(eventLine)
   const delivered = measureDeliveredItems(events)
   const experimentLines = workflow.experiments.map((experiment) => {
     const counted = itemsCountedFor(experiment, delivered)
@@ -679,25 +736,31 @@ export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDoc
     'Running workflow experiments, and how this work item counts for each (use these counts in experiment_reflections):',
     ...(experimentLines.length ? experimentLines : ['- none']),
     '',
+    ...measuresToJudge(workflow),
+    '',
     `Write keep and change as lists. In each entry, ${FEEDBACK_REFS_HELP}`,
     'Answer with JSON only:',
-    '{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}]}',
+    `{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}],${MEASURED_ANSWER_EXAMPLE}}`,
   ].join('\n')
 }
+
+const withMeasured = (measured: MeasureJudgement[] | undefined) => (measured ? { measured } : {})
 
 const PostMortem = z.object({
   keep: FeedbackAnswer,
   change: FeedbackAnswer,
   experiment_reflections: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(ReflectionInput.loose()).catch([])),
+  measured: z.unknown().optional(),
 })
 
-export function readPostMortemAnswer(answer: unknown, workflow: WorkflowDocument, toolNames: readonly string[]): PostMortemArgs {
+export function readPostMortemAnswer(answer: unknown, workflow: WorkflowDocument, toolNames: readonly string[], itemEventIds: ReadonlySet<string> = new Set()): PostMortemArgs & { measured?: MeasureJudgement[] } {
   const parsed = PostMortem.safeParse(typeof answer === 'string' ? extractFirstJsonObject(answer) : answer)
   if (!parsed.success) throw new InvalidAnswer(`Drillmaster's post mortem is unreadable: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
   return {
     keep: resolveFeedback(workflow, parsed.data.keep, toolNames, 'drop'),
     change: resolveFeedback(workflow, parsed.data.change, toolNames, 'drop'),
     experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text })),
+    ...withMeasured(readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured)),
   }
 }
 

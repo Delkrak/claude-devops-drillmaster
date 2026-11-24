@@ -8,7 +8,7 @@ import type { DrillmasterEvent, StepSkipRequested } from '../../src/core/events.
 import { judgeExperiment } from '../../src/core/experiments.js'
 import type { ItemMeasures } from '../../src/core/measures.js'
 import { renderSessionOutline } from '../../src/core/render.js'
-import { buildPostMortemPrompt, readRetroAnswer } from '../../src/core/retro.js'
+import { applyProposal, buildPostMortemPrompt, readRetroAnswer } from '../../src/core/retro.js'
 import { buildSkipPrompt } from '../../src/core/review.js'
 import { foldState } from '../../src/core/state.js'
 import { EXPERIMENT_1, WORKFLOW_2, WORKFLOW_3 } from '../helpers.js'
@@ -60,11 +60,26 @@ describe('a proposal that could never show an improvement', () => {
 
   it('is dropped when its measure is 0 already, or its target is not below the baseline', () => {
     const delivered = [item(1, 0, []), item(2, 0, [])]
-    expect(readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item'), [], delivered).dropped).toEqual([
-      { change: 'add a step', error: 'It is judged on owner_friction_per_item, which is 0 over the last 2 delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.' },
+    expect(readRetroAnswer(WORKFLOW_2, answer('gate_rejections_per_item'), [], delivered).dropped).toEqual([
+      { change: 'add a step', error: 'It is judged on gate_rejections_per_item, which is 0 over the last 2 delivered work items, so it cannot show an improvement. Judge it on a measure that can still drop.' },
     ])
     expect(readRetroAnswer(WORKFLOW_2, answer('minutes_per_item', 1), [], delivered).dropped[0]!.error).toBe('Its target 1 on minutes_per_item is not below the baseline 1, so meeting it shows no improvement.')
-    expect(readRetroAnswer(WORKFLOW_2, answer('owner_corrections_per_item', 0), [], [item(1, 2, []), item(2, 1, [])]).proposals[0]).toMatchObject({ measure: 'owner_friction_per_item' })
+    const fiveJudged = [1, 2, 3, 4, 5].map((n) => item(n, n % 2 ? 2 : 1, []))
+    expect(readRetroAnswer(WORKFLOW_2, answer('owner_corrections_per_item', 0), [], fiveJudged).proposals[0]).toMatchObject({ measure: 'owner_friction_per_item' })
+  })
+
+  it('is kept on a judged measure with fewer than five judged work items, its baseline saying how many', () => {
+    const oneJudged = [item(1, 2, [])]
+    const read = readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item', 0), [], oneJudged)
+    expect(read.dropped).toEqual([])
+    expect(applyProposal(WORKFLOW_2, read.proposals[0]!, oneJudged, '2026-11-24').workflow.experiments.at(-1)).toMatchObject({ measure: 'owner_friction_per_item', baseline: 2, baseline_items: 1 })
+  })
+
+  it('is dropped on a judged measure no delivered work item was judged on', () => {
+    const unjudged = [{ ...item(1, 2, []), values: { gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 1 } }]
+    expect(readRetroAnswer(WORKFLOW_2, answer('owner_friction_per_item', 0), [], unjudged).dropped).toEqual([
+      { change: 'add a step', error: 'It is judged on owner_friction_per_item, which Drillmaster has not judged on any delivered work item yet, so there is nothing to improve on. Judge it on another measure, or wait for a work item judged on it.' },
+    ])
   })
 })
 

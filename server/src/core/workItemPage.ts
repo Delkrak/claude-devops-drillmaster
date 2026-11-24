@@ -1,20 +1,13 @@
 import { conditionInWords, describeInputsOf, parseCondition } from './conditions.js'
 import type { DrillmasterEvent, GateSubmitted, GateVerdict, StepSkipDecided, WorkItemDelivered, WorkReported, WorkTrace } from './events.js'
-import { frictionPlacementsOf } from './frictionPlacement.js'
-import { frictionJudgementsOf, isFriction, ownerInputsOf } from './ownerInputs.js'
+import { countsByMeasure, marksOf, type Mark, type ShownMeasure } from './marks.js'
 import { foldState } from './state.js'
 import { firstApplyingPosition, inputValuesOf, workflowOfWorkItem } from './work.js'
 import type { WorkStep } from './workflow.js'
 import { alternativeOf } from './workflowPage.js'
 
-export interface StepIn {
-  event_id: string
-  at: string
-  prompt: string
-  after_delivery: boolean
-  why: string
-  placed_why: string | null
-}
+/** One occurrence of a shown measure on the work item. */
+export type ItemMark = Omit<Mark, 'work_item_id' | 'step_guid'>
 
 export interface WorkItemPageStep {
   n: number
@@ -37,7 +30,8 @@ export interface WorkItemPageStep {
     kept_output: { tool: string; name: string; lines: string[] }[]
   }
   calls: { at: string; tool: string; did: string; failed: boolean }[]
-  step_ins: StepIn[]
+  /** What the shown measures counted that this step should have caught. */
+  marks: ItemMark[]
 }
 
 export interface WorkItemPage {
@@ -50,7 +44,9 @@ export interface WorkItemPage {
   workflow_version: string
   stages: { n: number; guid: string; name: string; steps: WorkItemPageStep[] }[]
   delivered: { at: string; summary: string | null; added_steps: { at: string; text: string; why: string }[]; post_mortems: { author: string; keep: string[]; change: string[] }[] } | null
-  step_ins_unplaced: StepIn[]
+  measures: ShownMeasure[]
+  /** What the shown measures counted that no step of the workflow covers. */
+  marks_no_step: ItemMark[]
 }
 
 const MAX_CALL_TEXT_LENGTH = 110
@@ -88,17 +84,8 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
   const currentPosition = item.status === 'delivered' || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item))
   const inputValues = inputValuesOf(item)
 
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt)
-  const frictionPlacements = frictionPlacementsOf(eventsUntilAt)
-  const stepIns = ownerInputsOf(eventsUntilAt)
-    .filter((input) => input.work_item_id === workItemId && isFriction(input, frictionJudgements))
-    .map((input) => {
-      const placement = frictionPlacements.get(input.event_id)
-      return {
-        stepIn: { event_id: input.event_id, at: input.at, prompt: input.prompt, after_delivery: input.after_delivery, why: frictionJudgements.get(input.event_id)?.why ?? '', placed_why: placement?.step_guid ? placement.why : null },
-        stepGuid: placement?.step_guid ?? null,
-      }
-    })
+  const { measures, marks } = marksOf(eventsUntilAt, state.workflow!, workItemId)
+  const itemMark = ({ work_item_id: _workItemId, step_guid: _stepGuid, ...mark }: Mark): ItemMark => mark
 
   // A gate call is traced after the work item has moved on; the step it submitted is in its input. An
   // input cut short when it was traced is not JSON: that call is placed by where it was traced.
@@ -161,11 +148,11 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
             .flatMap((trace) => (trace.captures ?? []).map((capture) => ({ tool: unprefixedToolName(trace.tool ?? ''), name: capture.name, lines: [...new Set(capture.lines)] }))),
         },
         calls: calls.map((call) => ({ at: call.at, tool: unprefixedToolName(call.tool ?? ''), did: whatCallDid(call.input, projectDir), failed: call.error === true || call.hook === 'PostToolUseFailure' })),
-        step_ins: stepIns.filter(({ stepGuid }) => stepGuid === step.guid).map(({ stepIn }) => stepIn),
+        marks: marks.filter((mark) => mark.step_guid === step.guid).map(itemMark),
       }
     }),
   }))
-  const pinnedStepInIds = new Set(stages.flatMap((stage) => stage.steps.flatMap((step) => step.step_ins.map((stepIn) => stepIn.event_id))))
+  const stepGuidsOnRoute = new Set(stages.flatMap((stage) => stage.steps.map((step) => step.guid)))
 
   const delivery = itemEvents.find((event): event is WorkItemDelivered => event.type === 'work_item_delivered')
   return {
@@ -185,7 +172,8 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
           post_mortems: itemEvents.flatMap((event) => (event.type === 'post_mortem_written' ? [{ author: event.author, keep: event.keep.map((feedback) => feedback.text), change: event.change.map((feedback) => feedback.text) }] : [])),
         }
       : null,
-    step_ins_unplaced: stepIns.filter(({ stepIn }) => !pinnedStepInIds.has(stepIn.event_id)).map(({ stepIn }) => stepIn),
+    measures,
+    marks_no_step: marks.filter((mark) => !mark.step_guid || !stepGuidsOnRoute.has(mark.step_guid)).map(itemMark),
   }
 }
 
@@ -202,10 +190,10 @@ const oneLineSummaryOf = (description: string) =>
 export function workItemsListView(events: readonly DrillmasterEvent[], at?: string) {
   const eventsUntilAt = at ? events.filter((event) => event.at <= at) : events
   const state = foldState(eventsUntilAt)
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt)
-  const frictionCountByItemId = new Map<string, number>()
-  for (const input of ownerInputsOf(eventsUntilAt)) if (input.work_item_id && isFriction(input, frictionJudgements)) frictionCountByItemId.set(input.work_item_id, (frictionCountByItemId.get(input.work_item_id) ?? 0) + 1)
-  return Object.values(state.workItems)
+  const { measures, marks } = state.workflow ? marksOf(eventsUntilAt, state.workflow) : { measures: [], marks: [] }
+  const marksByItemId = new Map<string, Mark[]>()
+  for (const mark of marks) marksByItemId.set(mark.work_item_id, [...(marksByItemId.get(mark.work_item_id) ?? []), mark])
+  const items = Object.values(state.workItems)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .map((item) => {
       const workflow = workflowOfWorkItem(state, item)
@@ -219,8 +207,9 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
         status: item.status,
         started_at: item.started_at,
         at_step: currentStep ? currentStep.name : null,
-        friction: frictionCountByItemId.get(item.work_item_id) ?? 0,
+        marks: countsByMeasure(measures, marksByItemId.get(item.work_item_id) ?? []),
       }
     })
+  return { measures, items }
 }
 export type WorkItemsList = ReturnType<typeof workItemsListView>

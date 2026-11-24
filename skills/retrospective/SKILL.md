@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's inputs and the measures; Owner decides each proposal in AskUserQuestion, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
+description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's inputs and the measures (including the ones the workflow defines, and where each occurred); Owner decides each proposal in AskUserQuestion, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
 ---
 
 # Workflow retrospective
@@ -25,8 +25,10 @@ Drillmaster's findings, and you don't decide for Owner.
 3. **Ask Owner to decide** with AskUserQuestion, passing the result's `ask_owner` exactly as it is:
    one question per proposal, Approve or Decline, each with the proposal beside it as a preview,
    and no `answers` (Owner gives them). A call that changes the question or its previews is blocked.
-   Only Approve with nothing added approves a proposal; a note or a typed answer declines it, with
-   Owner's words as the reason. Owner's own answer decides. Yours can't, and neither can Owner's
+   Approve with nothing added approves a proposal, and Decline declines it, a note being the reason.
+   A note on Approve, or words Owner typed, decide nothing: Drillmaster tells you what Owner said.
+   Talk it through with Owner, then ask again with the question it gives you, which shows Owner's
+   note. Owner's own answer decides. Yours can't, and neither can Owner's
    chat words: if Owner writes "approve 1", ask the question in AskUserQuestion.
 4. **Apply the approved proposals:** `workflow_retrospective({action: "apply"})` applies every
    one Owner approved, in order.
