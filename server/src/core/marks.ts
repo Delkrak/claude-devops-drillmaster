@@ -45,7 +45,7 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
   const shown = workflow.measures.filter((measure) => measure.show)
   const promptByEventId = new Map(events.flatMap((event) => (event.type === 'work_trace' && event.prompt !== undefined ? [[event.id, event.prompt] as const] : [])))
   const atByEventId = new Map(events.map((event) => [event.id, event.at]))
-  const marks: Mark[] = []
+  const occurrenceMarks: Mark[] = []
 
   for (const event of events) {
     if (event.type !== 'post_mortem_written' && event.type !== 'late_measures_judged') continue
@@ -53,7 +53,7 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
     for (const judgement of event.measured ?? []) {
       if (!shown.some((measure) => measure.name === judgement.measure)) continue
       for (const occurrence of judgement.occurrences) {
-        marks.push({
+        occurrenceMarks.push({
           measure: judgement.measure,
           work_item_id: event.work_item_id,
           step_guid: occurrence.step_guid,
@@ -68,7 +68,7 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
   }
   // Late occurrences count only on top of a post mortem that judged the measures; a work item judged so has no old friction.
   const judgedItemIds = new Set(judgedMeasuresOf(events).keys())
-  const judgedMarks = marks.filter((mark) => judgedItemIds.has(mark.work_item_id))
+  const judgedMarks = occurrenceMarks.filter((mark) => judgedItemIds.has(mark.work_item_id))
   const hasOldFriction = (workItemId: string, drillmasterVersion: string | undefined) => !judgedItemIds.has(workItemId) && writtenBeforeMeasuresWereJudged(drillmasterVersion)
 
   const oldMarks: Mark[] = []

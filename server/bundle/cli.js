@@ -12,6 +12,8 @@ import {
   InvalidReference,
   JudgedMeasure,
   MAX_ARTIFACT_BYTES,
+  MEASURE_COLORS,
+  OWNER_FRICTION,
   PolicyRule,
   RepositoryConflict,
   RepositoryPublisher,
@@ -35,6 +37,7 @@ import {
   describeInputsOf,
   discriminatedUnion,
   evaluateCondition,
+  eventsOfWorkItem,
   external_exports,
   findOrStartProjectServer,
   findRule,
@@ -90,7 +93,7 @@ import {
   workTracesOf,
   workflowForReading,
   writtenBeforeMeasuresWereJudged
-} from "./chunk-IMON7JRT.js";
+} from "./chunk-Z5V2KKQS.js";
 import {
   __commonJS,
   __toESM,
@@ -7341,7 +7344,7 @@ import path from "node:path";
 var REPORT_KINDS = ["impediment", "better_way", "decision", "question", "assumption", "required", "added_step"];
 
 // src/core/experiments.ts
-var itemsCountedFor = (experiment, deliveredItems) => deliveredItems.filter(
+var itemsCountedFor = (experiment, deliveredItems) => itemsWithMeasure(deliveredItems, experiment.measure).filter(
   (item) => compareVersions(item.workflow_version, experiment.version) >= 0 && (!experiment.affects?.length || item.passed_step_guids.some((guid) => experiment.affects.includes(guid)))
 );
 function judgeExperiment(experimentAsWritten, deliveredItems, overlapping = [], workflow) {
@@ -8506,13 +8509,16 @@ function measuresToJudge(workflow) {
 }
 var MEASURED_ANSWER_EXAMPLE = '"measured":[{"measure":"<its name>","occurrences":[{"step":"3.1","events":["<event id>"],"why":"<one sentence>"}]}]';
 var Occurrence = external_exports.object({ step: external_exports.unknown(), events: external_exports.array(external_exports.string()).catch([]), why: external_exports.string().catch("") });
-var MeasuredAnswer = external_exports.array(external_exports.object({ measure: external_exports.string(), occurrences: external_exports.array(Occurrence.loose()).catch([]) }).loose()).catch([]);
+var MeasuredAnswer = external_exports.array(external_exports.object({ measure: external_exports.string(), occurrences: external_exports.array(Occurrence.loose()).catch([]) }).loose());
 var stepGuidOfAnswer = (workflow, step) => {
   const stepRef = typeof step === "string" ? /^(?:step\s+)?(\d+)\.(\d+)$/.exec(step.trim()) : null;
   return stepRef ? stepGuidAt(workflow, Number(stepRef[1]), Number(stepRef[2])) ?? null : null;
 };
 function readMeasuredAnswer(workflow, itemEventIds, measured) {
-  const answered = MeasuredAnswer.parse(measured);
+  if (workflow.measures.length === 0) return [];
+  const parsed = MeasuredAnswer.safeParse(measured);
+  if (!parsed.success) return void 0;
+  const answered = parsed.data;
   return workflow.measures.map((measure) => ({
     measure: measure.name,
     occurrences: answered.filter((candidate) => candidate.measure === measure.name).flatMap((candidate) => candidate.occurrences).map((occurrence) => ({ step_guid: stepGuidOfAnswer(workflow, occurrence.step), events: occurrence.events.filter((id) => itemEventIds.has(id)), why: occurrence.why }))
@@ -8520,14 +8526,19 @@ function readMeasuredAnswer(workflow, itemEventIds, measured) {
 }
 var LATE_MEASURES_REVIEW_KIND = "late_measures";
 var eventLine = (event) => event.type === "work_trace" ? `- ${event.id} ${event.hook}${event.tool ? ` ${event.tool}` : ""}${event.input ? ` ${event.input}` : ""}${event.prompt ? ` Owner: "${event.prompt}"` : ""}` : `- ${JSON.stringify(event)}`;
-var isEventOf = (workItemId) => (event) => "work_item_id" in event && event.work_item_id === workItemId;
 function itemsToJudgeLate(events) {
-  const judged = judgedMeasuresOf(events);
-  return [...judged.keys()].flatMap((workItemId) => {
-    const itemEvents = events.filter(isEventOf(workItemId));
-    const lastJudging = itemEvents.findLastIndex((event) => event.type === "post_mortem_written" && event.author === "drillmaster" || event.type === "late_measures_judged");
-    const unjudged = itemEvents.slice(lastJudging + 1);
-    const ownerSpoke = unjudged.some((event) => event.type === "work_trace" && event.hook === "UserPromptSubmit");
+  const ownerInputIds = new Set(ownerInputsOf(events).flatMap((input) => input.role === "input" && input.work_item_id ? [`${input.work_item_id} ${input.event_id}`] : []));
+  return [...judgedMeasuresOf(events).keys()].flatMap((workItemId) => {
+    const itemEvents = eventsOfWorkItem(events, workItemId);
+    const lastJudgedIndex = Math.max(
+      ...itemEvents.map((event, index) => {
+        if (event.type === "late_measures_judged") return itemEvents.findIndex((candidate) => candidate.id === event.through);
+        if (event.type !== "post_mortem_written" || event.author !== "drillmaster") return -1;
+        return event.judged_through ? itemEvents.findIndex((candidate) => candidate.id === event.judged_through) : index;
+      })
+    );
+    const unjudged = itemEvents.slice(lastJudgedIndex + 1).filter((event) => event.type !== "post_mortem_written" && event.type !== "late_measures_judged");
+    const ownerSpoke = unjudged.some((event) => ownerInputIds.has(`${workItemId} ${event.id}`));
     return ownerSpoke ? [{ workItemId, unjudged }] : [];
   });
 }
@@ -9151,7 +9162,7 @@ function readRetroAnswer(workflow, answer, toolNames = [], deliveredItems = []) 
   return { findings, proposals, dropped };
 }
 function buildPostMortemPrompt(item, workflow, events) {
-  const itemEvents = events.filter((event) => "work_item_id" in event && event.work_item_id === item.work_item_id);
+  const itemEvents = eventsOfWorkItem(events, item.work_item_id);
   const eventLines = itemEvents.map(eventLine);
   const delivered = measureDeliveredItems(events);
   const experimentLines = workflow.experiments.map((experiment) => {
@@ -9181,6 +9192,7 @@ function buildPostMortemPrompt(item, workflow, events) {
     `{"keep":[{"refs":["step 1.1"],"text":"what in the workflow helped"}],"change":[{"refs":["rule pr 1.1"],"text":"what got in the way, and how to change it"}],"experiment_reflections":[{"experiment":1,"text":"how this running workflow experiment did"}],${MEASURED_ANSWER_EXAMPLE}}`
   ].join("\n");
 }
+var withMeasured = (measured) => measured ? { measured } : {};
 var PostMortem = external_exports.object({
   keep: FeedbackAnswer,
   change: FeedbackAnswer,
@@ -9194,7 +9206,7 @@ function readPostMortemAnswer(answer, workflow, toolNames, itemEventIds = /* @__
     keep: resolveFeedback(workflow, parsed.data.keep, toolNames, "drop"),
     change: resolveFeedback(workflow, parsed.data.change, toolNames, "drop"),
     experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text })),
-    measured: readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured)
+    ...withMeasured(readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured))
   };
 }
 var toRetroView = (event, dropped = []) => ({
@@ -9652,18 +9664,19 @@ function changesView(events, at) {
 // src/core/marks.ts
 var OLD_FRICTION = "friction (old)";
 var OLD_FRICTION_DEFINITION = "Owner's inputs a separate judge called friction, and Owner gates Owner sent back, before the workflow defined its measures.";
-function marksOf(events, workflow) {
+function marksOf(events, workflow, workItemId) {
+  const isOfTheWorkItem = (id) => workItemId === void 0 || id === workItemId;
   const shown = workflow.measures.filter((measure) => measure.show);
   const promptByEventId = new Map(events.flatMap((event) => event.type === "work_trace" && event.prompt !== void 0 ? [[event.id, event.prompt]] : []));
   const atByEventId = new Map(events.map((event) => [event.id, event.at]));
-  const marks = [];
+  const occurrenceMarks = [];
   for (const event of events) {
     if (event.type !== "post_mortem_written" && event.type !== "late_measures_judged") continue;
-    if (event.type === "post_mortem_written" && event.author !== "drillmaster") continue;
+    if (event.type === "post_mortem_written" && event.author !== "drillmaster" || !isOfTheWorkItem(event.work_item_id)) continue;
     for (const judgement of event.measured ?? []) {
       if (!shown.some((measure) => measure.name === judgement.measure)) continue;
       for (const occurrence of judgement.occurrences) {
-        marks.push({
+        occurrenceMarks.push({
           measure: judgement.measure,
           work_item_id: event.work_item_id,
           step_guid: occurrence.step_guid,
@@ -9677,23 +9690,24 @@ function marksOf(events, workflow) {
     }
   }
   const judgedItemIds = new Set(judgedMeasuresOf(events).keys());
-  const judgedMarks = marks.filter((mark) => judgedItemIds.has(mark.work_item_id));
-  const hasOldFriction = (workItemId, drillmasterVersion) => !judgedItemIds.has(workItemId) && writtenBeforeMeasuresWereJudged(drillmasterVersion);
+  const judgedMarks = occurrenceMarks.filter((mark) => judgedItemIds.has(mark.work_item_id));
+  const hasOldFriction = (workItemId2, drillmasterVersion) => !judgedItemIds.has(workItemId2) && writtenBeforeMeasuresWereJudged(drillmasterVersion);
   const oldMarks = [];
   for (const event of events) {
-    if (event.type !== "gate_verdict" || event.by !== "owner" || event.accepted || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue;
+    if (event.type !== "gate_verdict" || event.by !== "owner" || event.accepted || !isOfTheWorkItem(event.work_item_id) || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue;
     oldMarks.push({ measure: OLD_FRICTION, work_item_id: event.work_item_id, step_guid: event.step_guid ?? null, at: event.at, after_delivery: false, why: `you sent it back at your gate: ${event.why}`, placed_why: null, prompts: [] });
   }
   const frictionJudgements = frictionJudgementsOf(events);
   const frictionPlacements = frictionPlacementsOf(events);
   const versionByEventId = new Map(events.map((event) => [event.id, event.drillmaster_version]));
   for (const input of ownerInputsOf(events)) {
-    if (!input.work_item_id || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue;
+    if (!input.work_item_id || !isOfTheWorkItem(input.work_item_id) || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue;
     const placement = frictionPlacements.get(input.event_id);
     oldMarks.push({
       measure: OLD_FRICTION,
       work_item_id: input.work_item_id,
-      step_guid: placement?.step_guid ?? null,
+      // Unplaced, it stays where it happened.
+      step_guid: placement ? placement.step_guid : input.step_guid ?? null,
       at: input.at,
       after_delivery: input.after_delivery,
       why: frictionJudgements.get(input.event_id)?.why ?? "",
@@ -9752,7 +9766,7 @@ function drillmasterPageView(events, toolNames, at) {
   });
   const latestComplaintOf = (tool) => [...tool.problems.flatMap((problem) => problem.complaints), ...tool.ungrouped].sort(newestFirst)[0];
   tools.sort((a, b) => b.heard - a.heard || newestFirst(latestComplaintOf(a), latestComplaintOf(b)));
-  const uncovered = (state.workflow ? marksOf(eventsUntilAt, state.workflow).marks : []).filter((mark) => mark.step_guid === null).map((mark, index) => {
+  const uncovered = (state.workflow ? marksOf(eventsUntilAt, state.workflow).marks : []).filter((mark) => mark.step_guid === null && (mark.measure !== OLD_FRICTION || mark.placed_why !== null)).map((mark, index) => {
     const said = mark.prompts.map((prompt) => `"${prompt}" `).join("");
     return mark.measure === OLD_FRICTION ? { id: `uncovered#${index}`, at: mark.at, source: "your step-in", work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${said}${mark.placed_why ?? mark.why}` } : { id: `uncovered#${index}`, at: mark.at, source: "a measure", work_item_id: mark.work_item_id, issue: issueOf(mark.work_item_id), text: `${mark.measure}: ${said}${mark.why}` };
   });
@@ -9897,8 +9911,7 @@ function workItemPageView(events, workItemId, at) {
   const itemEvents = eventsUntilAt.filter((event) => "work_item_id" in event && event.work_item_id === workItemId);
   const currentPosition = item.status === "delivered" || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item));
   const inputValues = inputValuesOf(item);
-  const { measures, marks: allMarks } = marksOf(eventsUntilAt, state.workflow);
-  const marks = allMarks.filter((mark) => mark.work_item_id === workItemId);
+  const { measures, marks } = marksOf(eventsUntilAt, state.workflow, workItemId);
   const itemMark = ({ work_item_id: _workItemId, step_guid: _stepGuid, ...mark }) => mark;
   const submittedStepRefByTraceId = /* @__PURE__ */ new Map();
   for (const event of itemEvents) {
@@ -9987,6 +10000,8 @@ function workItemsListView(events, at) {
   const eventsUntilAt = at ? events.filter((event) => event.at <= at) : events;
   const state = foldState(eventsUntilAt);
   const { measures, marks } = state.workflow ? marksOf(eventsUntilAt, state.workflow) : { measures: [], marks: [] };
+  const marksByItemId = /* @__PURE__ */ new Map();
+  for (const mark of marks) marksByItemId.set(mark.work_item_id, [...marksByItemId.get(mark.work_item_id) ?? [], mark]);
   const items = Object.values(state.workItems).sort((a, b) => b.started_at.localeCompare(a.started_at)).map((item) => {
     const workflow = workflowOfWorkItem(state, item);
     const currentPosition = item.status === "delivered" || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item));
@@ -9999,10 +10014,7 @@ function workItemsListView(events, at) {
       status: item.status,
       started_at: item.started_at,
       at_step: currentStep ? currentStep.name : null,
-      marks: countsByMeasure(
-        measures,
-        marks.filter((mark) => mark.work_item_id === item.work_item_id)
-      )
+      marks: countsByMeasure(measures, marksByItemId.get(item.work_item_id) ?? [])
     };
   });
   return { measures, items };
@@ -10259,7 +10271,7 @@ var TOOLS = [
             properties: {
               name: { type: "string", description: 'In plain words, e.g. "policy friction".' },
               short: { type: "string", description: 'What its ring on the viewer says before the count: 1 to 3 capital letters, e.g. "PF".' },
-              color: { type: "string", enum: ["orange", "rose", "violet", "sky"], description: "The colour the viewer draws it in." },
+              color: { type: "string", enum: [...MEASURE_COLORS], description: "The colour the viewer draws it in." },
               definition: { type: "string", description: "What counts as one occurrence, in Owner's words." },
               show: { type: "boolean", description: "Whether the viewer's pages show where it happened." }
             },
@@ -10482,7 +10494,11 @@ var Drillmaster = class {
    */
   async init(projectDir, objective, repository, definedMeasures = []) {
     const parsedWorkflow = parseWorkflowZero(objective, definedMeasures);
-    if (!parsedWorkflow.success) throw new UserError(`Invalid objective: ${external_exports.prettifyError(parsedWorkflow.error)}`);
+    if (!parsedWorkflow.success) {
+      const namesOwnerFriction = JSON.stringify(objective).includes(`"${OWNER_FRICTION.name}"`);
+      const hint = namesOwnerFriction ? ` ${OWNER_FRICTION.name} is no longer built in: define it, or measures of your own, in define_measures.` : "";
+      throw new UserError(`Invalid objective: ${external_exports.prettifyError(parsedWorkflow.error)}${hint}`);
+    }
     const workflow = parsedWorkflow.data;
     const existing = this.ports.projects.resolve(projectDir);
     const place = { url: repository.url, folder: repository.folder ?? existing?.repository?.folder ?? defaultFolderOf(projectDir) };
@@ -10855,7 +10871,7 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
     const state = foldState(events);
     const item = state.workItems[workItemId];
     const workflow = workflowOfWorkItem(state, item);
-    const itemEventIds = new Set(events.filter((event) => "work_item_id" in event && event.work_item_id === workItemId).map((event) => event.id));
+    const itemEvents = eventsOfWorkItem(events, workItemId);
     let postMortem;
     try {
       const { answer } = await this.ports.reviewer.review({
@@ -10863,7 +10879,8 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
         prompt: buildPostMortemPrompt(item, workflow, events),
         minTimeoutMs: POST_MORTEM_TIMEOUT_MS
       });
-      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES, itemEventIds);
+      const read = readPostMortemAnswer(answer, workflow, TOOL_NAMES, new Set(itemEvents.map((event) => event.id)));
+      postMortem = read.measured ? { ...read, judged_through: itemEvents.at(-1).id } : read;
     } catch (error) {
       if (onFailure === "retry at the retrospective") return;
       const reason = error instanceof Error ? error.message : String(error);
@@ -10887,6 +10904,7 @@ ${renderAskOwner(askOwner)}`, { ...answer, ask_owner: askOwner });
     } catch {
       return;
     }
+    if (!measured) return;
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: "late_measures_judged", work_item_id: workItemId, through: unjudged.at(-1).id, measured }));
   }
   async runRetrospective(projectDir) {

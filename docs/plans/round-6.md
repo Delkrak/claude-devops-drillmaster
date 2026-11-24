@@ -89,7 +89,7 @@ Add `docs/plans/round-6.md` and its row in `docs/plans/README.md`.
 
 ### 8. Finish
 - 🟩 `/code-review` on the round's diff: ten findings, all fixed with tests.
-- 🟧 A clean-code pass.
+- 🟩 A clean-code pass.
 - 🟩 README, DESIGN.md, `.impeccable/design.json` and the skills updated.
 - 🟩 Version 0.4.0, bundle rebuilt (3828312).
 - 🟧 Local CI on Linux in Docker (Windows: green).

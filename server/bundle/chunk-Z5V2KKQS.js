@@ -20301,6 +20301,7 @@ var zeroCounts = () => ({
 });
 var judgedValues = (judgements) => Object.fromEntries(judgements.map((judgement) => [judgement.measure, judgement.occurrences.length]));
 var writtenBeforeMeasuresWereJudged = (drillmasterVersion) => drillmasterVersion === void 0 || compareVersions(drillmasterVersion, FIRST_VERSION_JUDGING_MEASURES) < 0;
+var eventsOfWorkItem = (events, workItemId) => events.filter((event) => "work_item_id" in event && event.work_item_id === workItemId);
 function judgedMeasuresOf(events) {
   const judgementsByItemId = /* @__PURE__ */ new Map();
   for (const event of events) {
@@ -20308,10 +20309,9 @@ function judgedMeasuresOf(events) {
     if (event.type !== "late_measures_judged") continue;
     const judgements = judgementsByItemId.get(event.work_item_id);
     if (!judgements) continue;
-    judgementsByItemId.set(
-      event.work_item_id,
-      judgements.map((judgement) => ({ ...judgement, occurrences: [...judgement.occurrences, ...event.measured.find((late) => late.measure === judgement.measure)?.occurrences ?? []] }))
-    );
+    const merged = judgements.map((judgement) => ({ ...judgement, occurrences: [...judgement.occurrences, ...event.measured.find((late) => late.measure === judgement.measure)?.occurrences ?? []] }));
+    const newlyJudged = event.measured.filter((late) => !judgements.some((judgement) => judgement.measure === late.measure));
+    judgementsByItemId.set(event.work_item_id, [...merged, ...newlyJudged]);
   }
   return judgementsByItemId;
 }
@@ -21626,8 +21626,10 @@ export {
   compareVersions,
   COUNTED_MEASURES,
   isCountedMeasure,
+  OWNER_FRICTION,
   currentMeasureName,
   writtenBeforeMeasuresWereJudged,
+  eventsOfWorkItem,
   judgedMeasuresOf,
   measureDeliveredItems,
   rejectionsByRule,
@@ -21647,6 +21649,7 @@ export {
   InputOption,
   WorkItemInput,
   ToolCapture,
+  MEASURE_COLORS,
   JudgedMeasure,
   WorkflowDocument,
   parseWorkflowZero,
