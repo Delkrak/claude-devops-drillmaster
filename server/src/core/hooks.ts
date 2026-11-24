@@ -276,9 +276,11 @@ function briefSession(state: ProjectState, item: WorkItemState | undefined, cont
   const lines = [
     `Drillmaster runs this project (workflow version ${workflow.version}). Owner's objective: "${workflow.objective.text}".`,
     'Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.',
-    item
-      ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
-      : 'Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
+    item?.status === 'delivered'
+      ? `Your last work item, ${item.work_item_id} (${item.issue}), is delivered. What Owner asks for on it still counts on it; start new work with work_start, or take up one from an earlier session with work_resume.`
+      : item
+        ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? 'no work stage yet' : `work step ${item.stage}.${item.step}`}.`
+        : 'Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how.',
   ]
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`)

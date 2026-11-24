@@ -57,6 +57,15 @@ describe('handling hooks', () => {
     ])
   })
 
+  it('tells a session on a work item that is delivered that it is, not that it is at no work stage yet', () => {
+    const bound = [INIT, { id: 'ev_s', at, type: 'session_registered', session_id: 's1', source: 'startup' }, STARTED, { id: 'ev_b', at, type: 'session_bound', session_id: 's1', work_item_id: 'wi_1' }] as DrillmasterEvent[]
+    const brief = (events: DrillmasterEvent[]) => (handleHook(foldState(events), 'SessionStart', { session_id: 's1', source: 'resume' }, false).output as any).hookSpecificOutput.additionalContext as string
+    expect(brief(bound)).toMatch(/You are on work item wi_1/)
+    const delivered = brief([...bound, { id: 'ev_d', at, type: 'work_item_delivered', work_item_id: 'wi_1', pr: 'local' } as DrillmasterEvent])
+    expect(delivered).toMatch(/Your last work item, wi_1 \(#12\), is delivered\..*start new work with work_start/)
+    expect(delivered).not.toMatch(/You are on work item/)
+  })
+
   it('records Owner\'s words and keeps raw payloads only when recording', () => {
     const payload = { session_id: 's1', prompt: 'you never ran the tests' }
     const plain = handleHook(foldState([INIT]), 'UserPromptSubmit', payload, false)
