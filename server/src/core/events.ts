@@ -171,6 +171,8 @@ export interface WorkTrace extends EventEnvelope {
   capture_found_nothing?: string[]
   output_may_be_shortened?: boolean
   prompt?: string
+  /** What Owner answered in AskUserQuestion, each question in full, with Owner's note. */
+  answers?: { question: string; answer: string; notes?: string }[]
   raw?: unknown
 }
 

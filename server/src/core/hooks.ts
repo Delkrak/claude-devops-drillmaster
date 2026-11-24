@@ -171,6 +171,10 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
     }
   }
   if (hookEvent === 'UserPromptSubmit' && typeof payload.prompt === 'string') trace.prompt = payload.prompt
+  if (hookEvent === 'PostToolUse' && payload.tool_name === ASK_USER_QUESTION) {
+    const answers = ownerAnswersOf(payload.tool_response)
+    if (answers.length) trace.answers = answers
+  }
   if (recordRaw) trace.raw = redactTokens(payload)
   if (typeof payload.tool_use_id === 'string') trace.tool_use_id = payload.tool_use_id
   events.push(trace)
@@ -184,6 +188,18 @@ export function handleHook(state: ProjectState, hookEvent: string, payload: Hook
 }
 
 const ASK_USER_QUESTION = 'AskUserQuestion'
+const MAX_ANSWER_LENGTH = 2000
+
+/** Owner's answers and notes in an AskUserQuestion result, kept whole, unlike a tool's output. */
+function ownerAnswersOf(response: unknown) {
+  const { answers = {}, annotations = {} } = (response ?? {}) as { answers?: Record<string, unknown>; annotations?: Record<string, { notes?: unknown } | undefined> }
+  return [...new Set([...Object.keys(answers), ...Object.keys(annotations)])].flatMap((question) => {
+    const answer = typeof answers[question] === 'string' ? (redactTokens(answers[question]) as string).slice(0, MAX_ANSWER_LENGTH) : ''
+    const notes = annotations[question]?.notes
+    const note = typeof notes === 'string' && notes.trim() ? (redactTokens(notes.trim()) as string).slice(0, MAX_ANSWER_LENGTH) : undefined
+    return answer || note ? [{ question, answer, ...(note ? { notes: note } : {}) }] : []
+  })
+}
 
 interface AskUserQuestionInput {
   questions?: { question?: unknown; header?: unknown; options?: { label?: unknown; description?: unknown; preview?: unknown }[] }[]

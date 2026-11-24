@@ -496,9 +496,16 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   const recentItemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id && recentItemIds.has(event.work_item_id))
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId]!.at : ''
   const frictionJudgements = frictionJudgementsOf(events)
+  // What Owner said since the last retrospective counts on any work item: a discussion before this one is often in a session still on a delivered one.
   const ownerInputLines = ownerInputsOf(events)
-    .filter((input) => (input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt))
+    .filter((input) => input.at > lastRetroAt || (input.work_item_id !== null && recentItemIds.has(input.work_item_id)))
     .map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)))
+  const drillmasterQuestions = new Set(Object.values(state.ownerAsked).flat())
+  const ownerAnswerLines = events.flatMap((event) =>
+    event.type === 'work_trace' && event.at > lastRetroAt
+      ? (event.answers ?? []).filter((answer) => !drillmasterQuestions.has(answer.question)).map((answer) => `- "${answer.question}": ${answer.answer || '(no option picked)'}${answer.notes ? ` (note: ${answer.notes})` : ''}`)
+      : [],
+  )
   const judgedMeasures = judgedMeasuresOf(events)
   const occurrenceLines = [...recentItemIds].flatMap((workItemId) =>
     (judgedMeasures.get(workItemId) ?? []).flatMap((judgement) =>
@@ -561,6 +568,9 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     '',
     "Owner's inputs (chat prompts) since the last retrospective, each where it belongs. Owner decides only in AskUserQuestion; an input is a prompt:",
     ...(ownerInputLines.length ? ownerInputLines : ['- none']),
+    '',
+    "Owner's answers to Agent's own questions in AskUserQuestion since the last retrospective:",
+    ...(ownerAnswerLines.length ? ownerAnswerLines : ['- none']),
     '',
     'Occurrences of the judged measures on those work items, each at the step that should have caught it:',
     ...(occurrenceLines.length ? occurrenceLines : ['- none']),
