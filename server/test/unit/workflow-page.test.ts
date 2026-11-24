@@ -31,8 +31,8 @@ const verdict = (workflow: WorkflowDocument, id: string, stage: number, step: nu
 const prompt = (id: string, stage: number | null, stepGuid?: string) =>
   event({ type: 'work_trace', session_id: `s-${id}`, work_item_id: id, stage, step: null, ...(stepGuid ? { step_guid: stepGuid } : {}), hook: 'UserPromptSubmit', prompt: 'a correction' })
 const judged = (id: string, inputEvent: DrillmasterEvent) => event({ type: 'owner_inputs_judged', work_item_id: id, inputs: [{ event: inputEvent.id, friction: true, why: '' }] })
-const POLICY_FRICTION = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
-const HIDDEN = { name: 'retries', definition: 'Agent ran the same command again.', show: false }
+const POLICY_FRICTION = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
+const HIDDEN = { name: 'retries', short: 'R', color: 'sky' as const, definition: 'Agent ran the same command again.', show: false }
 const postMortem = (id: string, measured: { measure: string; step_guid: string | null }[]) =>
   event({
     type: 'post_mortem_written',
@@ -109,7 +109,7 @@ describe('the Workflow page', () => {
     )
     const page = workflowPageView(events)!
     const item = { work_item_id: 'wi_1', issue: '#wi_1' }
-    expect(page.measures).toEqual([{ name: 'policy friction', definition: POLICY_FRICTION.definition, old: false }])
+    expect(page.measures).toEqual([{ name: 'policy friction', short: 'PF', color: 'orange' as const, definition: POLICY_FRICTION.definition, old: false }])
     expect(page.stages.map((stage) => stage.marks)).toEqual([[], [], [{ measure: 'policy friction', count: 2, items: [item] }], []])
     expect(page.no_step).toEqual([{ measure: 'policy friction', count: 1, items: [item] }])
     expect(page.delivered).toBe(1)

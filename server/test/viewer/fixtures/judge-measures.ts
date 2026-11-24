@@ -13,8 +13,8 @@ import { TOOLS } from '../../../src/app.js'
 
 const MEASURES = [
   { ...OWNER_FRICTION, show: false },
-  { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true },
-  { name: 'process friction', definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.', show: true },
+  { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true },
+  { name: 'process friction', short: 'PC', color: 'rose' as const, definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted. Back-and-forth while refining the work does not count.', show: true },
 ]
 
 const [file, ...issues] = process.argv.slice(2) as [string, ...string[]]

@@ -5,8 +5,8 @@ import { buildPostMortemPrompt, buildRetroPrompt, readPostMortemAnswer } from '.
 import { foldState } from '../../src/core/state.js'
 import { WORKFLOW_3 } from '../helpers.js'
 
-const POLICY_FRICTION = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
-const PROCESS_FRICTION = { name: 'process friction', definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted.', show: false }
+const POLICY_FRICTION = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
+const PROCESS_FRICTION = { name: 'process friction', short: 'PC', color: 'rose' as const, definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted.', show: false }
 const workflow = { ...WORKFLOW_3, measures: [POLICY_FRICTION, PROCESS_FRICTION] }
 const [testsStep] = WORKFLOW_3.stages[0]!.steps
 

@@ -13,6 +13,9 @@ const OLD_FRICTION_DEFINITION = "Owner's inputs a separate judge called friction
 /** A measure the pages show, in the order the key lists them. */
 export interface ShownMeasure {
   name: string
+  short: string
+  /** One of the workflow's measure colours, or "old" for old friction. */
+  color: string
   definition: string
   old: boolean
 }
@@ -87,7 +90,10 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
     })
   }
 
-  const measures: ShownMeasure[] = [...shown.map((measure) => ({ name: measure.name, definition: measure.definition, old: false })), ...(oldMarks.length ? [{ name: OLD_FRICTION, definition: OLD_FRICTION_DEFINITION, old: true }] : [])]
+  const measures: ShownMeasure[] = [
+    ...shown.map((measure) => ({ name: measure.name, short: measure.short, color: measure.color, definition: measure.definition, old: false })),
+    ...(oldMarks.length ? [{ name: OLD_FRICTION, short: 'F', color: 'old', definition: OLD_FRICTION_DEFINITION, old: true }] : []),
+  ]
   return { measures, marks: [...judgedMarks, ...oldMarks].sort((a, b) => a.at.localeCompare(b.at)) }
 }
 

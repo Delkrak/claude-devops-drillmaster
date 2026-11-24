@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import type { WorkItemPage, WorkItemPageStep } from '../../types'
+import type { ItemMark, WorkItemPage, WorkItemPageStep } from '../../types'
 import { UnderRow } from '../../ui/item/route'
-import { AXIS, BRANCH_OFFSET, FRICTION_COLUMN, ITEM_COLUMN, ROUTE_ROW, ROUTE_SPLIT, splitAlternatives } from '../../ui/workflow/geometry'
+import { AXIS, BRANCH_OFFSET, MEASURE_COLUMN, ITEM_COLUMN, ROUTE_ROW, ROUTE_SPLIT, splitAlternatives } from '../../ui/workflow/geometry'
 import { Drawing } from '../../ui/workflow/layout'
-import { AfterDeliveryLine, Branch, DeliveryBar, FrictionRing, ItemBox, Line, LineWord, Opener, ReviewMarks, StageLabel, StageRule, Stop, StepLabel, stopKindOf, type LineTone, type Reached } from '../../ui/workflow/marks'
-import { estimatedLabelWidth } from '../workflow/describe'
-import { DeliveryDetail, StepDetail, UnplacedStepInsDetail, type DetailDepth } from './StepDetail'
+import { AfterDeliveryLine, Branch, DeliveryBar, ItemBox, Line, LineWord, MeasurePills, Opener, RowName, ReviewMarks, StageLabel, StageRule, Stop, StepLabel, stopKindOf, type LineTone, type MeasurePill, type Reached } from '../../ui/workflow/marks'
+import { estimatedLabelWidth, NO_STEP_ROW_NAME } from '../workflow/describe'
+import { measureTip, shortOfMeasure, toneOfMeasure } from '../measures'
+import { DeliveryDetail, NoStepMarksDetail, StepDetail, type DetailDepth } from './StepDetail'
 import { stepNoteOf } from './words'
 
 const STEP_NAME_FONT_SIZE = 17
@@ -18,7 +19,15 @@ const branchToneOf = (step: WorkItemPageStep): LineTone => (step.status === 'ski
 
 export type OpenedDepths = ReadonlyMap<string, DetailDepth>
 const DELIVERY_KEY = 'delivery'
-const UNPLACED_KEY = 'unplaced'
+const NO_STEP_KEY = 'no step'
+
+/** A pill per measure among the marks, in the key's order. */
+function pillsOfMarks(page: WorkItemPage, marks: readonly ItemMark[], where: string): MeasurePill[] {
+  return page.measures.flatMap((measure) => {
+    const count = marks.filter((mark) => mark.measure === measure.name).length
+    return count ? [{ measure: measure.name, short: shortOfMeasure(page.measures, measure.name), count, tone: toneOfMeasure(page.measures, measure.name), tip: measureTip(page.measures, measure.name, count, where) }] : []
+  })
+}
 
 interface RouteProps {
   page: WorkItemPage
@@ -39,14 +48,7 @@ function RouteStep({ step, stageNumber, x, y, side, onBranch, page, opened, onOp
       <StepLabel x={x} y={y} side={side} name={step.name} note={note} reached={reachedOf(step)} noteTone={step.status === 'here' ? 'sand' : 'dim'} />
       {step.status === 'here' && <ItemBox dotX={itemX} y={y} boxText={page.issue} tip={`${page.issue} is here now`} testId="here" />}
       <ReviewMarks passedX={side === 'left' ? x - 30 - nameWidth - 16 : x - 24} sentBackX={side === 'right' ? x + 30 + nameWidth + 16 : AXIS + 40} y={y} passedCount={passedCount} sentBackCount={sentBackCount} showsPassedCount={false} />
-      {step.step_ins.length > 0 && (
-        <FrictionRing
-          x={side === 'right' ? x + 30 + nameWidth + (sentBackCount > 0 ? 70 : 24) : x + 30}
-          y={y}
-          count={step.step_ins.length}
-          tip={`you stepped in ${step.step_ins.length === 1 ? 'once' : `${step.step_ins.length} times`}; this step should have caught it`}
-        />
-      )}
+      <MeasurePills x={side === 'right' ? x + 30 + nameWidth + (sentBackCount > 0 ? 70 : 24) : x + 30} y={y} pills={pillsOfMarks(page, step.marks, '; this step should have caught it')} />
     </Opener>
   )
 }
@@ -57,7 +59,7 @@ function OpenedUnderRow({ steps, tone, page, opened, onOpen }: { steps: readonly
   return (
     <UnderRow tone={tone}>
       {openSteps.map((step) => (
-        <StepDetail key={step.guid} step={step} depth={opened.get(step.guid)!} onOpenDeeper={(depth) => onOpen(step.guid, depth)} />
+        <StepDetail key={step.guid} step={step} measures={page.measures} depth={opened.get(step.guid)!} onOpenDeeper={(depth) => onOpen(step.guid, depth)} />
       ))}
     </UnderRow>
   )
@@ -114,39 +116,44 @@ function StageRows({ stage, ...props }: { stage: WorkItemPage['stages'][number] 
   return <>{rows}</>
 }
 
+const NO_STEP_ROW = 56
+const NO_STEP_PILL_Y = 26
 const DELIVERY_BAR_Y = 20
-const UNPLACED_RING_Y = 66
 
 function RouteEnd({ page, opened, onOpen }: RouteProps) {
   const delivered = page.delivered
-  const unplacedStepIns = page.step_ins_unplaced
-  const height = delivered ? 100 : unplacedStepIns.length > 0 ? 90 : 40
+  const noStepMarks = page.marks_no_step
+  const top = noStepMarks.length > 0 ? NO_STEP_ROW : 0
+  const height = top + (delivered ? 70 : 40)
   const deliveryOpen = opened.has(DELIVERY_KEY)
-  const unplacedOpen = opened.has(UNPLACED_KEY)
+  const noStepOpen = opened.has(NO_STEP_KEY)
+  const lineTone = delivered ? 'lit' : 'ahead'
   return (
     <>
       <Drawing height={height} testId="route-end">
         <StageRule y={0} />
-        <Line from={0} to={DELIVERY_BAR_Y} tone={delivered ? 'lit' : 'ahead'} />
-        <DeliveryBar y={DELIVERY_BAR_Y} reached={delivered !== null} />
+        {noStepMarks.length > 0 && (
+          <Opener y={NO_STEP_PILL_Y} height={36} label="what no step covers" open={noStepOpen} onToggle={() => onOpen(NO_STEP_KEY, noStepOpen ? null : 1)} testId="no-step">
+            <RowName y={NO_STEP_PILL_Y + 5}>{NO_STEP_ROW_NAME}</RowName>
+            <MeasurePills x={MEASURE_COLUMN} y={NO_STEP_PILL_Y} pills={pillsOfMarks(page, noStepMarks, '; no step of the workflow covers it')} />
+          </Opener>
+        )}
+        {noStepMarks.length > 0 && <StageRule y={top} />}
+        <Line from={0} to={top + DELIVERY_BAR_Y} tone={lineTone} />
+        <DeliveryBar y={top + DELIVERY_BAR_Y} reached={delivered !== null} />
         {delivered && (
-          <Opener y={DELIVERY_BAR_Y} height={36} label="delivered" open={deliveryOpen} onToggle={() => onOpen(DELIVERY_KEY, deliveryOpen ? null : 1)} testId="delivered">
-            <LineWord x={AXIS + 26} y={DELIVERY_BAR_Y}>
+          <Opener y={top + DELIVERY_BAR_Y} height={36} label="delivered" open={deliveryOpen} onToggle={() => onOpen(DELIVERY_KEY, deliveryOpen ? null : 1)} testId="delivered">
+            <LineWord x={AXIS + 26} y={top + DELIVERY_BAR_Y}>
               delivered
             </LineWord>
           </Opener>
         )}
-        {delivered && <AfterDeliveryLine from={DELIVERY_BAR_Y + 2} to={height} />}
-        {unplacedStepIns.length > 0 && (
-          <Opener y={UNPLACED_RING_Y} height={36} label="your step-ins no step should have caught" open={unplacedOpen} onToggle={() => onOpen(UNPLACED_KEY, unplacedOpen ? null : 1)} testId="unplaced">
-            <FrictionRing x={FRICTION_COLUMN} y={UNPLACED_RING_Y} count={unplacedStepIns.length} tip={`you stepped in ${unplacedStepIns.length === 1 ? 'once' : `${unplacedStepIns.length} times`}${delivered ? ' after delivery' : ''}; no step should have caught it`} />
-          </Opener>
-        )}
+        {delivered && <AfterDeliveryLine from={top + DELIVERY_BAR_Y + 2} to={height} />}
       </Drawing>
-      {(deliveryOpen || unplacedOpen) && (
+      {(deliveryOpen || noStepOpen) && (
         <UnderRow tone={delivered ? 'lit' : 'ahead'}>
           {deliveryOpen && delivered && <DeliveryDetail delivered={delivered} />}
-          {unplacedOpen && <UnplacedStepInsDetail stepIns={unplacedStepIns} />}
+          {noStepOpen && <NoStepMarksDetail marks={noStepMarks} measures={page.measures} />}
         </UnderRow>
       )}
     </>

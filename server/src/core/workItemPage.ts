@@ -192,7 +192,7 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
   const eventsUntilAt = at ? events.filter((event) => event.at <= at) : events
   const state = foldState(eventsUntilAt)
   const { measures, marks } = state.workflow ? marksOf(eventsUntilAt, state.workflow) : { measures: [], marks: [] }
-  return Object.values(state.workItems)
+  const items = Object.values(state.workItems)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .map((item) => {
       const workflow = workflowOfWorkItem(state, item)
@@ -212,5 +212,6 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
         ),
       }
     })
+  return { measures, items }
 }
 export type WorkItemsList = ReturnType<typeof workItemsListView>

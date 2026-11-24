@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ChangeRow, DrillmasterPage, WorkflowPage, WorkItemPage, WorkItemsEntry } from './types'
+import type { ChangeRow, DrillmasterPage, WorkflowPage, WorkItemPage, WorkItemsList } from './types'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -15,7 +15,7 @@ export const api = {
   workflowPage: (projectId: string, at: string | null) => getJson<WorkflowPage>(`/api/projects/${encodeURIComponent(projectId)}/workflow${atQuery(at)}`),
   drillmasterPage: (projectId: string, at: string | null) => getJson<DrillmasterPage>(`/api/projects/${encodeURIComponent(projectId)}/drillmaster${atQuery(at)}`),
   changes: (projectId: string, at: string | null) => getJson<ChangeRow[]>(`/api/projects/${encodeURIComponent(projectId)}/changes${atQuery(at)}`),
-  workItems: (projectId: string, at: string | null) => getJson<WorkItemsEntry[]>(`/api/projects/${encodeURIComponent(projectId)}/work-items${atQuery(at)}`),
+  workItems: (projectId: string, at: string | null) => getJson<WorkItemsList>(`/api/projects/${encodeURIComponent(projectId)}/work-items${atQuery(at)}`),
   workItemPage: (projectId: string, workItemId: string, at: string | null) => getJson<WorkItemPage>(`/api/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(workItemId)}${atQuery(at)}`),
 }
 

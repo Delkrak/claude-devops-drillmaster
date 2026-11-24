@@ -1,4 +1,4 @@
-// The marks the pipeline is drawn with, in SVG: the line, its stops, work items and friction. Each
+// The marks the pipeline is drawn with, in SVG: the line, its stops, work items and measures. Each
 // mark that means something carries its explanation in `data-tip`, which Tip shows on hover, on
 // focus with the keyboard, and on a tap. A mark that leads somewhere is a door: it opens on a click,
 // Enter or Space.
@@ -29,8 +29,18 @@ const styles = stylex.create({
   boxOutline: { fill: 'transparent', stroke: colors.line, strokeWidth: '1.5px' },
   dot: { fill: colors.line },
   count: { fill: colors.line, fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy },
-  frictionRing: { fill: colors.ground, stroke: colors.orange, strokeWidth: '2.5px' },
-  frictionCount: { fill: colors.orange, fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy },
+  measureRing: { fill: colors.ground, strokeWidth: '2.5px' },
+  measureCount: { fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy },
+  orangeRing: { stroke: colors.orange },
+  orangeText: { fill: colors.orange },
+  roseRing: { stroke: colors.rose },
+  roseText: { fill: colors.rose },
+  violetRing: { stroke: colors.violet },
+  violetText: { fill: colors.violet },
+  skyRing: { stroke: colors.sky },
+  skyText: { fill: colors.sky },
+  oldRing: { stroke: colors.dim, strokeDasharray: '3 3' },
+  oldText: { fill: colors.dim },
   sentBack: { fill: colors.sand, fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightHeavy },
   stageNumber: { fill: colors.dim, fontFamily: font.sans, fontSize: font.sizeSm, fontWeight: font.weightBold, letterSpacing: '2px' },
   stageName: { fill: colors.dim, fontFamily: font.sans, fontSize: font.sizeMd, fontWeight: font.weightMedium },
@@ -101,6 +111,13 @@ export function StageLabel({ x, y, n, name }: { x: number; y: number; n: number;
     </g>
   )
 }
+
+/** The name of a row that is not a stage, where the stages' names stand. */
+export const RowName = ({ y, children }: { y: number; children: string }) => (
+  <text x={44} y={y} data-testid="row-name" {...stylex.props(styles.stageName)}>
+    {children}
+  </text>
+)
 
 export const LineWord = ({ x, y, children }: { x: number; y: number; children: string }) => (
   <text x={x} y={y + 5} {...stylex.props(styles.plainLabel)}>
@@ -184,13 +201,48 @@ export function ItemBox({ dotX, y, boxText, tip, testId = 'item-box', onOpen }: 
   )
 }
 
-export function FrictionRing({ x, y, count, tip, onOpen }: { x: number; y: number; count: number; tip: string; onOpen?: (point: { x: number; y: number }) => void }) {
+export type MeasureTone = 'orange' | 'rose' | 'violet' | 'sky' | 'old'
+
+const PILL_STYLES: Record<MeasureTone, { ring: stylex.StyleXStyles; text: stylex.StyleXStyles }> = {
+  orange: { ring: styles.orangeRing, text: styles.orangeText },
+  rose: { ring: styles.roseRing, text: styles.roseText },
+  violet: { ring: styles.violetRing, text: styles.violetText },
+  sky: { ring: styles.skyRing, text: styles.skyText },
+  old: { ring: styles.oldRing, text: styles.oldText },
+}
+
+export interface MeasurePill {
+  measure: string
+  short: string
+  count: number
+  tone: MeasureTone
+  tip: string
+  onOpen?: (point: { x: number; y: number }) => void
+}
+
+const PILL_HEIGHT = 28
+const PILL_GAP = 8
+const pillWidth = (text: string) => 22 + Math.ceil(text.length * 7.4)
+
+/** A pill per measure, left to right from x: its short name and count, in the measure's colour. */
+export function MeasurePills({ x, y, pills }: { x: number; y: number; pills: readonly MeasurePill[] }) {
+  let left = x - PILL_HEIGHT / 2
   return (
-    <g data-testid="friction-ring" {...explainedOrDoorProps(tip, onOpen)}>
-      <circle cx={x} cy={y} r={14} {...stylex.props(styles.frictionRing)} />
-      <text x={x} y={y + 5} textAnchor="middle" {...stylex.props(styles.frictionCount)}>
-        {count}
-      </text>
+    <g>
+      {pills.map((pill) => {
+        const text = `${pill.short} ${pill.count}`
+        const width = pillWidth(text)
+        const pillLeft = left
+        left += width + PILL_GAP
+        return (
+          <g key={pill.measure} data-testid="measure-pill" data-measure={pill.measure} {...explainedOrDoorProps(pill.tip, pill.onOpen)}>
+            <rect x={pillLeft} y={y - PILL_HEIGHT / 2} width={width} height={PILL_HEIGHT} rx={PILL_HEIGHT / 2} {...stylex.props(styles.measureRing, PILL_STYLES[pill.tone].ring)} />
+            <text x={pillLeft + width / 2} y={y + 5} textAnchor="middle" {...stylex.props(styles.measureCount, PILL_STYLES[pill.tone].text)}>
+              {text}
+            </text>
+          </g>
+        )
+      })}
     </g>
   )
 }

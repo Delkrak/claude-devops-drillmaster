@@ -247,7 +247,7 @@ describe('measures', () => {
 })
 
 describe('the measures a retrospective defines', () => {
-  const policyFriction = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
+  const policyFriction = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
 
   it('adds, changes and removes a measure, as a patch that opens no experiment', () => {
     const added = applyWorkflowOps(w0, [{ op: 'add_measure', measure: policyFriction }])

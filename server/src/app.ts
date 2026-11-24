@@ -362,10 +362,12 @@ export const TOOLS: ToolDefinition[] = [
             type: 'object',
             properties: {
               name: { type: 'string', description: 'In plain words, e.g. "policy friction".' },
+              short: { type: 'string', description: 'What its ring on the viewer says before the count: 1 to 3 capital letters, e.g. "PF".' },
+              color: { type: 'string', enum: ['orange', 'rose', 'violet', 'sky'], description: 'The colour the viewer draws it in.' },
               definition: { type: 'string', description: "What counts as one occurrence, in Owner's words." },
               show: { type: 'boolean', description: "Whether the viewer's pages show where it happened." },
             },
-            required: ['name', 'definition', 'show'],
+            required: ['name', 'short', 'color', 'definition', 'show'],
           },
         },
         drillmaster_repository: { type: 'string', description: "setup: the private git repository (URL or path) that keeps the project's workflow and history: the Drillmaster repository." },

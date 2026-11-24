@@ -7,7 +7,7 @@ import { workItemPageView, workItemsListView, type WorkItemPage } from '../../sr
 const fixture = JSON.parse(readFileSync(new URL('../viewer/fixtures/reviewed-run.json', import.meta.url), 'utf8')) as DrillmasterEvent[]
 /** The moment the Workflow mock shows. */
 const MOMENT = '2026-11-20T19:10:16.785Z'
-const idOf = (issue: string) => workItemsListView(fixture).find((item) => item.issue === issue)!.work_item_id
+const idOf = (issue: string) => workItemsListView(fixture).items.find((item) => item.issue === issue)!.work_item_id
 const stepOf = (page: WorkItemPage, ref: string) => {
   const [stage, step] = ref.split('.').map(Number)
   return page.stages.find((candidate) => candidate.n === stage)!.steps.find((candidate) => candidate.n === step)!
@@ -117,7 +117,7 @@ describe('the work item page', () => {
 
 describe('the work items list', () => {
   it('lists every work item latest first, with where it is and how often Owner stepped in', () => {
-    const list = workItemsListView(fixture)
+    const list = workItemsListView(fixture).items
     expect(list.map((item) => item.issue)).toEqual(['#8', '#7', '#6', '#5', '#4', '#3', '#2', '#1'])
     expect(list.find((item) => item.issue === '#4')!.marks).toEqual([{ measure: OLD_FRICTION, count: 1 }])
     expect(list.find((item) => item.issue === '#2')).toMatchObject({
@@ -128,6 +128,6 @@ describe('the work items list', () => {
         { measure: 'process friction', count: 1 },
       ],
       summary: 'totalUnits(rows) in src/summary.js sums row.price instead of row.units, so it returns the…' })
-    expect(workItemsListView(fixture, MOMENT).find((item) => item.issue === '#5')).toMatchObject({ status: 'active', at_step: 'have the change reviewed' })
+    expect(workItemsListView(fixture, MOMENT).items.find((item) => item.issue === '#5')).toMatchObject({ status: 'active', at_step: 'have the change reviewed' })
   })
 })

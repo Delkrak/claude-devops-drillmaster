@@ -6,7 +6,7 @@ const issueNumberOf = (issue: string) => /^#?(\d+)\b/.exec(issue)?.[1] ?? null
 
 export function ProjectNav({ projectId, at, version, nowHref, currentPage }: { projectId: string; at: string | null; version?: string; nowHref: string; currentPage: 'workflow' | 'workItems' | 'workItem' | 'changes' | 'complaints' }) {
   const hrefOfWorkItem = async (number: string) => {
-    const foundItem = (await api.workItems(projectId, at)).find((item) => issueNumberOf(item.issue) === number)
+    const foundItem = (await api.workItems(projectId, at)).items.find((item) => issueNumberOf(item.issue) === number)
     return foundItem ? href.workItem(projectId, foundItem.work_item_id, at) : null
   }
   return (

@@ -110,8 +110,14 @@ export const Objective = z.object({
 })
 
 /** A measure the workflow defines: Drillmaster judges it for each delivered work item from the definition. */
+/** The colours the viewer draws a measure in. */
+export const MEASURE_COLORS = ['orange', 'rose', 'violet', 'sky'] as const
+
 export const JudgedMeasure = z.object({
   name: z.string().regex(/^\S(.*\S)?$/, 'a measure name does not start or end with a space'),
+  /** What its ring on the viewer's pages says before the count, e.g. "PF". */
+  short: z.string().regex(/^[A-Z0-9]{1,3}$/, 'a short name is 1 to 3 capital letters or digits, e.g. "PF"'),
+  color: z.enum(MEASURE_COLORS),
   /** What counts as one occurrence; every measure counts what should not happen, so lower is better. */
   definition: z.string().min(1),
   /** Whether the viewer's pages show where it happened. */
@@ -255,6 +261,16 @@ export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: 
 }
 
 
+/** A short name from a measure's words: their first letters, e.g. "PF" for "policy friction". */
+const shortNameOf = (name: string) =>
+  name
+    .split(/[\s_]+/)
+    .filter((word) => word && word !== 'per')
+    .map((word) => word[0]!.toUpperCase())
+    .join('')
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 3) || 'M'
+
 /**
  * Reads a workflow document written by any earlier Drillmaster, also from before work item inputs
  * were called metrics (with categories, taken at a step). Missing text becomes an empty
@@ -278,13 +294,17 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
     earlierStage(stageName)?.steps.find((step) => step.name === name) ?? previous?.stages.flatMap((stage) => stage.steps).find((step) => step.name === name)
   const earlierPolicy = (name: string) => previous?.policies.find((policy) => policy.name === name)
   const objectiveMeasures: string[] = (document.objective?.measures ?? []).map(currentMeasureName)
-  const measures: JudgedMeasure[] = document.measures ?? []
+  const measures: Record<string, any>[] = document.measures ?? []
   const namesOwnerFriction = [...objectiveMeasures, ...(document.experiments ?? []).map((experiment: Record<string, any>) => currentMeasureName(experiment.measure))].includes(OWNER_FRICTION.name)
   return {
     ...document,
     version,
     ...(document.objective ? { objective: { ...document.objective, measures: objectiveMeasures } } : {}),
-    measures: namesOwnerFriction && !measures.some((measure) => measure.name === OWNER_FRICTION.name) ? [...measures, { ...OWNER_FRICTION }] : measures,
+    measures: (namesOwnerFriction && !measures.some((measure) => measure.name === OWNER_FRICTION.name) ? [...measures, { ...OWNER_FRICTION }] : measures).map((measure, index) => ({
+      short: shortNameOf(measure.name),
+      color: MEASURE_COLORS[index % MEASURE_COLORS.length],
+      ...measure,
+    })),
     stages: (document.stages ?? []).map((stage: Record<string, any>) => ({
       ...stage,
       guid: guidFor(stage.guid, earlierStage(stage.name)?.guid, `stage:${stage.name}`),

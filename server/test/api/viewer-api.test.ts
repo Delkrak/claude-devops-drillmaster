@@ -42,7 +42,7 @@ describe('viewer API', () => {
   })
 
   it("serves the work items, latest first, and one work item's route at a moment", async () => {
-    const [item] = (await get(`/api/projects/${ID}/work-items`)).body
+    const [item] = (await get(`/api/projects/${ID}/work-items`)).body.items
     expect(item).toMatchObject({ issue: '#9', status: 'active', at_step: 'say what the pull request changes', marks: [] })
     const page = (await get(`/api/projects/${ID}/work-items/${item.work_item_id}`)).body
     expect(page.stages[0].steps.map((step: { status: string }) => step.status)).toEqual(['passed', 'here'])

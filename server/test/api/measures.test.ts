@@ -5,8 +5,8 @@ import { workflowZero } from '../../src/core/workflow.js'
 import { OBJECTIVE, seedWorkflow, testPorts } from '../helpers.js'
 
 const DIR = '/projects/measures'
-const POLICY_FRICTION = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
-const PROCESS_FRICTION = { name: 'process friction', definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted.', show: true }
+const POLICY_FRICTION = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
+const PROCESS_FRICTION = { name: 'process friction', short: 'PC', color: 'rose' as const, definition: 'Owner overruled an earlier decision, or the delivery was not what Owner wanted.', show: true }
 const NO_FINDINGS = { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [] }
 
 async function workItemWithInputs() {

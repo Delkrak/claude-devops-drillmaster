@@ -135,7 +135,7 @@ export const WorkflowOp = z.preprocess(
     z.object({ op: z.literal('remove_tool_capture'), capture: Ref }).strict(),
     z.object({ op: z.literal('set_objective'), text: z.string().min(1).optional(), measures: z.array(z.string().min(1)).min(1).optional() }).strict(),
     z.object({ op: z.literal('add_measure'), measure: JudgedMeasure }).strict(),
-    z.object({ op: z.literal('change_measure'), measure: z.string().min(1), definition: z.string().min(1).optional(), show: z.boolean().optional() }).strict(),
+    z.object({ op: z.literal('change_measure'), measure: z.string().min(1), definition: z.string().min(1).optional(), show: z.boolean().optional(), short: JudgedMeasure.shape.short.optional(), color: JudgedMeasure.shape.color.optional() }).strict(),
     z.object({ op: z.literal('remove_measure'), measure: z.string().min(1) }).strict(),
     z.object({ op: z.literal('end_experiment'), id: z.number().int().positive(), outcome: z.enum(['kept', 'rethought']) }).strict(),
   ]),
@@ -447,8 +447,8 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
 {"op":"remove_tool_capture","capture":"tests"}
 {"op":"set_objective","text":"...","measures":["gate_rejections_per_item","policy friction"]}   (measures: ones Drillmaster counts, and ones the workflow defines)
-{"op":"add_measure","measure":{"name":"policy friction","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment can use it once ${BASELINE_WINDOW} work items are judged)
-{"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show; work items judged before keep their judgement)
+{"op":"add_measure","measure":{"name":"policy friction","short":"PF","color":"orange|rose|violet|sky","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment can use it once ${BASELINE_WINDOW} work items are judged)
+{"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show, short, color; work items judged before keep their judgement)
 {"op":"remove_measure","measure":"policy friction"}   (not while the objective or a running experiment uses it)
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 

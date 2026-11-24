@@ -17,7 +17,7 @@ describe('workflow document', () => {
   })
 
   it('takes the measures the workflow defines, and refuses an objective or experiment on a measure it does not define', () => {
-    const policyFriction = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
+    const policyFriction = { name: 'policy friction', short: 'PF', color: 'orange' as const, definition: 'Owner caught what a rule should have caught.', show: true }
     expect(workflowZero({ text: 'x', measures: ['policy friction', 'minutes_per_item'] }, [policyFriction]).measures).toEqual([policyFriction])
     expect(() => workflowZero({ text: 'x', measures: ['policy friction'] })).toThrow(/neither counted by Drillmaster nor defined by the workflow/)
     expect(() => workflowZero({ text: 'x', measures: ['minutes_per_item'] }, [{ ...policyFriction, name: 'minutes_per_item' }])).toThrow(/one Drillmaster counts/)
@@ -30,6 +30,8 @@ describe('workflow document', () => {
     expect(old.objective.measures).toEqual(['owner_friction_per_item'])
     expect(old.measures).toEqual([expect.objectContaining({ name: 'owner_friction_per_item', show: true })])
     expect(WorkflowDocument.parse(old).measures).toHaveLength(1)
+    const withoutShortName = migrateWorkflow({ version: '1.0.0', objective: { text: 'x', measures: ['minutes_per_item'] }, stages: [], policies: [], inputs: [], tool_captures: [], measures: [{ name: 'policy friction', definition: 'd', show: true }], experiments: [] })
+    expect(withoutShortName.measures).toEqual([{ name: 'policy friction', short: 'PF', color: 'orange', definition: 'd', show: true }])
     expect(migrateWorkflow({ version: '1.0.0', objective: { text: 'x', measures: ['minutes_per_item'] }, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] }).measures).toEqual([])
   })
 

@@ -7,6 +7,7 @@ import { Key } from '../ui/workflow/Key'
 import { FirstScreen, PipelineColumn } from '../ui/workflow/layout'
 import { Picker } from '../ui/workflow/Picker'
 import { Tip } from '../ui/workflow/Tip'
+import { keyMeasuresOf } from './measures'
 import { ProjectNav } from './ProjectNav'
 import type { OpenItems } from './workflow/describe'
 import { Overview } from './workflow/Overview'
@@ -35,13 +36,13 @@ export function WorkflowPage({ projectId, at }: { projectId: string; at: string 
               <Overview page={page} openItems={openItems} openDelivered={openDelivered} />
             </FirstScreen>
             {page.stages.map((stage) => (
-              <StageWalk key={stage.guid} stage={stage} openItems={openItems} />
+              <StageWalk key={stage.guid} stage={stage} measures={page.measures} openItems={openItems} />
             ))}
             <PipelineEnd page={page} openItems={openItems} openDelivered={openDelivered} />
           </PipelineColumn>
         )}
       </Loading>
-      <Key />
+      <Key measures={loaded.status === 'ready' ? keyMeasuresOf(loaded.data.measures, new Set([...loaded.data.stages.flatMap((stage) => stage.marks), ...loaded.data.no_step].map((count) => count.measure))) : []} />
       <Tip />
       {picker && <Picker title={picker.title} items={picker.items} point={picker.point} onClose={closePicker} />}
     </Shell>

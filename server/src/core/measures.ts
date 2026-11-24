@@ -22,6 +22,8 @@ export const isCountedMeasure = (name: string): name is CountedMeasure => Object
  */
 export const OWNER_FRICTION = {
   name: 'owner_friction_per_item',
+  short: 'OF',
+  color: 'orange',
   definition:
     "Owner's inputs on a work item that were friction: Owner had to correct, redirect or add to the work, rather than approve it or answer a question Agent asked. An Owner gate Owner rejected counts too.",
   show: true,

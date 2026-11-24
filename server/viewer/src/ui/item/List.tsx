@@ -1,12 +1,13 @@
 import * as stylex from '@stylexjs/stylex'
 import type { ReactNode } from 'react'
 import { colors, font, shape, space } from '../../styles/tokens.stylex'
+import type { MeasureTone } from '../workflow/marks'
 
 const styles = stylex.create({
   list: { width: '100%', maxWidth: '900px', marginInline: 'auto', marginBlock: space.xxl, padding: 0, listStyle: 'none', fontFamily: font.sans },
   row: {
     display: 'grid',
-    gridTemplateColumns: '18px 56px 72px 1fr 200px 32px',
+    gridTemplateColumns: '18px 56px 72px 1fr 200px 150px',
     alignItems: 'center',
     minHeight: '46px',
     columnGap: space.md,
@@ -26,21 +27,34 @@ const styles = stylex.create({
   kind: { color: colors.dim, fontSize: font.sizeMd, fontWeight: font.weightBold },
   summary: { color: colors.line, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   where: { color: colors.dim, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  ring: {
+  pills: { display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' },
+  pill: {
     boxSizing: 'border-box',
-    width: '26px',
     height: '26px',
-    borderRadius: '50%',
+    paddingInline: '9px',
+    borderRadius: '13px',
+    whiteSpace: 'nowrap',
     borderWidth: '2.5px',
     borderStyle: 'solid',
-    borderColor: colors.orange,
-    color: colors.orange,
     fontSize: font.sizeSm,
     fontWeight: font.weightHeavy,
     display: 'grid',
     placeItems: 'center',
   },
+  orange: { borderColor: colors.orange, color: colors.orange },
+  rose: { borderColor: colors.rose, color: colors.rose },
+  violet: { borderColor: colors.violet, color: colors.violet },
+  sky: { borderColor: colors.sky, color: colors.sky },
+  old: { borderColor: colors.dim, borderStyle: 'dashed', color: colors.dim },
 })
+
+export interface RowPill {
+  measure: string
+  short: string
+  count: number
+  tone: MeasureTone
+  tip: string
+}
 
 export const ItemList = ({ label, children }: { label: string; children: ReactNode }) => (
   <ul aria-label={label} {...stylex.props(styles.list)}>
@@ -48,7 +62,7 @@ export const ItemList = ({ label, children }: { label: string; children: ReactNo
   </ul>
 )
 
-export function ItemRow({ itemHref, issue, kind, summary, where, delivered, frictionCount }: { itemHref: string; issue: string; kind: string | null; summary: string; where: ReactNode; delivered: boolean; frictionCount: number }) {
+export function ItemRow({ itemHref, issue, kind, summary, where, delivered, pills }: { itemHref: string; issue: string; kind: string | null; summary: string; where: ReactNode; delivered: boolean; pills: readonly RowPill[] }) {
   return (
     <li>
       <a href={itemHref} data-testid="item-row" {...stylex.props(styles.row)}>
@@ -59,13 +73,13 @@ export function ItemRow({ itemHref, issue, kind, summary, where, delivered, fric
           {summary}
         </span>
         <span {...stylex.props(styles.where)}>{where}</span>
-        {frictionCount > 0 ? (
-          <span data-tip={`you stepped in ${frictionCount === 1 ? 'once' : `${frictionCount} times`}`} aria-label={`you stepped in ${frictionCount} times`} {...stylex.props(styles.ring)}>
-            {frictionCount}
-          </span>
-        ) : (
-          <span />
-        )}
+        <span {...stylex.props(styles.pills)}>
+          {pills.map((pill) => (
+            <span key={pill.measure} data-testid="measure-pill" data-measure={pill.measure} data-tip={pill.tip} aria-label={pill.tip} {...stylex.props(styles.pill, styles[pill.tone])}>
+              {pill.short} {pill.count}
+            </span>
+          ))}
+        </span>
       </a>
     </li>
   )

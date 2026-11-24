@@ -22,7 +22,7 @@ const hook = (event: string, payload: Record<string, unknown>) => post(`/hooks/$
 const state = async () => (await (await fetch(`${server.url}/state?project=${encodeURIComponent(PROJECT)}`)).json()) as any
 
 const testRule = { id: '1.1', rule: 'the tests run green before a PR', verified_by: 'the test output' }
-const OWNER_FRICTION = { name: 'owner friction', definition: 'Owner had to correct or add to the work.', show: true }
+const OWNER_FRICTION = { name: 'owner friction', short: 'OF', color: 'orange', definition: 'Owner had to correct or add to the work.', show: true }
 
 beforeAll(async () => {
   const ports = testPorts({
