@@ -1,4 +1,4 @@
-import type { DrillmasterEvent, WorkTrace } from './events.js'
+import type { DrillmasterEvent, FrictionPlaced, WorkTrace } from './events.js'
 
 /** What an Owner input led to: starting or resuming a work item, a retrospective, or none of those. */
 export type OwnerInputRole = 'start' | 'resume' | 'retrospective' | 'input'
@@ -118,4 +118,11 @@ export function frictionJudgementsOf(events: readonly DrillmasterEvent[]) {
   const judgements = new Map<string, FrictionJudgement>()
   for (const event of events) if (event.type === 'owner_inputs_judged') for (const judgement of event.inputs) judgements.set(judgement.event, judgement)
   return judgements
+}
+
+/** Where Drillmaster 0.3 placed each input its friction judge called friction: the step that should have caught it. */
+export function frictionPlacementsOf(events: readonly DrillmasterEvent[]) {
+  const placementByEventId = new Map<string, FrictionPlaced['inputs'][number]>()
+  for (const event of events) if (event.type === 'friction_placed') for (const placement of event.inputs) placementByEventId.set(placement.event, placement)
+  return placementByEventId
 }

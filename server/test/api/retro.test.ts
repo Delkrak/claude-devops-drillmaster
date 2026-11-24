@@ -22,10 +22,19 @@ const hook = (event: string, payload: Record<string, unknown>) => post(`/hooks/$
 const state = async () => (await (await fetch(`${server.url}/state?project=${encodeURIComponent(PROJECT)}`)).json()) as any
 
 const testRule = { id: '1.1', rule: 'the tests run green before a PR', verified_by: 'the test output' }
+const OWNER_FRICTION = { name: 'owner friction', definition: 'Owner had to correct or add to the work.', show: true }
 
 beforeAll(async () => {
   const ports = testPorts({
-    post_mortem: [{ keep: 'Owner saw the PR', change: 'Owner had to ask for the tests', experiment_reflections: 'none running', free_text: '' }],
+    post_mortem: [
+      {
+        keep: 'Owner saw the PR',
+        change: 'Owner had to ask for the tests',
+        experiment_reflections: 'none running',
+        measured: [{ measure: 'owner friction', occurrences: [{ step: null, events: [], why: 'Owner had to ask for the tests.' }] }],
+        free_text: '',
+      },
+    ],
     retrospective: [
       {
         findings: { should: 'tests run before the PR', did: 'Owner had to ask', why: 'no step asks for it', keep: 'small PRs', improve: 'add a test step' },
@@ -34,8 +43,8 @@ beforeAll(async () => {
             id: 1,
             change: 'add a build stage whose first step runs the tests',
             purpose: 'Owner corrected missing test runs',
-            measure: 'owner_friction_per_item',
-            hypothesis: 'A test step means Owner stops asking for tests',
+            measure: 'tool_calls_per_item',
+            hypothesis: 'A test step means Agent runs the tests once, not again after Owner asks',
             target: 0,
             judge_after: 2,
             ops: [
@@ -43,7 +52,7 @@ beforeAll(async () => {
               { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [{ name: 'run the tests', instruction: 'Run npm test and fix what is red.', gate: 'self', rules: ['test 1.1'], report: ['test result'] }] },
             ],
           },
-          { id: 2, change: 'measure time too', purpose: 'see speed', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['owner_friction_per_item', 'minutes_per_item'] }] },
+          { id: 2, change: 'measure time too', purpose: 'see speed', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['owner friction', 'minutes_per_item'] }] },
           { id: 3, change: 'broken', purpose: 'x', measure: 'minutes_per_item', ops: [{ op: 'remove_stage', stage: 9 }] },
         ],
       },
@@ -59,8 +68,16 @@ describe('the improvement loop', () => {
   let token: string
 
   it("sets workflow_0 from Owner's objective, once", async () => {
-    const setup = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] })
-    expect(setup.value.workflow).toMatchObject({ version: '0.0.0', stages: [] })
+    const undefinedMeasure = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner friction'] })
+    expect(undefinedMeasure.value).toMatch(/"owner friction" is neither counted by Drillmaster nor defined by the workflow/)
+    const setup = await tool('workflow_retrospective', {
+      action: 'setup',
+      drillmaster_repository: TEST_REPOSITORY,
+      objective: 'ship features without Owner stepping in',
+      measures: ['owner friction'],
+      define_measures: [OWNER_FRICTION],
+    })
+    expect(setup.value.workflow).toMatchObject({ version: '0.0.0', stages: [], measures: [OWNER_FRICTION] })
     expect((await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'again', measures: ['minutes_per_item'] })).isError).toBe(true)
   })
 
@@ -84,7 +101,7 @@ describe('the improvement loop', () => {
 
   it('shows the measures in the workflow overview', async () => {
     const overview = await tool('workflow_get', {})
-    expect(overview.value.measures.owner_friction_per_item).toEqual({ last_5: 1, all: 1, delivered: 1 })
+    expect(overview.value.measures['owner friction']).toEqual({ last_5: 1, all: 1, delivered: 1 })
   })
 
   it("runs the retrospective from the post mortems and Owner's corrections, dropping proposals that would not apply", async () => {
@@ -113,7 +130,7 @@ describe('the improvement loop', () => {
         {
           proposal: 1,
           level: 'major',
-          experiment: { id: 1, measure: 'owner_friction_per_item', baseline: 1, purpose: 'Owner corrected missing test runs', target: 0, judge_after: 2, version: '1.0.0' },
+          experiment: { id: 1, measure: 'tool_calls_per_item', baseline: 2, purpose: 'Owner corrected missing test runs', target: 0, judge_after: 2, version: '1.0.0' },
         },
       ],
     })

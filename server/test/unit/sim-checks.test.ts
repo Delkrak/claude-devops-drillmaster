@@ -59,17 +59,17 @@ describe('the checks of a pipeline run', () => {
     { id: 'g', at: at(4), type: 'gate_submitted', work_item_id: 'wi_1', stage: 1, step: 2, step_guid: code!.guid, gate: 'self', self_check: [], text: 't', capture_traces: ['t'] },
     { id: 'v2', at: at(4), type: 'gate_verdict', work_item_id: 'wi_1', stage: 1, step: 2, step_guid: code!.guid, accepted: true, by: 'agent', why: 'ok', rule: null, next: { stage: null, step: null }, done: true },
     { id: 'd', at: at(5), type: 'work_item_delivered', work_item_id: 'wi_1', pr: 'local' },
-    { id: 'j', at: at(6), type: 'owner_inputs_judged', work_item_id: 'wi_1', inputs: [{ event: 'p', friction: false, why: 'w' }] },
+    { id: 'j', at: at(6), type: 'post_mortem_written', work_item_id: 'wi_1', author: 'drillmaster', keep: [], change: [], experiment_reflections: [], measured: [{ measure: 'owner_friction_per_item', occurrences: [] }] },
   ]
-  const expects = { condition_skip: true, capture: 'tests', friction: true }
+  const expects = { condition_skip: true, capture: 'tests', measures_judged: true }
   const named = (events: DrillmasterEvent[], name: string) => checkRun(events, { ownerMessages: 1, issues: 1, retros: 0, expects, ownerGates: { asked: 2, withPreview: 1 } }).checks.find((check) => check.name === name)!
 
-  it('sees steps skipped by condition, captures linked from gates, the friction judge, and Owner gates without their preview', () => {
+  it('sees steps skipped by condition, captures linked from gates, the measures judged, and Owner gates without their preview', () => {
     expect(named(run(false), 'steps were skipped by their if').ok).toBe(true)
     expect(named(run(false), 'no work item went through a step whose if it does not meet').ok).toBe(true)
     expect(named(run(false), 'the tool capture "tests" kept output').ok).toBe(true)
     expect(named(run(false), 'gates link the captures at their step').ok).toBe(true)
-    expect(named(run(false), "the friction judge judged Owner's inputs").ok).toBe(true)
+    expect(named(run(false), "Drillmaster's post mortems judged the measures").ok).toBe(true)
     expect(named(run(false), 'Owner gates showed what Owner approves beside the question')).toMatchObject({ ok: false, detail: '1 of 2' })
   })
 

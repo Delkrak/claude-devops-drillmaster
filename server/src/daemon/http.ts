@@ -133,7 +133,7 @@ export function createRequestHandler(app: Drillmaster, servedProject?: string) {
           const { workflow, project } = await app.init(requireServedProjectDir(body.project), body.objective, {
             url: body.drillmaster_repository,
             ...(typeof body.folder === 'string' ? { folder: body.folder } : {}),
-          })
+          }, body.define_measures ?? [])
           return sendJson(response, 201, { workflow, project: project.key })
         }
         case 'GET /tools':

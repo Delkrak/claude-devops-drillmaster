@@ -53,9 +53,9 @@ describe("the server of a project, at the project's pinned version", () => {
     const exited = new Promise((resolve) => standIn.on('exit', resolve))
 
     await expect(upgradeProject(work, '0.2.0', env)).rejects.toBeInstanceOf(CannotServeProject)
-    await expect(upgradeProject(work, '0.4.0', env, async () => false)).rejects.toThrow(/npm has no claude-devops-drillmaster@0.4.0/)
-    expect(await upgradeProject(work, '0.4.0', env, async () => true)).toMatchObject({ version: '0.4.0', stopped: true })
-    expect(JSON.parse(git(place.url, 'show', 'main:shop/drillmaster.json'))).toEqual({ drillmaster_version: '0.4.0' })
+    await expect(upgradeProject(work, '0.5.0', env, async () => false)).rejects.toThrow(/npm has no claude-devops-drillmaster@0.5.0/)
+    expect(await upgradeProject(work, '0.5.0', env, async () => true)).toMatchObject({ version: '0.5.0', stopped: true })
+    expect(JSON.parse(git(place.url, 'show', 'main:shop/drillmaster.json'))).toEqual({ drillmaster_version: '0.5.0' })
     await exited
     expect(existsSync(projectServerInfoFile(key, env))).toBe(false)
   })

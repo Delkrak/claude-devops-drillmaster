@@ -95,11 +95,11 @@ describe('applying a proposal', () => {
     inputs: {},
     passed_step_guids: [],
     rejections_by_rule: {},
-    values: { owner_friction_per_item: n, gate_rejections_per_item: 0, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
+    values: { gate_rejections_per_item: n, review_rounds_per_item: 0, minutes_per_item: 1, tool_calls_per_item: 5 },
   }))
 
   it("opens a workflow experiment with the measure's baseline", () => {
-    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'owner_friction_per_item', hypothesis: 'a test step stops the asking', target: 1, judge_after: 2, ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] }, items, '2026-11-09')
+    const next = applyProposal(w0, { id: 1, change: 'add a test step', purpose: 'Owner had to ask for tests', measure: 'gate_rejections_per_item', hypothesis: 'a test step stops the asking', target: 1, judge_after: 2, ops: [{ op: 'add_policy', name: 'test', rules: [testRule] }, { op: 'add_stage', name: 'build', purpose: 'the change works', steps: [testStep] }] }, items, '2026-11-09')
     expect(next.level).toBe('major')
     expect(next.workflow.experiments).toEqual([
       {
@@ -107,8 +107,8 @@ describe('applying a proposal', () => {
         change: 'add a test step',
         purpose: 'Owner had to ask for tests',
         hypothesis: 'a test step stops the asking',
-        null_hypothesis: '"add a test step" makes no difference to owner_friction_per_item.',
-        measure: 'owner_friction_per_item',
+        null_hypothesis: '"add a test step" makes no difference to gate_rejections_per_item.',
+        measure: 'gate_rejections_per_item',
         baseline: 2,
         baseline_sd: 0.82,
         target: 1,
@@ -179,6 +179,7 @@ describe("reading Drillmaster's answers", () => {
       keep: [{ refs: [], text: 'k' }],
       change: [{ refs: [{ ref: 'step 1.2', guid: WORKFLOW_3.stages[0]!.steps[1]!.guid }], text: 'c' }],
       experiment_reflections: [],
+      measured: [{ measure: 'owner_friction_per_item', occurrences: [] }],
     })
   })
 
@@ -194,13 +195,13 @@ describe("reading Drillmaster's answers", () => {
       findings,
       proposals: [
         { change: 'time it', purpose: 'p', measure: 'minutes_per_item', ops: [{ op: 'set_objective', measures: ['minutes_per_item'] }] },
-        { change: 'lint rule', purpose: 'p', measure: 'owner_friction_per_item', ops: [lintRule] },
-        { change: 'lint step', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['rule lint 1.1', 'step 1.1'], ops: [{ op: 'change_step', step: '1.1', rules: ['test 1.1', 'lint 1.1'] }] },
-        { change: 'own rule', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['rule own 1.1'], ops: [{ op: 'add_policy', name: 'own', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] },
+        { change: 'lint rule', purpose: 'p', measure: 'gate_rejections_per_item', ops: [lintRule] },
+        { change: 'lint step', purpose: 'p', measure: 'gate_rejections_per_item', relies_on: ['rule lint 1.1', 'step 1.1'], ops: [{ op: 'change_step', step: '1.1', rules: ['test 1.1', 'lint 1.1'] }] },
+        { change: 'own rule', purpose: 'p', measure: 'gate_rejections_per_item', relies_on: ['rule own 1.1'], ops: [{ op: 'add_policy', name: 'own', rules: [{ id: '1.1', rule: 'r', verified_by: 'v' }] }] },
       ],
     })
     expect(read.proposals.map((p) => [p.change, p.depends_on])).toEqual([['time it', undefined], ['lint rule', undefined], ['lint step', [2]], ['own rule', undefined]])
-    const nothing = { change: 'nothing there', purpose: 'p', measure: 'owner_friction_per_item', relies_on: ['step 7.1'], ops: [{ op: 'set_objective', text: 'x' }] }
+    const nothing = { change: 'nothing there', purpose: 'p', measure: 'gate_rejections_per_item', relies_on: ['step 7.1'], ops: [{ op: 'set_objective', text: 'x' }] }
     expect(readRetroAnswer(WORKFLOW_3, { findings, proposals: [nothing] }).dropped).toEqual([{ change: 'nothing there', error: "It relies on step 7.1, which workflow 3.0.0 doesn't have and no earlier proposal adds." }])
   })
 })

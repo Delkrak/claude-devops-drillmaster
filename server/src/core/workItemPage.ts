@@ -1,7 +1,6 @@
 import { conditionInWords, describeInputsOf, parseCondition } from './conditions.js'
 import type { DrillmasterEvent, GateSubmitted, GateVerdict, StepSkipDecided, WorkItemDelivered, WorkReported, WorkTrace } from './events.js'
-import { frictionPlacementsOf } from './frictionPlacement.js'
-import { frictionJudgementsOf, isFriction, ownerInputsOf } from './ownerInputs.js'
+import { frictionJudgementsOf, frictionPlacementsOf, isFriction, ownerInputsOf } from './ownerInputs.js'
 import { foldState } from './state.js'
 import { firstApplyingPosition, inputValuesOf, workflowOfWorkItem } from './work.js'
 import type { WorkStep } from './workflow.js'

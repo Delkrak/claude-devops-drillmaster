@@ -1,6 +1,5 @@
 import type { ComplaintsGrouped, DrillmasterEvent, PostMortemWritten, WorkReported } from './events.js'
-import { frictionPlacementsOf } from './frictionPlacement.js'
-import { frictionJudgementsOf, ownerInputsOf } from './ownerInputs.js'
+import { frictionJudgementsOf, frictionPlacementsOf, ownerInputsOf } from './ownerInputs.js'
 import { extractFirstJsonObject } from './review.js'
 import { foldState } from './state.js'
 

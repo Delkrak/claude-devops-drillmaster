@@ -279,7 +279,7 @@ export interface Artifact {
   bytes: number
 }
 
-/** The friction judge's verdict on each of Owner's inputs on a work item. */
+/** The friction judge's verdict on each of Owner's inputs on a work item. Drillmaster 0.3 wrote it. */
 export interface OwnerInputsJudged extends EventEnvelope {
   type: 'owner_inputs_judged'
   work_item_id: string
@@ -292,10 +292,33 @@ export interface ComplaintsGrouped extends EventEnvelope {
   groups: { tool: string; summary: string; complaints: string[] }[]
 }
 
+/** Drillmaster 0.3 wrote it. */
 export interface FrictionPlaced extends EventEnvelope {
   type: 'friction_placed'
   work_item_id: string
   inputs: { event: string; step_guid: string | null; why: string }[]
+}
+
+/** Where a judged measure happened on a work item: at a step, or where no step should have caught it. */
+export interface MeasureOccurrence {
+  step_guid: string | null
+  /** The ids of the events it is about. */
+  events: string[]
+  why: string
+}
+
+export interface MeasureJudgement {
+  measure: string
+  occurrences: MeasureOccurrence[]
+}
+
+/** Drillmaster's judgement of the measures on what happened to a work item after its post mortem, such as Owner's corrections after delivery. */
+export interface LateMeasuresJudged extends EventEnvelope {
+  type: 'late_measures_judged'
+  work_item_id: string
+  /** The last event of the work item it judged. */
+  through: string
+  measured: MeasureJudgement[]
 }
 
 export interface PostMortemWritten extends EventEnvelope {
@@ -305,6 +328,8 @@ export interface PostMortemWritten extends EventEnvelope {
   keep: Feedback[]
   change: Feedback[]
   experiment_reflections: ExperimentReflection[]
+  /** Drillmaster's judgement of each measure the workflow defines; missing when it could not judge them. */
+  measured?: MeasureJudgement[]
 }
 
 export type DrillmasterEvent =
@@ -325,6 +350,7 @@ export type DrillmasterEvent =
   | InputSet
   | WorkItemDelivered
   | PostMortemWritten
+  | LateMeasuresJudged
   | OwnerInputsJudged
   | FrictionPlaced
   | ComplaintsGrouped

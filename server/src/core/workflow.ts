@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { comparisonsOf, InvalidCondition, parseCondition } from './conditions.js'
 import { InvalidPipeline, parsePipeline } from './logPipeline.js'
-import { currentMeasureName, isOldMeasureName, MEASURE_NAMES } from './measures.js'
+import { currentMeasureName, isCountedMeasure, isOldMeasureName, OWNER_FRICTION } from './measures.js'
 import { guidFromSeed, stepPosition } from './refs.js'
 import { toSemver } from './versions.js'
 
@@ -88,7 +88,7 @@ export const WorkflowExperiment = z.object({
   purpose: z.string().min(1),
   hypothesis: z.string(),
   null_hypothesis: z.string(),
-  measure: z.enum(MEASURE_NAMES),
+  measure: z.string().min(1),
   baseline: z.number(),
   baseline_sd: z.number().nonnegative(),
   target: z.number().nullable(),
@@ -106,7 +106,16 @@ export const WorkflowExperiment = z.object({
 
 export const Objective = z.object({
   text: z.string().min(1),
-  measures: z.array(z.enum(MEASURE_NAMES)).min(1),
+  measures: z.array(z.string().min(1)).min(1),
+})
+
+/** A measure the workflow defines: Drillmaster judges it for each delivered work item from the definition. */
+export const JudgedMeasure = z.object({
+  name: z.string().regex(/^\S(.*\S)?$/, 'a measure name does not start or end with a space'),
+  /** What counts as one occurrence; every measure counts what should not happen, so lower is better. */
+  definition: z.string().min(1),
+  /** Whether the viewer's pages show where it happened. */
+  show: z.boolean(),
 })
 
 export const WorkflowDocument = z
@@ -117,6 +126,7 @@ export const WorkflowDocument = z
     policies: z.array(WorkPolicy),
     inputs: z.array(WorkItemInput),
     tool_captures: z.array(ToolCapture),
+    measures: z.array(JudgedMeasure).default([]),
     experiments: z.array(WorkflowExperiment),
   })
   .superRefine((workflow, refinement) => {
@@ -164,6 +174,14 @@ export const WorkflowDocument = z
         issue(`tool capture "${capture.name}": ${error.message}`)
       }
     }
+    const measureNames = new Set<string>()
+    for (const measure of workflow.measures) {
+      if (isCountedMeasure(measure.name)) issue(`measure "${measure.name}" is one Drillmaster counts, so the workflow cannot define it`)
+      if (measureNames.has(measure.name)) issue(`measure "${measure.name}" is defined twice`)
+      measureNames.add(measure.name)
+    }
+    for (const name of workflow.objective.measures) if (!isMeasureOf(workflow, name)) issue(`the objective's measure "${name}" is neither counted by Drillmaster nor defined by the workflow`)
+    for (const experiment of workflow.experiments) if (!isMeasureOf(workflow, experiment.measure)) issue(`workflow experiment ${experiment.id} measures "${experiment.measure}", which is neither counted by Drillmaster nor defined by the workflow`)
     const guids = guidsOf(workflow)
     const repeated = guids.find((guid, index) => guids.indexOf(guid) !== index)
     if (repeated) issue(`GUID ${repeated} is used twice`)
@@ -211,12 +229,23 @@ export type PolicyRule = z.infer<typeof PolicyRule>
 export type Objective = z.infer<typeof Objective>
 export type WorkItemInput = z.infer<typeof WorkItemInput>
 export type ToolCapture = z.infer<typeof ToolCapture>
+export type JudgedMeasure = z.infer<typeof JudgedMeasure>
 export type WorkflowExperiment = z.infer<typeof WorkflowExperiment>
 
 export const FIRST_VERSION = '0.0.0'
 
-export const workflowZero = (objective: Objective): WorkflowDocument =>
-  WorkflowDocument.parse({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] })
+const emptyWorkflow = (objective: unknown, measures: unknown) => ({ version: FIRST_VERSION, objective, stages: [], policies: [], inputs: [], tool_captures: [], measures, experiments: [] })
+
+export const workflowZero = (objective: Objective, measures: JudgedMeasure[] = []): WorkflowDocument => WorkflowDocument.parse(emptyWorkflow(objective, measures))
+
+/** Workflow 0.0.0 from what Owner gave at setup, or why it is invalid. */
+export const parseWorkflowZero = (objective: unknown, measures: unknown) => WorkflowDocument.safeParse(emptyWorkflow(objective, measures))
+
+/** Whether the measure is one Drillmaster counts or one the workflow defines. */
+export const isMeasureOf = (workflow: Pick<WorkflowDocument, 'measures'>, name: string) => isCountedMeasure(name) || workflow.measures.some((measure) => measure.name === name)
+
+/** The workflow as JSON for a reader: GUIDs are Drillmaster's bookkeeping, references are what readers use. */
+export const workflowForReading = (workflow: WorkflowDocument) => JSON.stringify(workflow, (key, value) => (key === 'guid' ? undefined : value), 2)
 
 export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: string) {
   const [policyName, ruleId] = ruleRef.split(' ')
@@ -231,7 +260,8 @@ export function findRule(workflow: Pick<WorkflowDocument, 'policies'>, ruleRef: 
  * were called metrics (with categories, taken at a step). Missing text becomes an empty
  * string, which the retrospective is asked to fill in. A component without a GUID takes the GUID
  * of the component with its name in `previous`, the version before it, so it is followed across
- * versions; a new one gets a GUID made from its name.
+ * versions; a new one gets a GUID made from its name. A workflow that names owner friction, which
+ * Drillmaster once judged on its own, defines it.
  */
 export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): WorkflowDocument {
   const { storage: _storage, metrics: oldMetrics, ...document } = structuredClone(raw) as Record<string, any>
@@ -247,10 +277,14 @@ export function migrateWorkflow(raw: unknown, previous?: WorkflowDocument): Work
   const earlierStep = (stageName: string, name: string) =>
     earlierStage(stageName)?.steps.find((step) => step.name === name) ?? previous?.stages.flatMap((stage) => stage.steps).find((step) => step.name === name)
   const earlierPolicy = (name: string) => previous?.policies.find((policy) => policy.name === name)
+  const objectiveMeasures: string[] = (document.objective?.measures ?? []).map(currentMeasureName)
+  const measures: JudgedMeasure[] = document.measures ?? []
+  const namesOwnerFriction = [...objectiveMeasures, ...(document.experiments ?? []).map((experiment: Record<string, any>) => currentMeasureName(experiment.measure))].includes(OWNER_FRICTION.name)
   return {
     ...document,
     version,
-    ...(document.objective ? { objective: { ...document.objective, measures: (document.objective.measures ?? []).map(currentMeasureName) } } : {}),
+    ...(document.objective ? { objective: { ...document.objective, measures: objectiveMeasures } } : {}),
+    measures: namesOwnerFriction && !measures.some((measure) => measure.name === OWNER_FRICTION.name) ? [...measures, { ...OWNER_FRICTION }] : measures,
     stages: (document.stages ?? []).map((stage: Record<string, any>) => ({
       ...stage,
       guid: guidFor(stage.guid, earlierStage(stage.name)?.guid, `stage:${stage.name}`),

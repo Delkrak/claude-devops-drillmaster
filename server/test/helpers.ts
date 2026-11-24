@@ -41,7 +41,7 @@ export function workToolCall(name: string, args: Record<string, unknown>): { nam
   return { name: WORK_TOOLS[action] ?? `work_${action}`, arguments: { ...required, ...fields } }
 }
 
-export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['owner_friction_per_item'] }
+export const OBJECTIVE = { text: 'ship features without Owner stepping in', measures: ['gate_rejections_per_item'] }
 
 /** Two work stages: build (two self gates) and review (an Owner gate). */
 export const WORKFLOW_3: WorkflowDocument = migrateWorkflow({
@@ -84,7 +84,7 @@ export const WORKFLOW_DM: WorkflowDocument = {
 /** Seeds a project's events directly, as if earlier workflow retrospectives had happened. */
 export async function seedWorkflow(ports: Ports, dir: string, workflow: WorkflowDocument) {
   const project = folderKey(dir)
-  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], inputs: [], tool_captures: [], experiments: [] }
+  const v0 = { version: '0.0.0', objective: workflow.objective, stages: [], policies: [], inputs: [], tool_captures: [], measures: workflow.measures, experiments: [] }
   await ports.store.append(project, { id: 'seed_0', at: '2026-11-01T00:00:00Z', type: 'project_initialized', dir, workflow: v0 })
   const major = Number(workflow.version.split('.')[0])
   for (let v = 1; v <= major; v++) {

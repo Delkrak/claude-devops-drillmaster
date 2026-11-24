@@ -26,7 +26,7 @@ async function project(dir: string, workflow: WorkflowDocument, script: Record<s
   const item = async () => (await app.state(dir)).workItems[workItemId]!
   const gate = (step: string, rules: string[]) => app.callTool(dir, 'work_gate', { token, step, self_check: rules.flatMap(check), text: 'done' })
   const changeWorkflow = async (ops: unknown[]) => {
-    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'the change', purpose: 'p', measure: 'owner_friction_per_item', ops }] })
+    ports.reviewer.enqueue('retrospective', { findings: { should: 's', did: 'd', why: 'w', keep: [], improve: [] }, proposals: [{ change: 'the change', purpose: 'p', measure: 'gate_rejections_per_item', ops }] })
     await app.callTool(dir, 'workflow_retrospective', { action: 'run' })
     await ownerAnswers(app, dir, () => 'Approve')
     return (await app.callTool(dir, 'workflow_retrospective', { action: 'apply' })).structuredContent as { workflow_version: string; note?: string }
