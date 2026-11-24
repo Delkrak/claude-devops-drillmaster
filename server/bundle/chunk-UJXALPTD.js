@@ -1,13 +1,15 @@
 import { createRequire as __drillmasterRequire } from 'node:module'; const require = __drillmasterRequire(import.meta.url);
 import {
   DotDrillmasterResolver,
+  VERSION,
   __export,
   drillmasterHome,
   projectServerInfoFile,
   projectToServe,
   readProjectServerInfo,
-  runningProjectServer
-} from "./chunk-NOJDCKZL.js";
+  runningProjectServer,
+  runningProjectServerOf
+} from "./chunk-V4S4BLH3.js";
 
 // src/projectServer.ts
 import { execFile as execFile3, spawn as spawn2 } from "node:child_process";
@@ -20674,6 +20676,7 @@ function migrateWorkflow(raw, previous) {
 }
 
 // src/core/state.ts
+var questionKeyOf = (question) => question.kind === "proposal" ? `proposal ${question.retro_id} ${question.proposal}` : `${question.kind} ${question.work_item_id} ${question.stage}.${question.step}`;
 function foldState(events) {
   const state = {
     initialized: false,
@@ -20683,6 +20686,7 @@ function foldState(events) {
     sessions: {},
     workItems: {},
     ownerAsked: {},
+    ownerComments: {},
     traceCount: 0,
     eventCount: 0
   };
@@ -20715,6 +20719,9 @@ function foldState(events) {
         }
         break;
       }
+      case "owner_commented":
+        state.ownerComments[event.question] = event.comment;
+        break;
       case "owner_asked":
         state.ownerAsked[event.tool_use_id] = event.questions;
         break;
@@ -20770,6 +20777,7 @@ function foldState(events) {
         break;
       }
       case "gate_verdict": {
+        delete state.ownerComments[questionKeyOf({ kind: "owner_gate", work_item_id: event.work_item_id, stage: event.stage, step: event.step })];
         const item = state.workItems[event.work_item_id];
         if (item) {
           item.pending_gate = null;
@@ -20826,6 +20834,7 @@ function foldState(events) {
         break;
       }
       case "step_skip_decided": {
+        delete state.ownerComments[questionKeyOf({ kind: "step_skip", work_item_id: event.work_item_id, stage: event.stage, step: event.step })];
         const item = state.workItems[event.work_item_id];
         if (item) {
           item.pending_skip = null;
@@ -21490,9 +21499,6 @@ function portsFromEnv(env = process.env) {
   };
 }
 
-// src/version.ts
-var VERSION = "0.4.0";
-
 // src/projectServer.ts
 var START_POLL_MS = 150;
 var OWN_BUILD_START_TIMEOUT_MS = 15e3;
@@ -21524,10 +21530,13 @@ async function pinnedVersion(key, place, env) {
   const { writer, projectsRoot } = repositoryOptionsFromEnv(env);
   return await RepositoryPublisher.forProject(projectsRoot, key, place, writer).readPin() ?? VERSION;
 }
+var keepsRunningServer = (runningVersion, pinned) => runningVersion === VERSION || !ownBuildServes(pinned);
 async function findOrStartProjectServer(project, env = process.env) {
-  const running = await runningProjectServer(project.key, env);
-  if (running) return running;
+  const running = await runningProjectServerOf(project.key, env);
+  if (running?.version === VERSION) return running.url;
   const version2 = await pinnedVersion(project.key, project.place, env);
+  if (running && keepsRunningServer(running.version, version2)) return running.url;
+  if (running) await stopProjectServer(project.key, env);
   const { command, args, timeoutMs, shell } = serverCommandFor(version2, project.key);
   const server = spawn2(command, args, { detached: true, stdio: "ignore", windowsHide: true, env, shell });
   let startError;
@@ -21536,12 +21545,13 @@ async function findOrStartProjectServer(project, env = process.env) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
-    if (startError) throw new CannotServeProject(`Drillmaster ${version2}, pinned for this project, could not start (${[command, ...args].join(" ")}): ${startError.message}`);
+    if (startError) throw new CannotServeProject(`Drillmaster ${version2}, pinned for this project, could not start (${[command, ...args].join(" ")}): ${startError.message}${upgradeHint(version2)}`);
     const started = await runningProjectServer(project.key, env);
     if (started) return started;
   }
-  throw new CannotServeProject(`Drillmaster ${version2}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1e3}s (${[command, ...args].join(" ")}).`);
+  throw new CannotServeProject(`Drillmaster ${version2}, pinned in ${project.place.url} (${project.place.folder}/drillmaster.json), did not start within ${timeoutMs / 1e3}s (${[command, ...args].join(" ")}).${upgradeHint(version2)}`);
 }
+var upgradeHint = (pinned) => ownBuildServes(pinned) ? "" : ` To run this plugin's Drillmaster ${VERSION} instead, run \`drillmaster upgrade\` in the work folder.`;
 async function stopProjectServer(projectKeyOfServer, env = process.env) {
   const info = await readProjectServerInfo(projectKeyOfServer, env);
   if (!info) return false;
@@ -21656,6 +21666,7 @@ export {
   isMeasureOf,
   workflowForReading,
   findRule,
+  questionKeyOf,
   foldState,
   findWorkItemByTokenHash,
   workReportsOf,
@@ -21665,7 +21676,6 @@ export {
   viewWorkflow,
   RepositoryConflict,
   RepositoryPublisher,
-  VERSION,
   repositoryOptionsFromEnv,
   portsFromEnv,
   FIRST_PROJECT_SERVER_VERSION,
@@ -21673,6 +21683,7 @@ export {
   CannotServeProject,
   ownBuildServes,
   serverCommandFor,
+  keepsRunningServer,
   findOrStartProjectServer,
   stopProjectServer,
   upgradeProject

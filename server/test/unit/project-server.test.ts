@@ -7,7 +7,7 @@ import { projectKey } from '../../src/adapters/projects.js'
 import { RepositoryPublisher } from '../../src/adapters/repositoryPublisher.js'
 import { workflowZero } from '../../src/core/workflow.js'
 import { projectServerInfoFile } from '../../src/projectLocator.js'
-import { CannotServeProject, findOrStartProjectServer, serverCommandFor, stopProjectServer, upgradeProject } from '../../src/projectServer.js'
+import { CannotServeProject, findOrStartProjectServer, keepsRunningServer, ownBuildServes, serverCommandFor, stopProjectServer, upgradeProject } from '../../src/projectServer.js'
 import { VERSION } from '../../src/version.js'
 import { OBJECTIVE, tempDir } from '../helpers.js'
 
@@ -67,6 +67,28 @@ describe("the server of a project, at the project's pinned version", () => {
     expect(await stopProjectServer(key, env)).toBe(false)
     expect(unrelated.exitCode).toBeNull()
     unrelated.kill()
+  })
+
+  it("replaces a running server of another version only with this plugin's own build, when that serves the pin", () => {
+    const [major, minor] = VERSION.split('.')
+    expect(keepsRunningServer(VERSION, '0.3.0')).toBe(true)
+    expect(keepsRunningServer('0.3.0', `${major}.${minor}.0`)).toBe(false)
+    expect(keepsRunningServer('0.3.0', '0.3.0')).toBe(!ownBuildServes('0.3.0'))
+  })
+
+  it('keeps a running server of an older version when the pin needs a build this plugin is not', async () => {
+    const key = projectKey(place)
+    await RepositoryPublisher.forProject(path.join(root.dir, 'setup-clones'), key, place, 'w_setup').pushPin('0.3.0')
+    const standIn = spawn(process.execPath, ['-e', `require('http').createServer((q, s) => s.end(JSON.stringify({ name: 'drillmaster', version: '0.3.0', pid: process.pid, project: '${key}' }))).listen(0, '127.0.0.1', function () { console.log(this.address().port) })`], { stdio: ['ignore', 'pipe', 'ignore'] })
+    const port = await new Promise<string>((resolve) => standIn.stdout!.once('data', (data) => resolve(String(data).trim())))
+    await mkdir(path.dirname(projectServerInfoFile(key, env)), { recursive: true })
+    await writeFile(projectServerInfoFile(key, env), JSON.stringify({ port: Number(port), pid: standIn.pid, url: `http://127.0.0.1:${port}`, version: '0.3.0' }))
+    try {
+      expect(await findOrStartProjectServer({ key, place }, env)).toBe(`http://127.0.0.1:${port}`)
+      expect(standIn.exitCode).toBeNull()
+    } finally {
+      standIn.kill()
+    }
   })
 
   it('reads the pin from main before it starts a server, and refuses one it cannot run', async () => {

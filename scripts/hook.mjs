@@ -32,7 +32,7 @@ const forwardHook = async () => {
   if (!hookEvent) return
   const payload = readHookPayload()
   const projectDir = process.env.CLAUDE_PROJECT_DIR ?? payload.cwd ?? process.cwd()
-  const { projectToServe, readProjectServerInfo } = await buildModule('projectLocator.js')
+  const { projectToServe, readProjectServerInfo, VERSION } = await buildModule('projectLocator.js')
   // A folder without .drillmaster isn't traced.
   const project = projectToServe(projectDir)
   if (!project) return
@@ -43,6 +43,8 @@ const forwardHook = async () => {
     // The fast path: the server named in daemon.json, which refuses a folder of another project.
     const announced = await readProjectServerInfo(project.key)
     if (!announced) throw new Error('no server')
+    // A server of another version, left by an earlier plugin, is checked at the session's start.
+    if (hookEvent === 'SessionStart' && announced.version !== VERSION) throw new Error('another version')
     serverAnswer = await postHookEvent(announced.url, hookEvent, body)
   } catch {
     // Only the session's first hook starts the project's server; later hooks must stay fast.

@@ -20,7 +20,6 @@ import {
   SkipDecider,
   ToolCapture,
   UpdateLevel,
-  VERSION,
   WorkItemInput,
   WorkflowDocument,
   WorkflowQueryError,
@@ -71,6 +70,7 @@ import {
   parseWorkflowZero,
   portsFromEnv,
   preprocess,
+  questionKeyOf,
   readArtifactFromWorkFolder,
   record,
   refOfGuid,
@@ -93,8 +93,9 @@ import {
   workTracesOf,
   workflowForReading,
   writtenBeforeMeasuresWereJudged
-} from "./chunk-Z5V2KKQS.js";
+} from "./chunk-UJXALPTD.js";
 import {
+  VERSION,
   __commonJS,
   __toESM,
   defaultFolderOf,
@@ -104,7 +105,7 @@ import {
   readProjectServerInfo,
   requestJson,
   runningProjectServer
-} from "./chunk-NOJDCKZL.js";
+} from "./chunk-V4S4BLH3.js";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
@@ -7896,6 +7897,10 @@ function ownerGatePreview(workflow, item, stage, stepNumber, report) {
   ].join("\n");
 }
 var withPreview = (options, preview) => options.map((option) => ({ ...option, preview }));
+var withOwnerComment = (preview, comment) => comment ? `${preview}
+
+## Your note last time
+${comment}` : preview;
 function ownerGateQuestion(state, item) {
   const gate = item.pending_gate;
   if (gate?.gate !== "owner") return void 0;
@@ -7910,10 +7915,10 @@ function ownerGateQuestion(state, item) {
     header: "Owner gate",
     options: withPreview(
       [
-        { label: APPROVE, description: "This is what you want: the work moves on. A note makes it a rejection." },
-        { label: REJECT, description: "It goes back. Say what to change in a note, or type it." }
+        { label: APPROVE, description: "This is what you want: the work moves on. With a note, nothing is decided yet: Agent talks it through with you." },
+        { label: REJECT, description: "It goes back. Say what to change in a note." }
       ],
-      ownerGatePreview(workflow, item, gate.stage, gate.step, gate.text)
+      withOwnerComment(ownerGatePreview(workflow, item, gate.stage, gate.step, gate.text), state.ownerComments[questionKeyOf({ kind: "owner_gate", work_item_id: item.work_item_id, stage: gate.stage, step: gate.step })])
     ),
     multiSelect: false
   };
@@ -7941,10 +7946,10 @@ function stepSkipQuestion(state, item) {
     header: "Skip step",
     options: withPreview(
       [
-        { label: APPROVE, description: "The step is not needed for this work item: it moves on. A note makes it a rejection." },
-        { label: REJECT, description: "Agent does the step. Say why in a note, or type it." }
+        { label: APPROVE, description: "The step is not needed for this work item: it moves on. With a note, nothing is decided yet: Agent talks it through with you." },
+        { label: REJECT, description: "Agent does the step. Say why in a note." }
       ],
-      preview
+      withOwnerComment(preview, state.ownerComments[questionKeyOf({ kind: "step_skip", work_item_id: item.work_item_id, stage: skip.stage, step: skip.step })])
     ),
     multiSelect: false
   };
@@ -7961,10 +7966,10 @@ function proposalQuestions(state) {
     header: header(`Proposal ${proposal.id}`),
     options: withPreview(
       [
-        { label: APPROVE, description: "Apply it as a workflow experiment." },
-        { label: DECLINE, description: "Leave the workflow as it is. A note on Approve declines it too." }
+        { label: APPROVE, description: "Apply it as a workflow experiment. With a note, nothing is decided yet: Agent talks it through with you." },
+        { label: DECLINE, description: "Leave the workflow as it is. Say why in a note." }
       ],
-      proposalPreview(proposal)
+      withOwnerComment(proposalPreview(proposal), state.ownerComments[questionKeyOf({ kind: "proposal", retro_id: retro.retro_id, proposal: proposal.id })])
     ),
     multiSelect: false
   }));
@@ -8016,14 +8021,31 @@ var askUserQuestionInput = (questions) => ({
 });
 var quote = (text, maxLength = MAX_QUOTED_ANSWER_LENGTH) => text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 function readApproval(ownerAnswer) {
-  const approved = ownerAnswer.answer === APPROVE && !ownerAnswer.notes;
-  const reason = [ownerAnswer.answer === APPROVE || ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE ? "" : ownerAnswer.answer, ownerAnswer.notes].filter(Boolean).join(" - ");
-  return { approved, reason };
+  const notes = ownerAnswer.notes ?? "";
+  if (ownerAnswer.answer === APPROVE && !notes) return { decision: "approved" };
+  if (ownerAnswer.answer === REJECT || ownerAnswer.answer === DECLINE) return { decision: "rejected", reason: notes };
+  return { decision: "undecided", comment: [ownerAnswer.answer === APPROVE ? "" : ownerAnswer.answer.trim(), notes].filter(Boolean).join(" - ") };
+}
+var QUESTION_SUBJECTS = {
+  owner_gate: (question) => `the Owner gate of step ${"stage" in question ? `${question.stage}.${question.step}` : ""}`,
+  step_skip: (question) => `skipping step ${"stage" in question ? `${question.stage}.${question.step}` : ""}`,
+  proposal: (question) => `proposal ${"proposal" in question ? question.proposal : ""}`
+};
+function leftUndecided(question, comment) {
+  return {
+    events: [{ type: "owner_commented", question: questionKeyOf(question), ..."work_item_id" in question ? { work_item_id: question.work_item_id } : {}, comment }],
+    lines: [
+      `Owner did not decide ${QUESTION_SUBJECTS[question.kind](question)} and said: "${quote(comment)}". Talk it through with Owner; once Owner is ready, ask again with the question below, which shows Owner's note.`
+    ]
+  };
 }
 function decideOwnerQuestion(state, question, ownerAnswer) {
   switch (question.kind) {
     case "owner_gate": {
-      const { approved: accepted, reason } = readApproval(ownerAnswer);
+      const approval = readApproval(ownerAnswer);
+      if (approval.decision === "undecided") return leftUndecided(question, approval.comment);
+      const accepted = approval.decision === "approved";
+      const reason = approval.decision === "rejected" ? approval.reason : "";
       const item = state.workItems[question.work_item_id];
       const workflow = workflowOfWorkItem(state, item);
       const passed = accepted ? nextPosition(workflow, question.stage, question.step) : { next: { stage: question.stage, step: question.step }, done: false };
@@ -8051,7 +8073,10 @@ function decideOwnerQuestion(state, question, ownerAnswer) {
       };
     }
     case "proposal": {
-      const { approved, reason } = readApproval(ownerAnswer);
+      const approval = readApproval(ownerAnswer);
+      if (approval.decision === "undecided") return leftUndecided(question, approval.comment);
+      const approved = approval.decision === "approved";
+      const reason = approval.decision === "rejected" ? approval.reason : "";
       return {
         events: [
           {
@@ -8068,7 +8093,10 @@ function decideOwnerQuestion(state, question, ownerAnswer) {
       };
     }
     case "step_skip": {
-      const { approved: accepted, reason } = readApproval(ownerAnswer);
+      const approval = readApproval(ownerAnswer);
+      if (approval.decision === "undecided") return leftUndecided(question, approval.comment);
+      const accepted = approval.decision === "approved";
+      const reason = approval.decision === "rejected" ? approval.reason : "";
       const item = state.workItems[question.work_item_id];
       const decided = decideSkip(state, item, { accepted, by: "owner", via: "question", why: accepted ? "Owner approved." : `Owner rejected${reason ? `: "${quote(reason)}"` : "."}` });
       const move = decided.answer;
@@ -8097,15 +8125,22 @@ var updateLine = (update) => `The work item updated from workflow ${update.from_
 function decideOwnerAnswers(state, answers, annotations) {
   const pending = pendingOwnerQuestions(state);
   const outcome = { events: [], lines: [] };
-  for (const [questionText, answer] of Object.entries(answers)) {
+  const comments = {};
+  for (const questionText of /* @__PURE__ */ new Set([...Object.keys(answers), ...Object.keys(annotations)])) {
     const question = pending.find((candidate) => candidate.question === questionText);
-    if (!question || typeof answer !== "string") continue;
+    const answer = answers[questionText] ?? "";
     const notes = annotations[questionText]?.notes;
-    const decided = decideOwnerQuestion(state, question, { answer, ...typeof notes === "string" && notes.trim() ? { notes: notes.trim() } : {} });
+    const trimmedNotes = typeof notes === "string" ? notes.trim() : "";
+    if (!question || typeof answer !== "string" || !answer.trim() && !trimmedNotes) continue;
+    const decided = decideOwnerQuestion(state, question, { answer, ...trimmedNotes ? { notes: trimmedNotes } : {} });
     outcome.events.push(...decided.events);
     outcome.lines.push(...decided.lines);
+    for (const event of decided.events) if (event.type === "owner_commented") comments[event.question] = event.comment;
   }
-  return outcome;
+  if (Object.keys(comments).length === 0) return outcome;
+  const withComments = { ...state, ownerComments: { ...state.ownerComments, ...comments } };
+  const askAgain = askUserQuestionInput(pendingOwnerQuestions(withComments).filter((question) => question.kind !== "owner_input" && comments[questionKeyOf(question)] !== void 0));
+  return { ...outcome, askAgain };
 }
 
 // src/core/toolCapture.ts
@@ -8257,6 +8292,10 @@ function handleHook(state, hookEvent, payload, recordRaw, context = {}) {
     }
   }
   if (hookEvent === "UserPromptSubmit" && typeof payload.prompt === "string") trace.prompt = payload.prompt;
+  if (hookEvent === "PostToolUse" && payload.tool_name === ASK_USER_QUESTION) {
+    const answers = ownerAnswersOf(payload.tool_response);
+    if (answers.length) trace.answers = answers;
+  }
   if (recordRaw) trace.raw = redactTokens(payload);
   if (typeof payload.tool_use_id === "string") trace.tool_use_id = payload.tool_use_id;
   events.push(trace);
@@ -8268,6 +8307,16 @@ function handleHook(state, hookEvent, payload, recordRaw, context = {}) {
   return { events, output: hookEvent === "SessionStart" ? briefSession(state, item, context) : void 0 };
 }
 var ASK_USER_QUESTION = "AskUserQuestion";
+var MAX_ANSWER_LENGTH = 2e3;
+function ownerAnswersOf(response) {
+  const { answers = {}, annotations = {} } = response ?? {};
+  return [.../* @__PURE__ */ new Set([...Object.keys(answers), ...Object.keys(annotations)])].flatMap((question) => {
+    const answer = typeof answers[question] === "string" ? redactTokens(answers[question]).slice(0, MAX_ANSWER_LENGTH) : "";
+    const notes = annotations[question]?.notes;
+    const note = typeof notes === "string" && notes.trim() ? redactTokens(notes.trim()).slice(0, MAX_ANSWER_LENGTH) : void 0;
+    return answer || note ? [{ question, answer, ...note ? { notes: note } : {} }] : [];
+  });
+}
 var denyAsk = (reason) => ({
   events: [],
   output: { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Drillmaster: ${reason}` } }
@@ -8311,16 +8360,18 @@ function handleAskUserQuestion(state, hookEvent, sessionId, payload) {
   if (!askedTexts) return { events: [] };
   const response = payload.tool_response ?? {};
   const answersToAsked = Object.fromEntries(Object.entries(response.answers ?? {}).filter(([text]) => askedTexts.includes(text)));
-  const decided = decideOwnerAnswers(state, answersToAsked, response.annotations ?? {});
+  const annotationsToAsked = Object.fromEntries(Object.entries(response.annotations ?? {}).filter(([text]) => askedTexts.includes(text)));
+  const decided = decideOwnerAnswers(state, answersToAsked, annotationsToAsked);
   if (decided.lines.length === 0) return { events: [] };
-  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `Drillmaster: ${decided.lines.join(" ")}` } } };
+  const askAgain = decided.askAgain ? ` The question to ask again, as it is: ${JSON.stringify(decided.askAgain)}` : "";
+  return { events: decided.events, output: { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: `Drillmaster: ${decided.lines.join(" ")}${askAgain}` } } };
 }
 function briefSession(state, item, context) {
   const workflow = state.workflow;
   const lines = [
     `Drillmaster runs this project (workflow version ${workflow.version}). Owner's objective: "${workflow.objective.text}".`,
     "Every action you take is recorded in the work traces. Load the /devops-drillmaster:concept skill if any Drillmaster term is unclear.",
-    item ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? "no work stage yet" : `work step ${item.stage}.${item.step}`}.` : "Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how."
+    item?.status === "delivered" ? `Your last work item, ${item.work_item_id} (${item.issue}), is delivered. What Owner asks for on it still counts on it; start new work with work_start, or take up one from an earlier session with work_resume.` : item ? `You are on work item ${item.work_item_id} (${item.issue}), at ${item.stage === null ? "no work stage yet" : `work step ${item.stage}.${item.step}`}.` : "Start every work item with the work_start tool, or take up one from an earlier session with work_resume, and report to Drillmaster as you go. The /devops-drillmaster:work skill shows how."
   ];
   if (item?.pending_gate) {
     lines.push(`The ${item.pending_gate.gate} gate of work step ${item.pending_gate.stage}.${item.pending_gate.step} is pending.`);
@@ -8985,7 +9036,11 @@ function buildRetroPrompt(state, events, tools) {
   const recentItemEvents = events.filter((event) => "work_item_id" in event && event.work_item_id && recentItemIds.has(event.work_item_id));
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId].at : "";
   const frictionJudgements = frictionJudgementsOf(events);
-  const ownerInputLines = ownerInputsOf(events).filter((input) => input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt).map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)));
+  const ownerInputLines = ownerInputsOf(events).filter((input) => input.at > lastRetroAt || input.work_item_id !== null && recentItemIds.has(input.work_item_id)).map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)));
+  const drillmasterQuestions = new Set(Object.values(state.ownerAsked).flat());
+  const ownerAnswerLines = events.flatMap(
+    (event) => event.type === "work_trace" && event.at > lastRetroAt ? (event.answers ?? []).filter((answer) => !drillmasterQuestions.has(answer.question)).map((answer) => `- "${answer.question}": ${answer.answer || "(no option picked)"}${answer.notes ? ` (note: ${answer.notes})` : ""}`) : []
+  );
   const judgedMeasures = judgedMeasuresOf(events);
   const occurrenceLines = [...recentItemIds].flatMap(
     (workItemId) => (judgedMeasures.get(workItemId) ?? []).flatMap(
@@ -9042,6 +9097,9 @@ function buildRetroPrompt(state, events, tools) {
     "",
     "Owner's inputs (chat prompts) since the last retrospective, each where it belongs. Owner decides only in AskUserQuestion; an input is a prompt:",
     ...ownerInputLines.length ? ownerInputLines : ["- none"],
+    "",
+    "Owner's answers to Agent's own questions in AskUserQuestion since the last retrospective:",
+    ...ownerAnswerLines.length ? ownerAnswerLines : ["- none"],
     "",
     "Occurrences of the judged measures on those work items, each at the step that should have caught it:",
     ...occurrenceLines.length ? occurrenceLines : ["- none"],

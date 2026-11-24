@@ -29,12 +29,17 @@ export async function readProjectServerInfo(projectKeyOfServer: string, env: Nod
   }
 }
 
-/** The project's server, when the one its daemon.json names still runs and serves that project. */
-export async function runningProjectServer(projectKeyOfServer: string, env: NodeJS.ProcessEnv = process.env) {
+export { VERSION } from './version.js'
+
+/** The project's server and the Drillmaster version it runs, when the one its daemon.json names still runs and serves that project. */
+export async function runningProjectServerOf(projectKeyOfServer: string, env: NodeJS.ProcessEnv = process.env) {
   const info = await readProjectServerInfo(projectKeyOfServer, env)
   const health = info && (await drillmasterServerAt(info.url))
-  return health?.project === projectKeyOfServer && health.pid === info!.pid ? info!.url : undefined
+  return health?.project === projectKeyOfServer && health.pid === info!.pid ? { url: info!.url, version: health.version } : undefined
 }
+
+/** The URL of the project's server, when the one its daemon.json names still runs and serves that project. */
+export const runningProjectServer = async (projectKeyOfServer: string, env: NodeJS.ProcessEnv = process.env) => (await runningProjectServerOf(projectKeyOfServer, env))?.url
 
 export interface ProjectToServe {
   key: string

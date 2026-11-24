@@ -165,6 +165,9 @@ on different versions run side by side and know nothing of each other.
   (0.3.1 serves a project pinned to 0.3.0), or
   `npx -y claude-devops-drillmaster@<pin> daemon` if it isn't. A pin that can't run (not a
   version, or older than 0.3.0, the first with a server per project) is refused, with a message.
+- When one runs at another version than the plugin's, as after a plugin update, the MCP server and
+  the session's first hook read the pin: if the plugin's own build serves it, they stop the running
+  server and start their own. A server they couldn't replace keeps running.
 - `drillmaster upgrade [--to <version>]` pushes a new pin to main first, then stops the running
   server, so the next session starts the pinned version.
 - In a folder without `.drillmaster`, setup is all Drillmaster does. It runs on the plugin's own
