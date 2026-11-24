@@ -59,7 +59,7 @@ describe('what a retrospective reads', () => {
     const events = [init, grown, ...open]
     const prompt = buildRetroPrompt(foldState(events), events, [])
     expect(prompt).toContain('Open work items, partly done (their reports and Owner\'s words below count too): wi_open (#9) at step 1.1')
-    expect(prompt).toContain('- wi_open, input: "tell the stakeholders" (not judged yet)')
+    expect(prompt).toContain('- wi_open, input: "tell the stakeholders"\n')
     expect(prompt).toContain('stakeholders were not told')
   })
 })

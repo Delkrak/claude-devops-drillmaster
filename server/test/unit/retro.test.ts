@@ -245,3 +245,26 @@ describe('measures', () => {
     expect(averageMeasure(measureDeliveredItems(events), 'minutes_per_item')).toBe(10)
   })
 })
+
+describe('the measures a retrospective defines', () => {
+  const policyFriction = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
+
+  it('adds, changes and removes a measure, as a patch that opens no experiment', () => {
+    const added = applyWorkflowOps(w0, [{ op: 'add_measure', measure: policyFriction }])
+    expect(added).toMatchObject({ version: '0.0.1', measures: [policyFriction] })
+    expect(levelOfOps([{ op: 'add_measure', measure: policyFriction }])).toBe('patch')
+    const proposal = { id: 1, change: 'measure policy friction', purpose: 'see where rules miss', measure: 'gate_rejections_per_item', ops: [{ op: 'add_measure', measure: policyFriction }] }
+    expect(applyProposal(w0, proposal, [], '2026-11-24').workflow.experiments).toEqual([])
+    const changed = applyWorkflowOps(added, [{ op: 'change_measure', measure: 'policy friction', show: false }])
+    expect(changed.measures).toEqual([{ ...policyFriction, show: false }])
+    expect(applyWorkflowOps(changed, [{ op: 'remove_measure', measure: 'policy friction' }]).measures).toEqual([])
+  })
+
+  it('refuses a measure defined twice, one it does not define, and removing one the objective uses', () => {
+    const added = applyWorkflowOps(w0, [{ op: 'add_measure', measure: policyFriction }])
+    expect(() => applyWorkflowOps(added, [{ op: 'add_measure', measure: policyFriction }])).toThrow(/already exists/)
+    expect(() => applyWorkflowOps(added, [{ op: 'change_measure', measure: 'happiness', show: false }])).toThrow(/defines no measure "happiness"/)
+    const inObjective = applyWorkflowOps(added, [{ op: 'set_objective', measures: ['policy friction'] }])
+    expect(() => applyWorkflowOps(inObjective, [{ op: 'remove_measure', measure: 'policy friction' }])).toThrow(/neither counted by Drillmaster nor defined/)
+  })
+})

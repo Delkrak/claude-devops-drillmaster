@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent, MeasureJudgement } from '../../src/core/events.js'
 import { averageMeasure, measureBaseline, measureDeliveredItems } from '../../src/core/measures.js'
-import { buildPostMortemPrompt, readPostMortemAnswer } from '../../src/core/retro.js'
+import { buildPostMortemPrompt, buildRetroPrompt, readPostMortemAnswer } from '../../src/core/retro.js'
 import { foldState } from '../../src/core/state.js'
 import { WORKFLOW_3 } from '../helpers.js'
 
@@ -87,5 +87,20 @@ describe('the value of a judged measure', () => {
   it('takes a baseline from the last five work items judged on the measure', () => {
     const events = [event({ type: 'project_initialized', dir: '/p', workflow }), ...[1, 2, 3, 4, 5].flatMap((n) => deliveredItem(`wi_${n}`, '0.4.0', judged(n))), ...deliveredItem('wi_6', '0.4.0')]
     expect(measureBaseline(measureDeliveredItems(events), 'policy friction')).toBe(3)
+  })
+})
+
+describe('the retrospective', () => {
+  it('reads each measure the workflow defines, and every occurrence at the step that should have caught it', () => {
+    const measured: MeasureJudgement[] = [
+      { measure: 'policy friction', occurrences: [{ step_guid: testsStep!.guid, events: [], why: 'the test rule should have caught the missing tests' }] },
+      { measure: 'process friction', occurrences: [{ step_guid: null, events: [], why: 'Owner wanted a button, not a file' }] },
+    ]
+    const events = [event({ type: 'project_initialized', dir: '/p', workflow }), ...deliveredItem('wi_1', '0.4.0', measured)]
+    const prompt = buildRetroPrompt(foldState(events), events, [])
+    expect(prompt).toContain('- "policy friction" (judged): Owner caught what a rule should have caught.')
+    expect(prompt).toContain('- wi_1 (#wi_1), policy friction, step 1.1: the test rule should have caught the missing tests')
+    expect(prompt).toContain('- wi_1 (#wi_1), process friction, no step covers it: Owner wanted a button, not a file')
+    expect(prompt).toContain('{"op":"add_measure"')
   })
 })

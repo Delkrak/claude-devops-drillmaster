@@ -82,11 +82,15 @@ does its best, Owner steps in where it falls short, and the workflow grows from 
 ### 1. Owner's objective
 
 Owner's objective is what Owner wants Drillmaster to achieve with the workflow. It is formulated
-as one or more measures.
+as one or more measures. Drillmaster counts some from the work traces (gate rejections, review
+rounds, minutes, tool calls). The workflow defines the others in words, and Drillmaster judges them
+in its post mortem of each delivered work item, at the work step that should have caught each
+occurrence.
 
-> *Example:* the objective "ship features without Owner stepping in" might be measured by how
-> many work items reach review without Owner stepping in: the Owner inputs a separate judge calls
-> friction.
+> *Example:* the objective "ship features without Owner stepping in" might be measured by
+> *policy friction* (Owner caught what a rule should have caught) and *process friction* (Owner
+> overruled an earlier decision, or the delivery was not what Owner wanted), each counted per
+> delivered work item, with a target of 0.
 
 ### 2. Work execution
 
@@ -150,7 +154,7 @@ impediment, and the work gate decides which work step or work stage the work goe
 The work traces are the ledger of the work: every action Agent takes, every input Owner gives, and
 every work gate's verdict. They are recorded automatically, independent
 of Agent, and Agent can't change them. Drillmaster uses them for evaluation, and the objective's
-measures are computed from them.
+measures are counted or judged from them.
 
 #### Work report
 

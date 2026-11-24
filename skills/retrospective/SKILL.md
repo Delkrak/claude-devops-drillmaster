@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's inputs and the measures; Owner decides each proposal in AskUserQuestion, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
+description: Runs a Drillmaster workflow retrospective that Owner called for - Drillmaster's findings and proposed workflow changes from the post mortems, work reports, Owner's inputs and the measures (including the ones the workflow defines, and where each occurred); Owner decides each proposal in AskUserQuestion, and each approved one is applied as a workflow experiment. Use when Owner asks for a retrospective, a retro, or to improve the workflow.
 ---
 
 # Workflow retrospective

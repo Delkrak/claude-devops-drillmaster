@@ -13,16 +13,25 @@ at each workflow retrospective. Nothing is copied from another workflow.
 
 1. **Ask Owner for the objective.** It's what Owner wants Drillmaster to achieve with the workflow,
    in one sentence, for example "ship features without Owner stepping in". Use Owner's own words.
-2. **Ask Owner to pick its measures.** These are the ones Drillmaster can compute today. Suggest one
-   that fits the objective, and let Owner choose:
+2. **Ask Owner to pick its measures.** A measure counts something that should not happen, per
+   delivered work item, so lower is better. Suggest one or two that fit the objective, and let Owner
+   choose. Drillmaster counts these itself:
 
    | Measure | What it counts |
    |---|---|
-   | `owner_friction_per_item` | Owner's prompts during a work item that were not approvals |
    | `gate_rejections_per_item` | Work gate rejections per work item |
    | `review_rounds_per_item` | Drillmaster and Owner gate hand-ins per work item |
    | `minutes_per_item` | Minutes from start to delivery |
    | `tool_calls_per_item` | Tool calls per work item |
+
+   Owner can also define a measure in words, which Drillmaster judges in its post mortem of each
+   delivered work item: a name in plain words, a definition of what counts as one occurrence, and
+   whether the viewer shows where it happened. For example:
+   - **policy friction:** Owner caught what a rule should have caught.
+   - **process friction:** Owner overruled an earlier decision, or the delivery was not what Owner
+     wanted. Back-and-forth while refining the work doesn't count.
+
+   Use Owner's own words for the definition.
 
 3. **Ask Owner for the Drillmaster repository:** a separate, private git repository (a URL or a
    path) that keeps everything of Drillmaster for this project: the workflow and its history, the
@@ -31,7 +40,9 @@ at each workflow retrospective. Nothing is copied from another workflow.
    Owner's git credentials must allow that. One repository can hold several projects, each in its
    own folder; the folder defaults to this work folder's name.
 4. **Create the first workflow:**
-   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [...], drillmaster_repository: "<the repository>", folder: "<optional>"})`.
+   `workflow_retrospective({action: "setup", objective: "<Owner's words>", measures: [<the names>], define_measures: [{name, definition, show}], drillmaster_repository: "<the repository>", folder: "<optional>"})`.
+   - `define_measures` holds the measures Owner defined in words; leave it out when Owner picked
+     only counted ones.
    - Drillmaster pushes the pin and workflow `0.0.0` to the repository's main first, then writes
      `.drillmaster` in the work folder: the repository and the folder, nothing else. Commit it with
      the project; it's how Drillmaster knows this folder, on any machine.

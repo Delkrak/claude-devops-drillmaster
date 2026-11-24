@@ -4,7 +4,7 @@ import { eventLine, MEASURED_ANSWER_EXAMPLE, measuresToJudge, readMeasuredAnswer
 import { FEEDBACK_REFS_HELP, FeedbackInput, ReflectionInput, resolveFeedback } from './feedback.js'
 import { itemsCountedFor, judgeExperiments } from './experiments.js'
 import { stepUnchanged } from './updates.js'
-import { averageMeasure, BASELINE_WINDOW, currentMeasureName, isCountedMeasure, itemsWithMeasure, measureBaseline, measureBaselineSd, measureDeliveredItems, rejectionsByRule, type ItemMeasures } from './measures.js'
+import { averageMeasure, BASELINE_WINDOW, currentMeasureName, isCountedMeasure, itemsWithMeasure, judgedMeasuresOf, measureBaseline, measureBaselineSd, measureDeliveredItems, rejectionsByRule, type ItemMeasures } from './measures.js'
 import { frictionJudgementsOf, ownerInputsOf, type OwnerInput } from './ownerInputs.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
@@ -446,7 +446,10 @@ A step's update lets an open work item move to the latest workflow version befor
 {"op":"add_tool_capture","capture":{"name":"tests","command":"npm (run )?test","keep":"|~ \`^# (tests|pass|fail) \` | pattern \`# <what> <count>\`"}}   (what the trace of a Bash or PowerShell call keeps of a matching command's output, instead of its last 20 lines: command is a regular expression found anywhere in the command line (Agent often runs "cd <folder> && npm test", so don't anchor it with ^), keep a pipeline in LogQL's syntax (https://grafana.com/docs/loki/latest/logql/): line filters |= != |~ !~, | json, | logfmt, | pattern, | regexp, field filters like | count > 0, and | line_format. Add one when a gate's claim about a command's output could not be checked)
 {"op":"change_tool_capture","capture":"tests","keep":"..."}   (any of command, keep)
 {"op":"remove_tool_capture","capture":"tests"}
-{"op":"set_objective","text":"...","measures":["owner_friction_per_item"]}
+{"op":"set_objective","text":"...","measures":["gate_rejections_per_item","policy friction"]}   (measures: ones Drillmaster counts, and ones the workflow defines)
+{"op":"add_measure","measure":{"name":"policy friction","definition":"<what counts as one occurrence: something that should not happen>","show":true}}   (Drillmaster judges a defined measure in its post mortem of each work item delivered from then on, placing each occurrence at the step that should have caught it; show puts it on the viewer's pages. It is never judged on work items delivered before, so an experiment can use it once ${BASELINE_WINDOW} work items are judged)
+{"op":"change_measure","measure":"policy friction","definition":"..."}   (any of definition, show; work items judged before keep their judgement)
+{"op":"remove_measure","measure":"policy friction"}   (not while the objective or a running experiment uses it)
 {"op":"end_experiment","id":1,"outcome":"kept|rethought"}`
 
 export function deliveredSinceLastRetro(state: ProjectState, events: readonly DrillmasterEvent[]) {
@@ -492,16 +495,23 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   const recentItemIds = new Set([...recentDelivered.map((item) => item.work_item_id), ...openItems.map((item) => item.work_item_id)])
   const recentItemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id && recentItemIds.has(event.work_item_id))
   const lastRetroAt = state.latestRetroId ? state.retros[state.latestRetroId]!.at : ''
-  const judgements = frictionJudgementsOf(events)
+  const frictionJudgements = frictionJudgementsOf(events)
   const ownerInputLines = ownerInputsOf(events)
     .filter((input) => (input.work_item_id ? recentItemIds.has(input.work_item_id) : input.at > lastRetroAt))
-    .map((input) => ownerInputLine(input, judgements.get(input.event_id)))
+    .map((input) => ownerInputLine(input, frictionJudgements.get(input.event_id)))
+  const judgedMeasures = judgedMeasuresOf(events)
+  const occurrenceLines = [...recentItemIds].flatMap((workItemId) =>
+    (judgedMeasures.get(workItemId) ?? []).flatMap((judgement) =>
+      judgement.occurrences.map((occurrence) => `- ${workItemId} (${state.workItems[workItemId]!.issue}), ${judgement.measure}, ${occurrence.step_guid ? `step ${refOfGuid(workflow, occurrence.step_guid)?.name ?? 'no longer in the workflow'}` : 'no step covers it'}: ${occurrence.why}`),
+    ),
+  )
+  const definedMeasureLines = workflow.measures.map((measure) => `- "${measure.name}" (judged): ${measure.definition}`)
   const reportLines = recentItemEvents
     .filter((event) => ['work_reported', 'gate_verdict', 'review_failed', 'post_mortem_written'].includes(event.type))
     .map((event) => `- ${JSON.stringify(event)}`)
   const measureLines = workflow.objective.measures.map(
     (measure) =>
-      `- ${measure}: last ${recentDelivered.length} items ${averageMeasure(recentDelivered, measure) ?? 'n/a'}; all ${allDelivered.length} items ${averageMeasure(allDelivered, measure) ?? 'n/a'}`,
+      `- ${measure}: last ${itemsWithMeasure(recentDelivered, measure).length} items ${averageMeasure(recentDelivered, measure) ?? 'n/a'}; all ${itemsWithMeasure(allDelivered, measure).length} items ${averageMeasure(allDelivered, measure) ?? 'n/a'}`,
   )
   const experimentLines = judgeExperiments(workflow, allDelivered).map((verdict) => {
     const experiment = workflow.experiments.find((candidate) => candidate.id === verdict.id)!
@@ -519,7 +529,7 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
   return [
     'You are Drillmaster, carrying out a workflow retrospective that Owner called for. The workflow retrospective is the only place the workflow changes.',
     "Open by judging the last retrospective's actions (findings.opening): for each change it applied, did it do what it was meant to, judged by its experiment's verdict and what happened since? Say plainly which ones did not.",
-    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all those a separate judge called friction: where Owner had to step in.",
+    "Then answer: what should have happened, what happened, why, what to keep and what to improve. Base it on the workflow post mortems, the work reports, the verdicts and Owner's inputs, above all the occurrences of the measures Drillmaster judged: what the workflow counts as going wrong, at the step that should have caught it.",
     'Every impediment is rust: propose deliberate workflow changes that remove impediments or deliver better ways. Each proposal is one change on trial, with a purpose, a hypothesis, a null hypothesis, a target on its measure, and how many delivered items to judge it after.',
     'Work stages hold the work. Propose the work Agent must do (a step with an instruction), not only checks on it. Every stage has a purpose, and every step an instruction written as an order to Agent. If a stage or step has no purpose or instruction yet, fill it in.',
     "Judge every running workflow experiment with the server's verdict below: end it 'kept' when the verdict is keep, and 'rethought' (plus any replacement change) when it is rethink. Leave running ones alone.",
@@ -534,8 +544,10 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     `Current workflow (version ${workflow.version}):`,
     workflowForReading(workflow),
     '',
-    `Measures (Owner's objective: "${workflow.objective.text}"):`,
+    `Measures (Owner's objective: "${workflow.objective.text}"). A judged measure counts only the work items Drillmaster judged it on:`,
     ...measureLines,
+    'The measures the workflow defines, which Drillmaster judges:',
+    ...(definedMeasureLines.length ? definedMeasureLines : ['- none']),
     `Gate rejections per rule, over the work items delivered since the last retrospective: ${Object.entries(rejectionsByRule(recentDelivered)).map(([rule, count]) => `${rule}: ${count}`).join(', ') || 'none'}`,
     '',
     "The last retrospective's actions:",
@@ -547,8 +559,11 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
     `Delivered work items since the last retrospective: ${recentDelivered.map((item) => `${item.work_item_id} (${item.issue})`).join(', ') || 'none'}`,
     `Open work items, partly done (their reports and Owner's words below count too): ${openItems.map((item) => `${item.work_item_id} (${item.issue}) at ${item.stage === null ? 'delivery' : `step ${item.stage}.${item.step}`}`).join(', ') || 'none'}`,
     '',
-    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs, with the friction judge's verdict. Owner decides only in AskUserQuestion; an input is a prompt:",
+    "Owner's inputs (chat prompts) since the last retrospective, each where it belongs. Owner decides only in AskUserQuestion; an input is a prompt:",
     ...(ownerInputLines.length ? ownerInputLines : ['- none']),
+    '',
+    'Occurrences of the judged measures on those work items, each at the step that should have caught it:',
+    ...(occurrenceLines.length ? occurrenceLines : ['- none']),
     '',
     'Work reports, verdicts and post mortems:',
     ...(reportLines.length ? reportLines : ['- none']),
@@ -563,10 +578,11 @@ export function buildRetroPrompt(state: ProjectState, events: readonly Drillmast
 
 const ROLE_LABELS: Record<OwnerInput['role'], string> = { start: 'started it', resume: 'took it up again', retrospective: 'called a retrospective', input: 'input' }
 
-function ownerInputLine(input: OwnerInput, judgement: { friction: boolean; why: string } | undefined) {
+/** An input with the verdict of the friction judge Drillmaster 0.3 had, when it judged it. */
+function ownerInputLine(input: OwnerInput, frictionJudgement: { friction: boolean; why: string } | undefined) {
   const where = input.work_item_id ? `${input.work_item_id}, ${ROLE_LABELS[input.role]}${input.after_delivery ? ', after delivery' : ''}` : ROLE_LABELS[input.role]
-  const verdict = judgement ? `${judgement.friction ? 'friction' : 'no friction'}: ${judgement.why}` : 'not judged yet'
-  return `- ${where}: "${input.prompt}" (${verdict})`
+  const verdict = frictionJudgement ? ` (${frictionJudgement.friction ? 'friction' : 'no friction'}: ${frictionJudgement.why})` : ''
+  return `- ${where}: "${input.prompt}"${verdict}`
 }
 
 /** Feedback as Drillmaster wrote it: a list of entries, or plain text, which becomes one entry about nothing in particular. */
