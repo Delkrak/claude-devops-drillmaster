@@ -84,8 +84,7 @@ export function workItemPageView(events: readonly DrillmasterEvent[], workItemId
   const currentPosition = item.status === 'delivered' || item.stage === null ? null : firstApplyingPosition(workflow, item, inputValuesOf(item))
   const inputValues = inputValuesOf(item)
 
-  const { measures, marks: allMarks } = marksOf(eventsUntilAt, state.workflow!)
-  const marks = allMarks.filter((mark) => mark.work_item_id === workItemId)
+  const { measures, marks } = marksOf(eventsUntilAt, state.workflow!, workItemId)
   const itemMark = ({ work_item_id: _workItemId, step_guid: _stepGuid, ...mark }: Mark): ItemMark => mark
 
   // A gate call is traced after the work item has moved on; the step it submitted is in its input. An
@@ -192,6 +191,8 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
   const eventsUntilAt = at ? events.filter((event) => event.at <= at) : events
   const state = foldState(eventsUntilAt)
   const { measures, marks } = state.workflow ? marksOf(eventsUntilAt, state.workflow) : { measures: [], marks: [] }
+  const marksByItemId = new Map<string, Mark[]>()
+  for (const mark of marks) marksByItemId.set(mark.work_item_id, [...(marksByItemId.get(mark.work_item_id) ?? []), mark])
   const items = Object.values(state.workItems)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .map((item) => {
@@ -206,10 +207,7 @@ export function workItemsListView(events: readonly DrillmasterEvent[], at?: stri
         status: item.status,
         started_at: item.started_at,
         at_step: currentStep ? currentStep.name : null,
-        marks: countsByMeasure(
-          measures,
-          marks.filter((mark) => mark.work_item_id === item.work_item_id),
-        ),
+        marks: countsByMeasure(measures, marksByItemId.get(item.work_item_id) ?? []),
       }
     })
   return { measures, items }

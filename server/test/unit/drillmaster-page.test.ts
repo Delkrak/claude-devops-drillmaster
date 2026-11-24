@@ -36,6 +36,11 @@ describe("the page of what's wrong in Drillmaster", () => {
     ])
   })
 
+  it('leaves out old friction that Drillmaster never placed: it is not known to be uncovered', () => {
+    const unplaced = fixture.filter((event) => event.type !== 'friction_placed')
+    expect(drillmasterPageView(unplaced, TOOLS).uncovered.map((complaint) => complaint.source)).toEqual(['a measure'])
+  })
+
   it('counts an impediment Agent reported that names a tool, also by its MCP name', () => {
     const impediment = { id: 'ev_x', at: '2026-11-23T00:00:00.000Z', type: 'work_reported', work_item_id: 'wi_x', stage: 1, step: 1, kind: 'impediment', text: 'mcp__drillmaster__work_status does not say the gate.' } as DrillmasterEvent
     const status = drillmasterPageView([...fixture, impediment], TOOLS).tools.find((tool) => tool.tool === 'work_status')!

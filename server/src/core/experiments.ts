@@ -1,4 +1,4 @@
-import { averageMeasure, measureBaseline, measureBaselineSd, rejectionsByRule, type ItemMeasures } from './measures.js'
+import { averageMeasure, itemsWithMeasure, measureBaseline, measureBaselineSd, rejectionsByRule, type ItemMeasures } from './measures.js'
 import { refOfGuid } from './refs.js'
 import { compareVersions, type WorkflowDocument, type WorkflowExperiment } from './workflow.js'
 
@@ -22,9 +22,9 @@ export interface ExperimentVerdict {
   rule_rejections: Record<string, number>
 }
 
-/** The delivered items an experiment counts: on its version or later, and through a step its change touched. */
+/** The delivered items an experiment counts: on its version or later, through a step its change touched, and with a value of its measure. */
 export const itemsCountedFor = (experiment: WorkflowExperiment, deliveredItems: readonly ItemMeasures[]) =>
-  deliveredItems.filter(
+  itemsWithMeasure(deliveredItems, experiment.measure).filter(
     (item) =>
       compareVersions(item.workflow_version, experiment.version) >= 0 &&
       (!experiment.affects?.length || item.passed_step_guids.some((guid) => experiment.affects!.includes(guid))),

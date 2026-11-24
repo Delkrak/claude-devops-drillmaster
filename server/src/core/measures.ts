@@ -64,6 +64,8 @@ const judgedValues = (judgements: readonly MeasureJudgement[]) => Object.fromEnt
 /** Whether a Drillmaster that judged friction apart, before workflows defined their measures, wrote it. */
 export const writtenBeforeMeasuresWereJudged = (drillmasterVersion: string | undefined) => drillmasterVersion === undefined || compareVersions(drillmasterVersion, FIRST_VERSION_JUDGING_MEASURES) < 0
 
+export const eventsOfWorkItem = (events: readonly DrillmasterEvent[], workItemId: string) => events.filter((event) => 'work_item_id' in event && event.work_item_id === workItemId)
+
 /**
  * Each delivered work item's judged measures: its post mortem's, with the occurrences Drillmaster
  * judged later added. A work item whose post mortem judged no measures has none.
@@ -75,10 +77,9 @@ export function judgedMeasuresOf(events: readonly DrillmasterEvent[]) {
     if (event.type !== 'late_measures_judged') continue
     const judgements = judgementsByItemId.get(event.work_item_id)
     if (!judgements) continue
-    judgementsByItemId.set(
-      event.work_item_id,
-      judgements.map((judgement) => ({ ...judgement, occurrences: [...judgement.occurrences, ...(event.measured.find((late) => late.measure === judgement.measure)?.occurrences ?? [])] })),
-    )
+    const merged = judgements.map((judgement) => ({ ...judgement, occurrences: [...judgement.occurrences, ...(event.measured.find((late) => late.measure === judgement.measure)?.occurrences ?? [])] }))
+    const newlyJudged = event.measured.filter((late) => !judgements.some((judgement) => judgement.measure === late.measure))
+    judgementsByItemId.set(event.work_item_id, [...merged, ...newlyJudged])
   }
   return judgementsByItemId
 }

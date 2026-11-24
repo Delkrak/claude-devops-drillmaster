@@ -36,8 +36,12 @@ export interface Mark {
   prompts: string[]
 }
 
-/** The marks of the measures the workflow shows, and of old friction, with the measures that have any. */
-export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowDocument): { measures: ShownMeasure[]; marks: Mark[] } {
+/**
+ * The marks of the measures the workflow shows, and of old friction, with the measures that have
+ * any; of one work item when it is named.
+ */
+export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowDocument, workItemId?: string): { measures: ShownMeasure[]; marks: Mark[] } {
+  const isOfTheWorkItem = (id: string | null | undefined) => workItemId === undefined || id === workItemId
   const shown = workflow.measures.filter((measure) => measure.show)
   const promptByEventId = new Map(events.flatMap((event) => (event.type === 'work_trace' && event.prompt !== undefined ? [[event.id, event.prompt] as const] : [])))
   const atByEventId = new Map(events.map((event) => [event.id, event.at]))
@@ -45,7 +49,7 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
 
   for (const event of events) {
     if (event.type !== 'post_mortem_written' && event.type !== 'late_measures_judged') continue
-    if (event.type === 'post_mortem_written' && event.author !== 'drillmaster') continue
+    if ((event.type === 'post_mortem_written' && event.author !== 'drillmaster') || !isOfTheWorkItem(event.work_item_id)) continue
     for (const judgement of event.measured ?? []) {
       if (!shown.some((measure) => measure.name === judgement.measure)) continue
       for (const occurrence of judgement.occurrences) {
@@ -69,19 +73,20 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
 
   const oldMarks: Mark[] = []
   for (const event of events) {
-    if (event.type !== 'gate_verdict' || event.by !== 'owner' || event.accepted || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue
+    if (event.type !== 'gate_verdict' || event.by !== 'owner' || event.accepted || !isOfTheWorkItem(event.work_item_id) || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue
     oldMarks.push({ measure: OLD_FRICTION, work_item_id: event.work_item_id, step_guid: event.step_guid ?? null, at: event.at, after_delivery: false, why: `you sent it back at your gate: ${event.why}`, placed_why: null, prompts: [] })
   }
   const frictionJudgements = frictionJudgementsOf(events)
   const frictionPlacements = frictionPlacementsOf(events)
   const versionByEventId = new Map(events.map((event) => [event.id, event.drillmaster_version]))
   for (const input of ownerInputsOf(events)) {
-    if (!input.work_item_id || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue
+    if (!input.work_item_id || !isOfTheWorkItem(input.work_item_id) || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue
     const placement = frictionPlacements.get(input.event_id)
     oldMarks.push({
       measure: OLD_FRICTION,
       work_item_id: input.work_item_id,
-      step_guid: placement?.step_guid ?? null,
+      // Unplaced, it stays where it happened.
+      step_guid: placement ? placement.step_guid : (input.step_guid ?? null),
       at: input.at,
       after_delivery: input.after_delivery,
       why: frictionJudgements.get(input.event_id)?.why ?? '',

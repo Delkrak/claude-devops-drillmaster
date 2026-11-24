@@ -179,7 +179,6 @@ describe("reading Drillmaster's answers", () => {
       keep: [{ refs: [], text: 'k' }],
       change: [{ refs: [{ ref: 'step 1.2', guid: WORKFLOW_3.stages[0]!.steps[1]!.guid }], text: 'c' }],
       experiment_reflections: [],
-      measured: [{ measure: 'owner_friction_per_item', occurrences: [] }],
     })
   })
 

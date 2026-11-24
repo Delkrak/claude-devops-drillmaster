@@ -330,6 +330,8 @@ export interface PostMortemWritten extends EventEnvelope {
   experiment_reflections: ExperimentReflection[]
   /** Drillmaster's judgement of each measure the workflow defines; missing when it could not judge them. */
   measured?: MeasureJudgement[]
+  /** The last event of the work item the judgement read; what came after is judged later. */
+  judged_through?: string
 }
 
 export type DrillmasterEvent =

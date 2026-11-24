@@ -10,7 +10,7 @@ import { judgeExperiments } from './core/experiments.js'
 import { FEEDBACK_REFS_HELP, FeedbackInput, migrateEvent, ReflectionInput, resolveFeedback } from './core/feedback.js'
 import { handleHook, HOOK_EVENTS, type HookPayload } from './core/hooks.js'
 import { buildLateMeasuresPrompt, itemsToJudgeLate, LATE_MEASURES_REVIEW_KIND, readLateMeasuresAnswer } from './core/judgedMeasures.js'
-import { averageMeasure, COUNTED_MEASURES, currentMeasureName, lastItemsWithMeasure, measureDeliveredItems } from './core/measures.js'
+import { averageMeasure, COUNTED_MEASURES, currentMeasureName, eventsOfWorkItem, lastItemsWithMeasure, measureDeliveredItems, OWNER_FRICTION } from './core/measures.js'
 import {
   applyProposal,
   buildPostMortemPrompt,
@@ -58,7 +58,7 @@ import { buildComplaintGroupingPrompt, COMPLAINT_GROUPING_REVIEW_KIND, complaint
 import { workItemPageView, workItemsListView } from './core/workItemPage.js'
 import { workflowPageView } from './core/workflowPage.js'
 import * as work from './core/work.js'
-import { AT_START, parseWorkflowZero, toSemver, type WorkflowDocument } from './core/workflow.js'
+import { AT_START, MEASURE_COLORS, parseWorkflowZero, toSemver, type WorkflowDocument } from './core/workflow.js'
 import type { Ports, ProjectRef } from './ports.js'
 import { VERSION } from './version.js'
 
@@ -363,7 +363,7 @@ export const TOOLS: ToolDefinition[] = [
             properties: {
               name: { type: 'string', description: 'In plain words, e.g. "policy friction".' },
               short: { type: 'string', description: 'What its ring on the viewer says before the count: 1 to 3 capital letters, e.g. "PF".' },
-              color: { type: 'string', enum: ['orange', 'rose', 'violet', 'sky'], description: 'The colour the viewer draws it in.' },
+              color: { type: 'string', enum: [...MEASURE_COLORS], description: 'The colour the viewer draws it in.' },
               definition: { type: 'string', description: "What counts as one occurrence, in Owner's words." },
               show: { type: 'boolean', description: "Whether the viewer's pages show where it happened." },
             },
@@ -616,7 +616,11 @@ export class Drillmaster {
    */
   async init(projectDir: string, objective: unknown, repository: { url: string; folder?: string }, definedMeasures: unknown = []) {
     const parsedWorkflow = parseWorkflowZero(objective, definedMeasures)
-    if (!parsedWorkflow.success) throw new UserError(`Invalid objective: ${z.prettifyError(parsedWorkflow.error)}`)
+    if (!parsedWorkflow.success) {
+      const namesOwnerFriction = JSON.stringify(objective).includes(`"${OWNER_FRICTION.name}"`)
+      const hint = namesOwnerFriction ? ` ${OWNER_FRICTION.name} is no longer built in: define it, or measures of your own, in define_measures.` : ''
+      throw new UserError(`Invalid objective: ${z.prettifyError(parsedWorkflow.error)}${hint}`)
+    }
     const workflow = parsedWorkflow.data
     const existing = this.ports.projects.resolve(projectDir)
     const place = { url: repository.url, folder: repository.folder ?? existing?.repository?.folder ?? defaultFolderOf(projectDir) }
@@ -1009,15 +1013,16 @@ export class Drillmaster {
     const state = foldState(events)
     const item = state.workItems[workItemId]!
     const workflow = work.workflowOfWorkItem(state, item)
-    const itemEventIds = new Set(events.filter((event) => 'work_item_id' in event && event.work_item_id === workItemId).map((event) => event.id))
-    let postMortem: work.PostMortemArgs & { measured?: MeasureJudgement[] }
+    const itemEvents = eventsOfWorkItem(events, workItemId)
+    let postMortem: work.PostMortemArgs & { measured?: MeasureJudgement[]; judged_through?: string }
     try {
       const { answer } = await this.ports.reviewer.review({
         kind: POST_MORTEM_REVIEW_KIND,
         prompt: buildPostMortemPrompt(item, workflow, events),
         minTimeoutMs: POST_MORTEM_TIMEOUT_MS,
       })
-      postMortem = readPostMortemAnswer(answer, workflow, TOOL_NAMES, itemEventIds)
+      const read = readPostMortemAnswer(answer, workflow, TOOL_NAMES, new Set(itemEvents.map((event) => event.id)))
+      postMortem = read.measured ? { ...read, judged_through: itemEvents.at(-1)!.id } : read
     } catch (error) {
       if (onFailure === 'retry at the retrospective') return
       const reason = error instanceof Error ? error.message : String(error)
@@ -1035,13 +1040,14 @@ export class Drillmaster {
     const state = foldState(await this.events(projectDir))
     const item = state.workItems[workItemId]!
     const workflow = work.workflowOfWorkItem(state, item)
-    let measured: MeasureJudgement[]
+    let measured: MeasureJudgement[] | undefined
     try {
       const { answer } = await this.ports.reviewer.review({ kind: LATE_MEASURES_REVIEW_KIND, prompt: buildLateMeasuresPrompt(item, workflow, unjudged) })
       measured = readLateMeasuresAnswer(workflow, unjudged, answer)
     } catch {
       return
     }
+    if (!measured) return
     await this.withProjectLock(projectDir, (_projectId, project) => this.appendEvent(project, { type: 'late_measures_judged', work_item_id: workItemId, through: unjudged.at(-1)!.id, measured }))
   }
 

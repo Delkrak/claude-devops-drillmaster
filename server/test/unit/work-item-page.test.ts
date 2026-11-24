@@ -36,7 +36,7 @@ describe('the work item page', () => {
   })
 
   it('pins each occurrence of a shown measure at the step that should have caught it, with what Owner said and why it counts', () => {
-    expect(bug.measures.map((measure) => measure.name)).toEqual(['policy friction', 'process friction', OLD_FRICTION])
+    expect(bug.measures.map((measure) => measure.name)).toEqual(['policy friction', 'process friction'])
     expect(stepOf(bug, '3.1').marks).toMatchObject([{ measure: 'policy friction', prompts: [expect.stringContaining('Show me the actual failing test output')], why: expect.stringContaining('Rule test 1.2') }])
     expect(bug.marks_no_step).toMatchObject([{ measure: 'process friction', why: expect.stringContaining('no step requires the evidence') }])
   })

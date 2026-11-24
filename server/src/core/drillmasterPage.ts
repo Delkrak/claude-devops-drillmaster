@@ -80,7 +80,8 @@ export function drillmasterPageView(events: readonly DrillmasterEvent[], toolNam
   tools.sort((a, b) => b.heard - a.heard || newestFirst(latestComplaintOf(a), latestComplaintOf(b)))
 
   const uncovered = (state.workflow ? marksOf(eventsUntilAt, state.workflow).marks : [])
-    .filter((mark) => mark.step_guid === null)
+    // Old friction is uncovered only where Drillmaster placed it at no step, not where it was never placed.
+    .filter((mark) => mark.step_guid === null && (mark.measure !== OLD_FRICTION || mark.placed_why !== null))
     .map((mark, index): Complaint => {
       const said = mark.prompts.map((prompt) => `"${prompt}" `).join('')
       return mark.measure === OLD_FRICTION

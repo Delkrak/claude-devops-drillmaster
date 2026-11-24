@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { DrillmasterEvent, MeasureJudgement } from './events.js'
-import { judgedMeasuresOf } from './measures.js'
+import { eventsOfWorkItem, judgedMeasuresOf } from './measures.js'
+import { ownerInputsOf } from './ownerInputs.js'
 import { stepGuidAt } from './refs.js'
 import { extractFirstJsonObject } from './review.js'
 import type { WorkItemState } from './state.js'
@@ -20,7 +21,7 @@ export function measuresToJudge(workflow: WorkflowDocument): string[] {
 export const MEASURED_ANSWER_EXAMPLE = '"measured":[{"measure":"<its name>","occurrences":[{"step":"3.1","events":["<event id>"],"why":"<one sentence>"}]}]'
 
 const Occurrence = z.object({ step: z.unknown(), events: z.array(z.string()).catch([]), why: z.string().catch('') })
-const MeasuredAnswer = z.array(z.object({ measure: z.string(), occurrences: z.array(Occurrence.loose()).catch([]) }).loose()).catch([])
+const MeasuredAnswer = z.array(z.object({ measure: z.string(), occurrences: z.array(Occurrence.loose()).catch([]) }).loose())
 
 const stepGuidOfAnswer = (workflow: WorkflowDocument, step: unknown) => {
   const stepRef = typeof step === 'string' ? /^(?:step\s+)?(\d+)\.(\d+)$/.exec(step.trim()) : null
@@ -30,10 +31,13 @@ const stepGuidOfAnswer = (workflow: WorkflowDocument, step: unknown) => {
 /**
  * Drillmaster's judgement of every measure the workflow defines: a measure it left out counts no
  * occurrences, a measure the workflow doesn't define is dropped, and so is an event that isn't the
- * work item's.
+ * work item's. Undefined when the answer holds no judgement to read: the measures stay unjudged.
  */
-export function readMeasuredAnswer(workflow: WorkflowDocument, itemEventIds: ReadonlySet<string>, measured: unknown): MeasureJudgement[] {
-  const answered = MeasuredAnswer.parse(measured)
+export function readMeasuredAnswer(workflow: WorkflowDocument, itemEventIds: ReadonlySet<string>, measured: unknown): MeasureJudgement[] | undefined {
+  if (workflow.measures.length === 0) return []
+  const parsed = MeasuredAnswer.safeParse(measured)
+  if (!parsed.success) return undefined
+  const answered = parsed.data
   return workflow.measures.map((measure) => ({
     measure: measure.name,
     occurrences: answered
@@ -51,19 +55,23 @@ export const eventLine = (event: DrillmasterEvent) =>
     ? `- ${event.id} ${event.hook}${event.tool ? ` ${event.tool}` : ''}${event.input ? ` ${event.input}` : ''}${event.prompt ? ` Owner: "${event.prompt}"` : ''}`
     : `- ${JSON.stringify(event)}`
 
-const isEventOf = (workItemId: string) => (event: DrillmasterEvent) => 'work_item_id' in event && event.work_item_id === workItemId
-
 /**
- * The work items whose measures were judged and that Owner has said something on since: each with
- * the events Drillmaster has not judged yet.
+ * The work items whose measures were judged and that Owner has said something on since, each with
+ * the events Drillmaster has not judged yet: the ones after the last event a judgement read.
  */
 export function itemsToJudgeLate(events: readonly DrillmasterEvent[]) {
-  const judged = judgedMeasuresOf(events)
-  return [...judged.keys()].flatMap((workItemId) => {
-    const itemEvents = events.filter(isEventOf(workItemId))
-    const lastJudging = itemEvents.findLastIndex((event) => (event.type === 'post_mortem_written' && event.author === 'drillmaster') || event.type === 'late_measures_judged')
-    const unjudged = itemEvents.slice(lastJudging + 1)
-    const ownerSpoke = unjudged.some((event) => event.type === 'work_trace' && event.hook === 'UserPromptSubmit')
+  const ownerInputIds = new Set(ownerInputsOf(events).flatMap((input) => (input.role === 'input' && input.work_item_id ? [`${input.work_item_id} ${input.event_id}`] : [])))
+  return [...judgedMeasuresOf(events).keys()].flatMap((workItemId) => {
+    const itemEvents = eventsOfWorkItem(events, workItemId)
+    const lastJudgedIndex = Math.max(
+      ...itemEvents.map((event, index) => {
+        if (event.type === 'late_measures_judged') return itemEvents.findIndex((candidate) => candidate.id === event.through)
+        if (event.type !== 'post_mortem_written' || event.author !== 'drillmaster') return -1
+        return event.judged_through ? itemEvents.findIndex((candidate) => candidate.id === event.judged_through) : index
+      }),
+    )
+    const unjudged = itemEvents.slice(lastJudgedIndex + 1).filter((event) => event.type !== 'post_mortem_written' && event.type !== 'late_measures_judged')
+    const ownerSpoke = unjudged.some((event) => ownerInputIds.has(`${workItemId} ${event.id}`))
     return ownerSpoke ? [{ workItemId, unjudged }] : []
   })
 }
@@ -84,6 +92,7 @@ export function buildLateMeasuresPrompt(item: WorkItemState, workflow: WorkflowD
   ].join('\n')
 }
 
+/** Undefined when the answer holds no judgement to read; the events are judged again at the next retrospective. */
 export function readLateMeasuresAnswer(workflow: WorkflowDocument, unjudged: readonly DrillmasterEvent[], answer: unknown) {
   const answered = (typeof answer === 'string' ? extractFirstJsonObject(answer) : answer) as { measured?: unknown } | undefined
   return readMeasuredAnswer(workflow, new Set(unjudged.map((event) => event.id)), answered?.measured)

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent, MeasureJudgement } from '../../src/core/events.js'
 import { averageMeasure, measureBaseline, measureDeliveredItems } from '../../src/core/measures.js'
+import { judgeExperiment } from '../../src/core/experiments.js'
+import { itemsToJudgeLate, readLateMeasuresAnswer } from '../../src/core/judgedMeasures.js'
 import { buildPostMortemPrompt, buildRetroPrompt, readPostMortemAnswer } from '../../src/core/retro.js'
 import { foldState } from '../../src/core/state.js'
 import { WORKFLOW_3 } from '../helpers.js'
@@ -102,5 +104,51 @@ describe('the retrospective', () => {
     expect(prompt).toContain('- wi_1 (#wi_1), policy friction, step 1.1: the test rule should have caught the missing tests')
     expect(prompt).toContain('- wi_1 (#wi_1), process friction, no step covers it: Owner wanted a button, not a file')
     expect(prompt).toContain('{"op":"add_measure"')
+  })
+})
+
+describe('what Drillmaster judges later, at the retrospective', () => {
+  const none: MeasureJudgement[] = [
+    { measure: 'policy friction', occurrences: [] },
+    { measure: 'process friction', occurrences: [] },
+  ]
+  const prompt = (workItemId: string, text: string) => event({ type: 'work_trace', session_id: `s-${workItemId}`, work_item_id: workItemId, stage: null, step: null, hook: 'UserPromptSubmit', prompt: text })
+
+  it('judges what came after the last event the post mortem read, even what was recorded while it was written', () => {
+    const delivered = deliveredItem('wi_1', '0.4.0')
+    const whileWriting = prompt('wi_1', 'the button is missing')
+    const postMortem = event({ type: 'post_mortem_written', work_item_id: 'wi_1', author: 'drillmaster', keep: [], change: [], experiment_reflections: [], measured: none, judged_through: delivered.at(-1)!.id })
+    const late = itemsToJudgeLate([event({ type: 'project_initialized', dir: '/p', workflow }), ...delivered, whileWriting, postMortem])
+    expect(late.map(({ workItemId, unjudged }) => [workItemId, unjudged.map((judged) => judged.id)])).toEqual([['wi_1', [whileWriting.id]]])
+  })
+
+  it('leaves a work item alone when what Owner said since belongs to a retrospective or another work item', () => {
+    const delivered = deliveredItem('wi_1', '0.4.0', none)
+    const retro = prompt('wi_1', "let's do a retro")
+    const retroCall = event({ type: 'work_trace', session_id: 's-wi_1', work_item_id: 'wi_1', stage: null, step: null, hook: 'PreToolUse', tool: 'mcp__x__workflow_retrospective' })
+    expect(itemsToJudgeLate([event({ type: 'project_initialized', dir: '/p', workflow }), ...delivered, retro, retroCall])).toEqual([])
+  })
+
+  it('adds a measure it judged only later, so the values match the pages', () => {
+    const delivered = deliveredItem('wi_1', '0.4.0', [{ measure: 'policy friction', occurrences: [] }])
+    const late = event({ type: 'late_measures_judged', work_item_id: 'wi_1', through: delivered.at(-1)!.id, measured: [{ measure: 'process friction', occurrences: [{ step_guid: null, events: [], why: 'not what Owner wanted' }] }] })
+    expect(measureDeliveredItems([event({ type: 'project_initialized', dir: '/p', workflow }), ...delivered, late])[0]!.values).toMatchObject({ 'policy friction': 0, 'process friction': 1 })
+  })
+})
+
+describe('an answer that judges no measures', () => {
+  it('leaves the measures unjudged instead of counting none', () => {
+    expect(readPostMortemAnswer({ keep: [], change: [], experiment_reflections: [] }, workflow, [])).not.toHaveProperty('measured')
+    expect(readLateMeasuresAnswer(workflow, [], 'I could not judge it.')).toBeUndefined()
+    expect(readPostMortemAnswer({ keep: [], change: [], experiment_reflections: [] }, { ...workflow, measures: [] }, []).measured).toEqual([])
+  })
+})
+
+describe('an experiment on a judged measure', () => {
+  it('counts only the work items judged on it toward its verdict', () => {
+    const judged = (n: number) => [{ measure: 'policy friction', occurrences: Array.from({ length: n }, () => ({ step_guid: null, events: [], why: '' })) }]
+    const events = [event({ type: 'project_initialized', dir: '/p', workflow }), ...deliveredItem('wi_1', '0.4.0', judged(0)), ...deliveredItem('wi_2', '0.4.0'), ...deliveredItem('wi_3', '0.4.0', judged(1))]
+    const experiment = { id: 1, change: 'c', purpose: 'p', hypothesis: '', null_hypothesis: '', measure: 'policy friction', baseline: 2, baseline_sd: 0.5, target: null, judge_after: 2, version: '3.0.0', started: '2026-11-24' }
+    expect(judgeExperiment(experiment, measureDeliveredItems(events))).toMatchObject({ counted: 2, mean: 0.5, status: 'keep' })
   })
 })

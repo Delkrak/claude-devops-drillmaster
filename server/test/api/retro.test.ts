@@ -70,6 +70,8 @@ describe('the improvement loop', () => {
   it("sets workflow_0 from Owner's objective, once", async () => {
     const undefinedMeasure = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features without Owner stepping in', measures: ['owner friction'] })
     expect(undefinedMeasure.value).toMatch(/"owner friction" is neither counted by Drillmaster nor defined by the workflow/)
+    const oldFriction = await tool('workflow_retrospective', { action: 'setup', drillmaster_repository: TEST_REPOSITORY, objective: 'ship features', measures: ['owner_corrections_per_item'] })
+    expect(oldFriction.value).toMatch(/owner_friction_per_item is no longer built in: define it, or measures of your own, in define_measures\./)
     const setup = await tool('workflow_retrospective', {
       action: 'setup',
       drillmaster_repository: TEST_REPOSITORY,

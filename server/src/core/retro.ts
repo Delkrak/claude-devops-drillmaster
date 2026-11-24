@@ -4,7 +4,7 @@ import { eventLine, MEASURED_ANSWER_EXAMPLE, measuresToJudge, readMeasuredAnswer
 import { FEEDBACK_REFS_HELP, FeedbackInput, ReflectionInput, resolveFeedback } from './feedback.js'
 import { itemsCountedFor, judgeExperiments } from './experiments.js'
 import { stepUnchanged } from './updates.js'
-import { averageMeasure, BASELINE_WINDOW, currentMeasureName, isCountedMeasure, itemsWithMeasure, judgedMeasuresOf, measureBaseline, measureBaselineSd, measureDeliveredItems, rejectionsByRule, type ItemMeasures } from './measures.js'
+import { averageMeasure, BASELINE_WINDOW, currentMeasureName, eventsOfWorkItem, isCountedMeasure, itemsWithMeasure, judgedMeasuresOf, measureBaseline, measureBaselineSd, measureDeliveredItems, rejectionsByRule, type ItemMeasures } from './measures.js'
 import { frictionJudgementsOf, ownerInputsOf, type OwnerInput } from './ownerInputs.js'
 import { extractFirstJsonObject, InvalidAnswer } from './review.js'
 import { InvalidReference, newGuid, parseRef, refOfGuid, resolveRef, stepGuidAt, stepPosition, type RefKind } from './refs.js'
@@ -697,7 +697,7 @@ export function readRetroAnswer(workflow: WorkflowDocument, answer: unknown, too
 }
 
 export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDocument, events: readonly DrillmasterEvent[]) {
-  const itemEvents = events.filter((event) => 'work_item_id' in event && event.work_item_id === item.work_item_id)
+  const itemEvents = eventsOfWorkItem(events, item.work_item_id)
   const eventLines = itemEvents.map(eventLine)
   const delivered = measureDeliveredItems(events)
   const experimentLines = workflow.experiments.map((experiment) => {
@@ -728,6 +728,8 @@ export function buildPostMortemPrompt(item: WorkItemState, workflow: WorkflowDoc
   ].join('\n')
 }
 
+const withMeasured = (measured: MeasureJudgement[] | undefined) => (measured ? { measured } : {})
+
 const PostMortem = z.object({
   keep: FeedbackAnswer,
   change: FeedbackAnswer,
@@ -735,14 +737,14 @@ const PostMortem = z.object({
   measured: z.unknown().optional(),
 })
 
-export function readPostMortemAnswer(answer: unknown, workflow: WorkflowDocument, toolNames: readonly string[], itemEventIds: ReadonlySet<string> = new Set()): PostMortemArgs & { measured: MeasureJudgement[] } {
+export function readPostMortemAnswer(answer: unknown, workflow: WorkflowDocument, toolNames: readonly string[], itemEventIds: ReadonlySet<string> = new Set()): PostMortemArgs & { measured?: MeasureJudgement[] } {
   const parsed = PostMortem.safeParse(typeof answer === 'string' ? extractFirstJsonObject(answer) : answer)
   if (!parsed.success) throw new InvalidAnswer(`Drillmaster's post mortem is unreadable: ${JSON.stringify(answer).slice(0, MAX_ANSWER_IN_ERROR)}`)
   return {
     keep: resolveFeedback(workflow, parsed.data.keep, toolNames, 'drop'),
     change: resolveFeedback(workflow, parsed.data.change, toolNames, 'drop'),
     experiment_reflections: parsed.data.experiment_reflections.map(({ experiment, text }) => ({ experiment, text })),
-    measured: readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured),
+    ...withMeasured(readMeasuredAnswer(workflow, itemEventIds, parsed.data.measured)),
   }
 }
 
