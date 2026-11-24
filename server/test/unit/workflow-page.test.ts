@@ -126,7 +126,8 @@ describe('the Workflow page', () => {
     const page = workflowPageView(events)!
     const item = { work_item_id: 'wi_1', issue: '#wi_1' }
     expect(page.measures.map((measure) => [measure.name, measure.old])).toEqual([
-      ['owner_friction_per_item', false],
+      ['policy friction', false],
+      ['process friction', false],
       [OLD_FRICTION, true],
     ])
     expect(page.stages.map((stage) => stage.marks)).toEqual([[], [{ measure: OLD_FRICTION, count: 1, items: [item] }], [{ measure: OLD_FRICTION, count: 1, items: [item] }], []])
@@ -139,7 +140,11 @@ describe('the Workflow page', () => {
     expect(stepOf(page, 4, 4).here_now.map((item) => item.issue)).toEqual(['#5'])
     expect(stepOf(page, 4, 4).reviews).toEqual({ passed: 4, sent_back: 0 })
     expect(page.delivered).toBe(4)
-    expect(page.no_step).toMatchObject([{ measure: OLD_FRICTION, count: 2 }])
+    expect(page.stages[2]!.marks).toMatchObject([
+      { measure: 'policy friction', count: 2 },
+      { measure: 'process friction', count: 1 },
+    ])
+    expect(page.no_step).toMatchObject([{ measure: 'process friction', count: 1 }])
   })
 
   it('shows the end of the recorded run when no moment is given', () => {

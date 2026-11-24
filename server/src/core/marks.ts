@@ -59,20 +59,21 @@ export function marksOf(events: readonly DrillmasterEvent[], workflow: WorkflowD
       }
     }
   }
-  // Judged occurrences count only once their post mortem stands: one Drillmaster could not judge leaves none.
+  // Late occurrences count only on top of a post mortem that judged the measures; a work item judged so has no old friction.
   const judgedItemIds = new Set(judgedMeasuresOf(events).keys())
   const judgedMarks = marks.filter((mark) => judgedItemIds.has(mark.work_item_id))
+  const hasOldFriction = (workItemId: string, drillmasterVersion: string | undefined) => !judgedItemIds.has(workItemId) && writtenBeforeMeasuresWereJudged(drillmasterVersion)
 
   const oldMarks: Mark[] = []
   for (const event of events) {
-    if (event.type !== 'gate_verdict' || event.by !== 'owner' || event.accepted || !writtenBeforeMeasuresWereJudged(event.drillmaster_version)) continue
+    if (event.type !== 'gate_verdict' || event.by !== 'owner' || event.accepted || !hasOldFriction(event.work_item_id, event.drillmaster_version)) continue
     oldMarks.push({ measure: OLD_FRICTION, work_item_id: event.work_item_id, step_guid: event.step_guid ?? null, at: event.at, after_delivery: false, why: `you sent it back at your gate: ${event.why}`, placed_why: null, prompts: [] })
   }
   const frictionJudgements = frictionJudgementsOf(events)
   const frictionPlacements = frictionPlacementsOf(events)
   const versionByEventId = new Map(events.map((event) => [event.id, event.drillmaster_version]))
   for (const input of ownerInputsOf(events)) {
-    if (!input.work_item_id || !writtenBeforeMeasuresWereJudged(versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue
+    if (!input.work_item_id || !hasOldFriction(input.work_item_id, versionByEventId.get(input.event_id)) || !isFriction(input, frictionJudgements)) continue
     const placement = frictionPlacements.get(input.event_id)
     oldMarks.push({
       measure: OLD_FRICTION,

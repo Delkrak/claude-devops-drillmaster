@@ -29,8 +29,11 @@ describe("the page of what's wrong in Drillmaster", () => {
     expect(page.tools[0]!.ungrouped[0]).toMatchObject({ source: 'drillmaster post mortem', issue: '#7' })
   })
 
-  it("lists Owner's step-ins that no workflow step covers, with why", () => {
-    expect(drillmasterPageView(fixture, TOOLS).uncovered).toMatchObject([{ source: 'your step-in', issue: '#4', text: expect.stringContaining('no step of this workflow covers') }])
+  it('lists what a shown measure counted that no workflow step covers, and old step-ins no step covers, with why', () => {
+    expect(drillmasterPageView(fixture, TOOLS).uncovered).toMatchObject([
+      { source: 'your step-in', issue: '#4', text: expect.stringContaining('no step of this workflow covers') },
+      { source: 'a measure', issue: '#2', text: expect.stringMatching(/^process friction: "You said the test failed before the fix.*no step requires the evidence/) },
+    ])
   })
 
   it('counts an impediment Agent reported that names a tool, also by its MCP name', () => {
