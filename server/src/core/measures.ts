@@ -59,7 +59,8 @@ const zeroCounts = (): Record<CountedMeasure, number> => ({
 
 const judgedValues = (judgements: readonly MeasureJudgement[]) => Object.fromEntries(judgements.map((judgement) => [judgement.measure, judgement.occurrences.length]))
 
-const deliveredBeforeMeasuresWereJudged = (deliveredBy: string | undefined) => deliveredBy === undefined || compareVersions(deliveredBy, FIRST_VERSION_JUDGING_MEASURES) < 0
+/** Whether a Drillmaster that judged friction apart, before workflows defined their measures, wrote it. */
+export const writtenBeforeMeasuresWereJudged = (drillmasterVersion: string | undefined) => drillmasterVersion === undefined || compareVersions(drillmasterVersion, FIRST_VERSION_JUDGING_MEASURES) < 0
 
 /**
  * Each delivered work item's judged measures: its post mortem's, with the occurrences Drillmaster
@@ -149,7 +150,7 @@ export function measureDeliveredItems(events: readonly DrillmasterEvent[]): Item
       workflow_version: item.workflowVersion,
       delivered_at: item.deliveredAt!,
       values: {
-        ...(!judgedByItemId.has(workItemId) && deliveredBeforeMeasuresWereJudged(item.deliveredBy) ? { [OWNER_FRICTION.name]: item.oldFriction } : {}),
+        ...(!judgedByItemId.has(workItemId) && writtenBeforeMeasuresWereJudged(item.deliveredBy) ? { [OWNER_FRICTION.name]: item.oldFriction } : {}),
         ...judgedValues(judgedByItemId.get(workItemId) ?? []),
         ...item.counts,
       },

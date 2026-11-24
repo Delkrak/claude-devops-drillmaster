@@ -1,6 +1,6 @@
 import { conditionInWords, parseCondition } from './conditions.js'
 import type { DrillmasterEvent } from './events.js'
-import { frictionJudgementsOf, isFriction, ownerInputsOf } from './ownerInputs.js'
+import { marksOf, type Mark, type ShownMeasure } from './marks.js'
 import { stepGuidAt } from './refs.js'
 import { foldState } from './state.js'
 import { firstApplyingPosition, inputValuesOf, workflowOfWorkItem } from './work.js'
@@ -9,6 +9,13 @@ import type { WorkStep } from './workflow.js'
 export interface WorkItemRef {
   work_item_id: string
   issue: string
+}
+
+/** How often a shown measure happened in one place, and on which work items. */
+export interface MarkCount {
+  measure: string
+  count: number
+  items: WorkItemRef[]
 }
 
 export interface WorkflowPageStep {
@@ -30,8 +37,8 @@ export interface WorkflowPageStage {
   if: string | null
   when: string | null
   here_now: WorkItemRef[]
-  friction: number
-  stepped_in: WorkItemRef[]
+  /** The shown measures that happened where a step of this stage should have caught them. */
+  marks: MarkCount[]
   steps: WorkflowPageStep[]
 }
 
@@ -41,7 +48,9 @@ export interface WorkflowPage {
   stages: WorkflowPageStage[]
   delivered: number
   waiting_to_deliver: WorkItemRef[]
-  friction: { after_delivery: number; unplaced: number; after_delivery_items: WorkItemRef[]; unplaced_items: WorkItemRef[] }
+  measures: ShownMeasure[]
+  /** The shown measures that happened where no step covers them. */
+  no_step: MarkCount[]
 }
 
 export function alternativeOf(condition: string | undefined): WorkflowPageStep['alternative'] {
@@ -65,8 +74,7 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     if: stage.if ?? null,
     when: conditionTextInWords(stage.if),
     here_now: [],
-    friction: 0,
-    stepped_in: [],
+    marks: [],
     steps: stage.steps.map((step) => ({
       n: step.n,
       guid: step.guid,
@@ -106,32 +114,23 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     ;(stepOnPage?.stage ?? stageOfStep(null, currentPosition.stage))?.here_now.push(itemRef)
   }
 
-  const frictionOutsideStages: WorkflowPage['friction'] = { after_delivery: 0, unplaced: 0, after_delivery_items: [], unplaced_items: [] }
   const workItemRefOf = (workItemId: string): WorkItemRef => ({ work_item_id: workItemId, issue: state.workItems[workItemId]?.issue ?? workItemId })
-  const addRefOnce = (refs: WorkItemRef[], workItemId: string) => refs.some((ref) => ref.work_item_id === workItemId) || refs.push(workItemRefOf(workItemId))
-  const addFriction = (stage: WorkflowPageStage | undefined, workItemId: string) => {
-    if (stage) {
-      stage.friction++
-      addRefOnce(stage.stepped_in, workItemId)
-    } else {
-      frictionOutsideStages.unplaced++
-      addRefOnce(frictionOutsideStages.unplaced_items, workItemId)
-    }
+  const addMark = (counts: MarkCount[], mark: Mark) => {
+    let count = counts.find((candidate) => candidate.measure === mark.measure)
+    if (!count) counts.push((count = { measure: mark.measure, count: 0, items: [] }))
+    count.count++
+    if (!count.items.some((item) => item.work_item_id === mark.work_item_id)) count.items.push(workItemRefOf(mark.work_item_id))
   }
   for (const event of eventsUntilAt) {
-    if (event.type !== 'gate_verdict') continue
+    if (event.type !== 'gate_verdict' || event.by !== 'drillmaster') continue
     const stepOnPage = event.step_guid ? stepByGuid.get(event.step_guid) : undefined
-    if (event.by === 'drillmaster' && stepOnPage) stepOnPage.step.reviews[event.accepted ? 'passed' : 'sent_back']++
-    if (event.by === 'owner' && !event.accepted) addFriction(stageOfStep(event.step_guid, event.stage), event.work_item_id)
+    if (stepOnPage) stepOnPage.step.reviews[event.accepted ? 'passed' : 'sent_back']++
   }
-  const frictionJudgements = frictionJudgementsOf(eventsUntilAt)
-  for (const input of ownerInputsOf(eventsUntilAt)) {
-    if (!input.work_item_id || !isFriction(input, frictionJudgements)) continue
-    if (input.after_delivery) {
-      frictionOutsideStages.after_delivery++
-      addRefOnce(frictionOutsideStages.after_delivery_items, input.work_item_id)
-    } else addFriction(stageOfStep(input.step_guid, input.stage), input.work_item_id)
-  }
+  const { measures, marks } = marksOf(eventsUntilAt, workflow)
+  const noStep: MarkCount[] = []
+  for (const mark of marks) addMark((mark.step_guid ? stepByGuid.get(mark.step_guid)?.stage.marks : undefined) ?? noStep, mark)
+  const inKeyOrder = (counts: MarkCount[]) => counts.sort((a, b) => measures.findIndex((measure) => measure.name === a.measure) - measures.findIndex((measure) => measure.name === b.measure))
+  for (const stage of stages) inKeyOrder(stage.marks)
 
   return {
     at: at ?? eventsUntilAt.at(-1)?.at ?? '',
@@ -139,6 +138,7 @@ export function workflowPageView(events: readonly DrillmasterEvent[], at?: strin
     stages,
     delivered: deliveredCount,
     waiting_to_deliver: waitingToDeliver,
-    friction: frictionOutsideStages,
+    measures,
+    no_step: inKeyOrder(noStep),
   }
 }

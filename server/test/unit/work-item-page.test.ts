@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
+import { OLD_FRICTION } from '../../src/core/marks.js'
 import { workItemPageView, workItemsListView, type WorkItemPage } from '../../src/core/workItemPage.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../viewer/fixtures/reviewed-run.json', import.meta.url), 'utf8')) as DrillmasterEvent[]
@@ -34,11 +35,61 @@ describe('the work item page', () => {
     expect(bug.delivered).toMatchObject({ at: '2026-11-20T18:56:40.403Z', post_mortems: [{ author: 'agent' }, { author: 'drillmaster' }] })
   })
 
-  it('pins a step-in at the step Drillmaster placed it, with why it is friction and why that step should have caught it', () => {
-    expect(stepOf(bug, '3.1').step_ins).toMatchObject([{ after_delivery: true, prompt: expect.stringContaining('Show me the actual failing test output'), why: expect.stringContaining('missing evidence'), placed_why: expect.stringContaining('Step 3.1') }])
-    expect(bug.step_ins_unplaced).toEqual([])
+  it('pins old friction at the step Drillmaster placed it, with why it is friction and why that step should have caught it', () => {
+    expect(stepOf(bug, '3.1').marks).toMatchObject([
+      { measure: OLD_FRICTION, after_delivery: true, prompts: [expect.stringContaining('Show me the actual failing test output')], why: expect.stringContaining('missing evidence'), placed_why: expect.stringContaining('Step 3.1') },
+    ])
+    expect(bug.marks_no_step).toEqual([])
     const unplaced = workItemPageView(fixture, idOf('#4'))!
-    expect(unplaced.step_ins_unplaced).toMatchObject([{ prompt: expect.any(String), placed_why: null }])
+    expect(unplaced.marks_no_step).toMatchObject([{ measure: OLD_FRICTION, prompts: [expect.any(String)], placed_why: expect.stringContaining('no step of this workflow covers') }])
+  })
+
+  it("pins each occurrence of a shown measure at its step, with what Owner said, and leaves out a measure the workflow doesn't show", () => {
+    const id = idOf('#2')
+    const ownerPrompt = fixture.find((event) => event.type === 'work_trace' && event.work_item_id === id && event.hook === 'UserPromptSubmit')!
+    const workflow = { ...(fixture.findLast((event) => event.type === 'workflow_changed') as Extract<DrillmasterEvent, { type: 'workflow_changed' }>).workflow }
+    const measures = [
+      { name: 'policy friction', definition: 'd', show: true },
+      { name: 'retries', definition: 'd', show: false },
+    ]
+    const events = [
+      ...fixture,
+      { id: 'ev_measures', at: '2026-11-20T23:00:00.000Z', type: 'workflow_changed', workflow: { ...workflow, version: '3.0.1', measures }, reason: 'measures' },
+      {
+        id: 'ev_late',
+        at: '2026-11-20T23:00:01.000Z',
+        type: 'late_measures_judged',
+        work_item_id: id,
+        through: ownerPrompt.id,
+        measured: [{ measure: 'policy friction', occurrences: [{ step_guid: stepOf(bug, '3.1').guid, events: [ownerPrompt.id], why: 'a rule should have caught it' }] }],
+      },
+    ] as DrillmasterEvent[]
+    const judgedPostMortem = {
+      id: 'ev_pm',
+      at: '2026-11-20T22:00:00.000Z',
+      type: 'post_mortem_written',
+      work_item_id: id,
+      author: 'drillmaster',
+      keep: [],
+      change: [],
+      experiment_reflections: [],
+      measured: [
+        { measure: 'policy friction', occurrences: [{ step_guid: null, events: [], why: 'no rule covers it' }] },
+        { measure: 'retries', occurrences: [{ step_guid: stepOf(bug, '3.1').guid, events: [], why: 'ran the tests twice' }] },
+      ],
+    } as DrillmasterEvent
+    // A late judgement adds to the post mortem's; without a post mortem that judged the measures, there is nothing to add to.
+    expect(stepOf(workItemPageView(events, id)!, '3.1').marks.map((mark) => mark.measure)).toEqual([OLD_FRICTION])
+    const page = workItemPageView([...events, judgedPostMortem], id)!
+    expect(page.measures.map((measure) => measure.name)).toEqual(['policy friction', 'owner_friction_per_item', OLD_FRICTION])
+    expect(stepOf(page, '3.1').marks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ measure: OLD_FRICTION }),
+        expect.objectContaining({ measure: 'policy friction', prompts: [ownerPrompt.type === 'work_trace' ? ownerPrompt.prompt : ''], why: 'a rule should have caught it' }),
+      ]),
+    )
+    expect(stepOf(page, '3.1').marks).toHaveLength(2)
+    expect(page.marks_no_step).toMatchObject([{ measure: 'policy friction', why: 'no rule covers it' }])
   })
 
   it('keeps the evidence of a step: the rules Agent checked and the output the tool kept, each line once', () => {
@@ -108,7 +159,7 @@ describe('the work items list', () => {
   it('lists every work item latest first, with where it is and how often Owner stepped in', () => {
     const list = workItemsListView(fixture)
     expect(list.map((item) => item.issue)).toEqual(['#8', '#7', '#6', '#5', '#4', '#3', '#2', '#1'])
-    expect(list.find((item) => item.issue === '#2')).toMatchObject({ status: 'delivered', at_step: null, friction: 1, summary: 'totalUnits(rows) in src/summary.js sums row.price instead of row.units, so it returns the…' })
+    expect(list.find((item) => item.issue === '#2')).toMatchObject({ status: 'delivered', at_step: null, marks: [{ measure: OLD_FRICTION, count: 1 }], summary: 'totalUnits(rows) in src/summary.js sums row.price instead of row.units, so it returns the…' })
     expect(workItemsListView(fixture, MOMENT).find((item) => item.issue === '#5')).toMatchObject({ status: 'active', at_step: 'have the change reviewed' })
   })
 })

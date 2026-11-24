@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { DrillmasterEvent } from '../../src/core/events.js'
 import { migrateEvent } from '../../src/core/feedback.js'
 import { migrateWorkflow, type WorkflowDocument } from '../../src/core/workflow.js'
+import { OLD_FRICTION } from '../../src/core/marks.js'
 import { workflowPageView, type WorkflowPage } from '../../src/core/workflowPage.js'
 
 const FIXTURE = new URL('../viewer/fixtures/reviewed-run.json', import.meta.url)
@@ -30,6 +31,18 @@ const verdict = (workflow: WorkflowDocument, id: string, stage: number, step: nu
 const prompt = (id: string, stage: number | null, stepGuid?: string) =>
   event({ type: 'work_trace', session_id: `s-${id}`, work_item_id: id, stage, step: null, ...(stepGuid ? { step_guid: stepGuid } : {}), hook: 'UserPromptSubmit', prompt: 'a correction' })
 const judged = (id: string, inputEvent: DrillmasterEvent) => event({ type: 'owner_inputs_judged', work_item_id: id, inputs: [{ event: inputEvent.id, friction: true, why: '' }] })
+const POLICY_FRICTION = { name: 'policy friction', definition: 'Owner caught what a rule should have caught.', show: true }
+const HIDDEN = { name: 'retries', definition: 'Agent ran the same command again.', show: false }
+const postMortem = (id: string, measured: { measure: string; step_guid: string | null }[]) =>
+  event({
+    type: 'post_mortem_written',
+    work_item_id: id,
+    author: 'drillmaster',
+    keep: [],
+    change: [],
+    experiment_reflections: [],
+    measured: [POLICY_FRICTION, HIDDEN].map((measure) => ({ measure: measure.name, occurrences: measured.filter((mark) => mark.measure === measure.name).map((mark) => ({ step_guid: mark.step_guid, events: [], why: '' })) })),
+  })
 
 const stepOf = (page: WorkflowPage, stage: number, step: number) => page.stages.find((s) => s.n === stage)!.steps.find((s) => s.n === step)!
 
@@ -82,22 +95,42 @@ describe('the Workflow page', () => {
     expect(page.waiting_to_deliver.map((item) => item.issue)).toEqual(['#wi_1'])
   })
 
-  it('places friction in its stage, after delivery, or unplaced, and counts an Owner gate sent back', () => {
+  it('places each occurrence of a shown measure in the stage of the step that should have caught it, or where no step covers it', () => {
+    const workflow = { ...seedWorkflow(), objective: { text: 'x', measures: ['gate_rejections_per_item'] }, measures: [POLICY_FRICTION, HIDDEN] }
+    const events = [...project(workflow), ...start(workflow, 'wi_1', 'feature')]
+    events.push(event({ type: 'work_item_delivered', work_item_id: 'wi_1', pr: 'local', summary: '', artifacts: [], drillmaster_version: '0.4.0' }))
+    events.push(
+      postMortem('wi_1', [
+        { measure: 'policy friction', step_guid: guidOf(workflow, 3, 2) },
+        { measure: 'policy friction', step_guid: guidOf(workflow, 3, 1) },
+        { measure: 'policy friction', step_guid: null },
+        { measure: 'retries', step_guid: guidOf(workflow, 3, 1) },
+      ]),
+    )
+    const page = workflowPageView(events)!
+    const item = { work_item_id: 'wi_1', issue: '#wi_1' }
+    expect(page.measures).toEqual([{ name: 'policy friction', definition: POLICY_FRICTION.definition, old: false }])
+    expect(page.stages.map((stage) => stage.marks)).toEqual([[], [], [{ measure: 'policy friction', count: 2, items: [item] }], []])
+    expect(page.no_step).toEqual([{ measure: 'policy friction', count: 1, items: [item] }])
+    expect(page.delivered).toBe(1)
+  })
+
+  it('shows the friction Drillmaster 0.3 judged as old friction: an Owner gate sent back at its step, and a step-in where it was placed', () => {
     const workflow = seedWorkflow()
     const events = [...project(workflow), ...start(workflow, 'wi_1', 'feature')]
-    const inStage3 = prompt('wi_1', 3, guidOf(workflow, 3, 2))
-    const outsideAStep = prompt('wi_1', null)
-    events.push(inStage3, judged('wi_1', inStage3), outsideAStep, judged('wi_1', outsideAStep))
+    const placedInput = prompt('wi_1', 3, guidOf(workflow, 3, 2))
+    const unplacedInput = prompt('wi_1', null)
+    events.push(placedInput, judged('wi_1', placedInput), unplacedInput, judged('wi_1', unplacedInput))
+    events.push(event({ type: 'friction_placed', work_item_id: 'wi_1', inputs: [{ event: placedInput.id, step_guid: guidOf(workflow, 3, 3), why: '' }] }))
     events.push(verdict(workflow, 'wi_1', 2, 2, 'owner', false, { stage: 2, step: 2 }))
-    events.push(event({ type: 'work_item_delivered', work_item_id: 'wi_1', pr: 'local', summary: '', artifacts: [] }))
-    const afterDelivery = prompt('wi_1', null)
-    events.push(afterDelivery, judged('wi_1', afterDelivery))
     const page = workflowPageView(events)!
-    expect(page.stages.map((stage) => stage.friction)).toEqual([0, 1, 1, 0])
     const item = { work_item_id: 'wi_1', issue: '#wi_1' }
-    expect(page.friction).toEqual({ after_delivery: 1, unplaced: 1, after_delivery_items: [item], unplaced_items: [item] })
-    expect(page.stages.map((stage) => stage.stepped_in)).toEqual([[], [item], [item], []])
-    expect(page.delivered).toBe(1)
+    expect(page.measures.map((measure) => [measure.name, measure.old])).toEqual([
+      ['owner_friction_per_item', false],
+      [OLD_FRICTION, true],
+    ])
+    expect(page.stages.map((stage) => stage.marks)).toEqual([[], [{ measure: OLD_FRICTION, count: 1, items: [item] }], [{ measure: OLD_FRICTION, count: 1, items: [item] }], []])
+    expect(page.no_step).toEqual([{ measure: OLD_FRICTION, count: 1, items: [item] }])
   })
 
   it("shows the accepted mock's moment from the recorded run", () => {
@@ -106,7 +139,7 @@ describe('the Workflow page', () => {
     expect(stepOf(page, 4, 4).here_now.map((item) => item.issue)).toEqual(['#5'])
     expect(stepOf(page, 4, 4).reviews).toEqual({ passed: 4, sent_back: 0 })
     expect(page.delivered).toBe(4)
-    expect(page.friction.after_delivery).toBe(2)
+    expect(page.no_step).toMatchObject([{ measure: OLD_FRICTION, count: 2 }])
   })
 
   it('shows the end of the recorded run when no moment is given', () => {
